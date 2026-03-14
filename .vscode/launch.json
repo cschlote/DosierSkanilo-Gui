@@ -6,7 +6,7 @@
       "request": "launch",
       "name": "Launch DosierSkanilo GUI (CodeLLDB)",
       "program": "${workspaceFolder}/build/bin/dosierskanilo-gui",
-      "args": [],
+      "args": [ "-j", "/run/media/cschlote/nas-video/Filme/.filescanner.json"],
       "cwd": "${workspaceFolder}"
     }
   ]

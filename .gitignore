@@ -1,6 +1,7 @@
 # DUB build artifacts
 build/
 .dub/
+public/
 
 # Editor/OS noise
 .DS_Store
