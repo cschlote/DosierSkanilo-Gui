@@ -4,6 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Made the record filter run in the background so the application stays responsive while searching large datasets.
 - Added background file loading with batched table rendering and a Cancel button, so the application stays responsive when opening large files.
 - Added a side panel showing the full details of the currently selected record alongside the main table.
 - Improved API documentation across all source modules, added startup usage examples to the README, and removed local paths from debugger configuration.

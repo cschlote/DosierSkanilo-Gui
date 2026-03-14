@@ -85,6 +85,15 @@ struct AsyncLoadResult {
     long elapsedMs;
 }
 
+/** Worker result payload for background text filtering. */
+struct AsyncFilterResult {
+    BlobRow[] filteredRows;
+    string query;
+    bool caseSensitive;
+    string error;
+    long elapsedMs;
+}
+
 /** Return human-readable CLI usage text. */
 string cliUsageText() {
     return
@@ -304,8 +313,10 @@ int main(string[] args) {
     bool prefCaseSensitiveFilter = false;
     bool isLoading;
     ulong loadRequestId;
+    ulong filterRequestId;
     ulong renderRequestId;
     long pendingLoadElapsedMs = -1;
+    string pendingStatusSuffix;
 
     if (cli.disableAutoFilter) {
         prefAutoApplyFilter = false;
@@ -432,6 +443,11 @@ int main(string[] args) {
                 pendingLoadElapsedMs = -1;
             }
 
+            if (pendingStatusSuffix.length > 0) {
+                baseStatus = format("%s | %s", baseStatus, pendingStatusSuffix);
+                pendingStatusSuffix = "";
+            }
+
             if (isLoading) {
                 setLoadingState(false);
             }
@@ -504,7 +520,7 @@ int main(string[] args) {
 
     void applyFilterFromEntry() {
         if (isLoading) {
-            status.setText("Load in progress. Please wait before filtering.");
+            status.setText("Background operation in progress. Please wait before filtering.");
             return;
         }
 
@@ -513,8 +529,44 @@ int main(string[] args) {
             return;
         }
         auto query = filterEntry.getText();
-        auto filtered = filterRowsByText(loadedRows, query, prefCaseSensitiveFilter);
-        renderRows(filtered, query);
+        auto caseSensitive = prefCaseSensitiveFilter;
+        auto sourceRows = loadedRows.dup;
+        auto requestId = ++filterRequestId;
+
+        setLoadingState(true, format("Filtering %s rows ...", sourceRows.length));
+
+        auto worker = new Thread({
+            MonoTime started = MonoTime.currTime;
+
+            AsyncFilterResult result;
+            result.query = query;
+            result.caseSensitive = caseSensitive;
+
+            try {
+                result.filteredRows = filterRowsByText(sourceRows, query, caseSensitive);
+            } catch (Exception ex) {
+                result.error = ex.msg;
+            }
+
+            result.elapsedMs = cast(long) (MonoTime.currTime - started).total!"msecs";
+
+            new Idle({
+                if (requestId != filterRequestId) {
+                    return false;
+                }
+
+                if (result.error.length > 0) {
+                    setLoadingState(false, format("Filtering failed: %s", result.error));
+                    return false;
+                }
+
+                pendingStatusSuffix = format("filter time: %s ms", result.elapsedMs);
+                renderRows(result.filteredRows, result.query);
+                return false;
+            });
+        });
+
+        worker.start();
     }
 
     void loadFromPath(bool duplicatesOnly = false) {
@@ -562,6 +614,7 @@ int main(string[] args) {
                     visibleRows = [];
                     loadedFilePath = "";
                     pendingLoadElapsedMs = -1;
+                    pendingStatusSuffix = "";
                     rowDetails.setText("Selection: none");
                     detailsView.getBuffer().setText("No row selected.");
                     setLoadingState(false, format("Failed to parse JSON: %s", result.error));
@@ -592,11 +645,13 @@ int main(string[] args) {
             return;
         }
 
-        // Invalidate both pending load and any in-progress batched render.
+        // Invalidate pending load/filter work and any in-progress batched render.
         ++loadRequestId;
+        ++filterRequestId;
         ++renderRequestId;
         pendingLoadElapsedMs = -1;
-        setLoadingState(false, "Load cancelled. Background result will be discarded.");
+        pendingStatusSuffix = "";
+        setLoadingState(false, "Operation cancelled. Background result will be discarded.");
     }
 
     void showPreferencesDialog() {
