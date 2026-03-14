@@ -48,6 +48,7 @@ int main(string[] args) {
 
     auto btnLoad = new Button("Load JSON");
     auto btnLoadDupes = new Button("Load Duplicates Only");
+    auto btnReload = new Button("Reload");
     auto filterEntry = new Entry();
     filterEntry.setHexpand(true);
     filterEntry.setPlaceholderText("Filter by filename or SHA1...");
@@ -58,6 +59,7 @@ int main(string[] args) {
     toolbar.packStart(pathEntry, true, true, 0);
     toolbar.packStart(btnLoad, false, false, 0);
     toolbar.packStart(btnLoadDupes, false, false, 0);
+    toolbar.packStart(btnReload, false, false, 0);
     toolbar.packStart(filterEntry, true, true, 0);
     toolbar.packStart(btnApplyFilter, false, false, 0);
     toolbar.packStart(btnClearFilter, false, false, 0);
@@ -141,6 +143,10 @@ int main(string[] args) {
         loadFromPath(true);
     });
 
+    btnReload.addOnClicked((Button _) {
+        loadFromPath(loadedDuplicatesOnly);
+    });
+
     btnApplyFilter.addOnClicked((Button _) {
         if (loadedRows.length == 0) {
             status.setText("No loaded rows to filter.");
@@ -154,6 +160,20 @@ int main(string[] args) {
     btnClearFilter.addOnClicked((Button _) {
         filterEntry.setText("");
         renderRows(loadedRows);
+    });
+
+    pathEntry.addOnActivate((Entry _) {
+        loadFromPath(loadedDuplicatesOnly);
+    });
+
+    filterEntry.addOnActivate((Entry _) {
+        if (loadedRows.length == 0) {
+            status.setText("No loaded rows to filter.");
+            return;
+        }
+        auto query = filterEntry.getText();
+        auto filtered = filterRowsByText(loadedRows, query);
+        renderRows(filtered, query);
     });
 
     root.packStart(title, false, false, 0);
