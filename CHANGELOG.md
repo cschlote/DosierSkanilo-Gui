@@ -4,6 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Added a performance counter at the bottom of the window showing how long the last load, filter, and render operations took, with an Edit menu option to reset it.
 - Added a progress bar and status messages that show what stage the application is at during background loading and filtering.
 - Added Ctrl+K and a File menu entry to stop any running background operation immediately.
 - Made the record filter run in the background so the application stays responsive while searching large datasets.

@@ -309,6 +309,9 @@ int main(string[] args) {
     auto status = new Label("Ready.");
     status.setXalign(0.0f);
 
+    auto perfStatus = new Label("Timings: load=- ms | filter=- ms | render=- ms");
+    perfStatus.setXalign(0.0f);
+
     auto rowDetails = new Label("Selection: none");
     rowDetails.setXalign(0.0f);
 
@@ -328,6 +331,9 @@ int main(string[] args) {
     long pendingLoadElapsedMs = -1;
     string pendingStatusSuffix;
     Timeout progressPulseTimer;
+    long lastLoadElapsedMs = -1;
+    long lastFilterElapsedMs = -1;
+    long lastRenderElapsedMs = -1;
 
     if (cli.disableAutoFilter) {
         prefAutoApplyFilter = false;
@@ -343,6 +349,19 @@ int main(string[] args) {
     }
     if (cli.filterOnStart.length > 0) {
         filterEntry.setText(cli.filterOnStart);
+    }
+
+    string formatTimingValue(long valueMs) {
+        return valueMs >= 0 ? format("%s", valueMs) : "-";
+    }
+
+    void updatePerfStatus() {
+        perfStatus.setText(format(
+            "Timings: load=%s ms | filter=%s ms | render=%s ms",
+            formatTimingValue(lastLoadElapsedMs),
+            formatTimingValue(lastFilterElapsedMs),
+            formatTimingValue(lastRenderElapsedMs)
+        ));
     }
 
     void setLoadingState(bool loading, string message = "") {
@@ -407,6 +426,14 @@ int main(string[] args) {
         });
     }
 
+    void resetPerfMetrics() {
+        lastLoadElapsedMs = -1;
+        lastFilterElapsedMs = -1;
+        lastRenderElapsedMs = -1;
+        updatePerfStatus();
+        status.setText("Performance metrics reset.");
+    }
+
     void renderRows(const(BlobRow)[] rows, string filterLabel = "") {
         if (loadedFilePath.length == 0) {
             tableStore.clear();
@@ -418,6 +445,7 @@ int main(string[] args) {
         }
 
         auto rowsCopy = rows.dup;
+        MonoTime renderStarted = MonoTime.currTime;
         auto localRenderRequestId = ++renderRequestId;
         enum size_t RENDER_BATCH_SIZE = 500;
 
@@ -463,6 +491,8 @@ int main(string[] args) {
             }
 
             visibleRows = rowsCopy.dup;
+            lastRenderElapsedMs = cast(long) (MonoTime.currTime - renderStarted).total!"msecs";
+            updatePerfStatus();
             auto mode = loadedDuplicatesOnly ? "duplicates" : "all";
             string baseStatus;
             if (filterLabel.length > 0) {
@@ -608,6 +638,8 @@ int main(string[] args) {
                 }
 
                 pendingStatusSuffix = format("filter time: %s ms", result.elapsedMs);
+                lastFilterElapsedMs = result.elapsedMs;
+                updatePerfStatus();
                 renderRows(result.filteredRows, result.query);
                 return false;
             });
@@ -681,6 +713,8 @@ int main(string[] args) {
                 loadedFilePath = result.filePath;
                 loadedDuplicatesOnly = result.duplicatesOnly;
                 pendingLoadElapsedMs = result.elapsedMs;
+                lastLoadElapsedMs = result.elapsedMs;
+                updatePerfStatus();
 
                 if (prefAutoApplyFilter && filterEntry.getText().length > 0) {
                     applyFilterFromEntry();
@@ -830,9 +864,14 @@ int main(string[] args) {
         showPreferencesDialog();
     }, "_Preferences", "edit.preferences", true, accelGroup, ',');
 
+    auto editResetMetrics = new MenuItem((MenuItem _) {
+        resetPerfMetrics();
+    }, "_Reset Metrics", "edit.resetMetrics", true, accelGroup, 'm');
+
     editMenu.append(editApplyFilter);
     editMenu.append(editClearFilter);
     editMenu.append(new SeparatorMenuItem());
+    editMenu.append(editResetMetrics);
     editMenu.append(editPreferences);
     menuBar.append(editMenuItem);
 
@@ -897,6 +936,7 @@ int main(string[] args) {
     content.packStart(split, true, true, 0);
     content.packStart(rowDetails, false, false, 0);
     content.packStart(status, false, false, 0);
+    content.packStart(perfStatus, false, false, 0);
 
     root.packStart(menuBar, false, false, 0);
     root.packStart(content, true, true, 0);
