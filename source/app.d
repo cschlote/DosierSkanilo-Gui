@@ -704,6 +704,7 @@ int main(string[] args) {
             "Ctrl+O  Open JSON\n" ~
             "Ctrl+D  Open Duplicates Only\n" ~
             "Ctrl+R  Reload\n" ~
+            "Ctrl+K  Cancel Current Operation\n" ~
             "Ctrl+F  Apply Filter\n" ~
             "Ctrl+L  Clear Filter\n" ~
             "Ctrl+,  Preferences\n" ~
@@ -741,6 +742,10 @@ int main(string[] args) {
         loadFromPath(loadedDuplicatesOnly);
     }, "_Reload", "file.reload", true, accelGroup, 'r');
 
+    auto fileCancelOperation = new MenuItem((MenuItem _) {
+        cancelPendingLoad();
+    }, "_Cancel Current Operation", "file.cancelOperation", true, accelGroup, 'k');
+
     auto fileQuit = new MenuItem((MenuItem _) {
         Main.quit();
     }, "_Quit", "file.quit", true, accelGroup, 'q');
@@ -748,6 +753,7 @@ int main(string[] args) {
     fileMenu.append(fileOpen);
     fileMenu.append(fileOpenDupes);
     fileMenu.append(fileReload);
+    fileMenu.append(fileCancelOperation);
     fileMenu.append(new SeparatorMenuItem());
     fileMenu.append(fileQuit);
     menuBar.append(fileMenuItem);
