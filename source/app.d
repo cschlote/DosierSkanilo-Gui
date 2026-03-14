@@ -8,8 +8,11 @@ import gtk.Label;
 import gtk.Button;
 import gtk.Separator;
 import gtk.Entry;
-import gtk.TextView;
 import gtk.ScrolledWindow;
+import gtk.TreeView;
+import gtk.ListStore;
+import gtk.CellRendererText;
+import gtk.TreeIter;
 import gtk.MenuBar;
 import gtk.Menu;
 import gtk.MenuItem;
@@ -20,14 +23,63 @@ import gtk.CheckButton;
 import gtk.AboutDialog;
 import gtk.MessageDialog;
 import gtk.c.types : Orientation, DialogFlags, ResponseType, ButtonsType, MessageType;
+import gobject.Type : GType;
 
 import std.file : exists, readText;
 import std.format : format;
 import std.json : parseJSON;
+import std.conv : to;
 
 import io.dosierjson : extractRowsFromRoot;
 import model.blobrow : BlobRow;
-import view.textreport : rowsToDisplayText, countDuplicateDigestGroups, filterDuplicateRows, filterRowsByText;
+import view.textreport : countDuplicateDigestGroups, filterDuplicateRows, filterRowsByText;
+
+enum string DEFAULT_JSON_PATH = "./.filescanner.json";
+
+enum int COL_INDEX = 0;
+enum int COL_FILE_SIZE = 1;
+enum int COL_FILE_COUNT = 2;
+enum int COL_HAS_MEDIA = 3;
+enum int COL_SHA1 = 4;
+enum int COL_FILE_NAME = 5;
+enum int COL_COUNT = 6;
+
+void configureTableColumns(TreeView treeView) {
+    treeView.insertEditableColumn(-1, "#", new CellRendererText(), false);
+    treeView.insertEditableColumn(-1, "Size", new CellRendererText(), false);
+    treeView.insertEditableColumn(-1, "Files", new CellRendererText(), false);
+    treeView.insertEditableColumn(-1, "Media", new CellRendererText(), false);
+    treeView.insertEditableColumn(-1, "SHA1 (base64)", new CellRendererText(), false);
+    treeView.insertEditableColumn(-1, "Primary file", new CellRendererText(), false);
+
+    treeView.setHeadersClickable(true);
+    foreach (i; 0 .. COL_COUNT) {
+        auto col = treeView.getColumn(i);
+        col.setSortColumnId(i);
+        col.setResizable(true);
+    }
+}
+
+void populateTableRows(ListStore store, const(BlobRow)[] rows) {
+    store.clear();
+
+    foreach (idx, row; rows) {
+        auto indexText = to!string(idx + 1);
+        auto sizeText = to!string(row.fileSize);
+        auto filesText = to!string(row.fileCount);
+        auto mediaText = row.hasMedia ? "yes" : "no";
+        auto shaText = row.sha1.length > 0 ? row.sha1 : "-";
+        auto fileText = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
+
+        TreeIter iter;
+        store.append(iter);
+        store.set(
+            iter,
+            [COL_INDEX, COL_FILE_SIZE, COL_FILE_COUNT, COL_HAS_MEDIA, COL_SHA1, COL_FILE_NAME],
+            [indexText, sizeText, filesText, mediaText, shaText, fileText]
+        );
+    }
+}
 
 int main(string[] args) {
     Main.init(args);
@@ -57,7 +109,7 @@ int main(string[] args) {
     auto toolbar = new Box(Orientation.HORIZONTAL, 8);
     auto pathEntry = new Entry();
     pathEntry.setHexpand(true);
-    pathEntry.setText("../DosierSkanilo/test/json_file_v2.json");
+    pathEntry.setText(DEFAULT_JSON_PATH);
 
     auto btnLoad = new Button("Load JSON");
     auto btnLoadDupes = new Button("Load Duplicates Only");
@@ -78,15 +130,21 @@ int main(string[] args) {
     toolbar.packStart(btnApplyFilter, false, false, 0);
     toolbar.packStart(btnClearFilter, false, false, 0);
 
-    auto output = new TextView();
-    output.setEditable(false);
-    output.setMonospace(true);
-    output.getBuffer().setText("Ready. Enter a JSON path and click 'Load JSON'.");
+    auto tableStore = new ListStore([
+        GType.STRING,
+        GType.STRING,
+        GType.STRING,
+        GType.STRING,
+        GType.STRING,
+        GType.STRING
+    ]);
+    auto tableView = new TreeView(tableStore);
+    configureTableColumns(tableView);
 
     auto scroll = new ScrolledWindow(null, null);
     scroll.setVexpand(true);
     scroll.setHexpand(true);
-    scroll.add(output);
+    scroll.add(tableView);
 
     auto status = new Label("Ready.");
     status.setXalign(0.0f);
@@ -104,12 +162,12 @@ int main(string[] args) {
 
     void renderRows(const(BlobRow)[] rows, string filterLabel = "") {
         if (loadedFilePath.length == 0) {
-            output.getBuffer().setText("No data loaded.");
+            tableStore.clear();
             status.setText("Ready.");
             return;
         }
 
-        output.getBuffer().setText(rowsToDisplayText(loadedFilePath, rows));
+        populateTableRows(tableStore, rows);
         auto mode = loadedDuplicatesOnly ? "duplicates" : "all";
         if (filterLabel.length > 0) {
             status.setText(format(
@@ -147,7 +205,7 @@ int main(string[] args) {
         auto filePath = pathEntry.getText();
         if (!exists(filePath)) {
             status.setText(format("File not found: %s", filePath));
-            output.getBuffer().setText("");
+            tableStore.clear();
             return;
         }
 
@@ -166,7 +224,7 @@ int main(string[] args) {
                 renderRows(loadedRows);
             }
         } catch (Exception ex) {
-            output.getBuffer().setText("");
+            tableStore.clear();
             status.setText(format("Failed to parse JSON: %s", ex.msg));
         }
     }
