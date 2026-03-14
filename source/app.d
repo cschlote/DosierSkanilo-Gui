@@ -17,6 +17,7 @@ import gtk.Button;
 import gtk.Separator;
 import gtk.Entry;
 import gtk.Spinner;
+import gtk.ProgressBar;
 import gtk.ScrolledWindow;
 import gtk.TextView;
 import gtk.TreeView;
@@ -38,6 +39,7 @@ import gtk.AboutDialog;
 import gtk.MessageDialog;
 import gtk.c.types : Orientation, DialogFlags, ResponseType, ButtonsType, MessageType;
 import glib.Idle;
+import glib.Timeout;
 import gobject.Type : GType;
 
 import core.thread : Thread;
@@ -255,6 +257,13 @@ int main(string[] args) {
     auto btnApplyFilter = new Button("Apply Filter");
     auto btnClearFilter = new Button("Clear Filter");
 
+    auto progressBar = new ProgressBar();
+    progressBar.setHexpand(true);
+    progressBar.setShowText(true);
+    progressBar.setText("Idle");
+    progressBar.setPulseStep(0.05);
+    progressBar.setVisible(false);
+
     toolbar.packStart(pathEntry, true, true, 0);
     toolbar.packStart(btnLoad, false, false, 0);
     toolbar.packStart(btnLoadDupes, false, false, 0);
@@ -264,6 +273,7 @@ int main(string[] args) {
     toolbar.packStart(filterEntry, true, true, 0);
     toolbar.packStart(btnApplyFilter, false, false, 0);
     toolbar.packStart(btnClearFilter, false, false, 0);
+    toolbar.packStart(progressBar, true, true, 0);
 
     auto tableStore = new ListStore([
         GType.STRING,
@@ -317,6 +327,7 @@ int main(string[] args) {
     ulong renderRequestId;
     long pendingLoadElapsedMs = -1;
     string pendingStatusSuffix;
+    Timeout progressPulseTimer;
 
     if (cli.disableAutoFilter) {
         prefAutoApplyFilter = false;
@@ -349,15 +360,51 @@ int main(string[] args) {
         if (loading) {
             loadSpinner.setVisible(true);
             loadSpinner.start();
-            status.setText(message.length > 0 ? message : "Loading...");
+
+            progressBar.setVisible(true);
+            auto loadingText = message.length > 0 ? message : "Loading...";
+            progressBar.setText(loadingText);
+            progressBar.pulse();
+            if (progressPulseTimer is null) {
+                progressPulseTimer = new Timeout(120, {
+                    if (!isLoading) {
+                        return false;
+                    }
+                    progressBar.pulse();
+                    return true;
+                });
+            }
+
+            status.setText(loadingText);
             return;
         }
 
         loadSpinner.stop();
         loadSpinner.setVisible(false);
+
+        if (progressPulseTimer !is null) {
+            progressPulseTimer.stop();
+            progressPulseTimer = null;
+        }
+        progressBar.setVisible(false);
+        progressBar.setFraction(0.0);
+        progressBar.setText("Idle");
+
         if (message.length > 0) {
             status.setText(message);
         }
+    }
+
+    void setLoadingPhase(ulong expectedRequestId, string phaseText) {
+        new Idle({
+            if (expectedRequestId != loadRequestId || !isLoading) {
+                return false;
+            }
+
+            status.setText(phaseText);
+            progressBar.setText(phaseText);
+            return false;
+        });
     }
 
     void renderRows(const(BlobRow)[] rows, string filterLabel = "") {
@@ -593,13 +640,21 @@ int main(string[] args) {
             result.duplicatesOnly = duplicatesOnly;
 
             try {
+                setLoadingPhase(requestId, "Reading file from disk ...");
                 auto content = readText(filePath);
+
+                setLoadingPhase(requestId, "Parsing JSON structure ...");
                 auto parsed = parseJSON(content);
+
+                setLoadingPhase(requestId, "Normalizing rows ...");
                 result.allRows = extractRowsFromRoot(parsed);
+
+                setLoadingPhase(requestId, "Computing duplicate groups ...");
                 result.duplicateGroups = countDuplicateDigestGroups(result.allRows);
             } catch (Exception ex) {
                 result.error = ex.msg;
             }
+    progressBar.setText("Filtering rows ...");
 
             result.elapsedMs = cast(long) (MonoTime.currTime - started).total!"msecs";
 
