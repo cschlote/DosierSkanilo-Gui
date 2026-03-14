@@ -229,12 +229,6 @@ int main(string[] args) {
     auto content = new Box(Orientation.VERTICAL, 10);
     content.setBorderWidth(10);
 
-    auto title = new Label("DosierSkanilo Datafile Viewer");
-    title.setXalign(0.0f);
-
-    auto subtitle = new Label("Classic GTK shell with menus, shortcuts, preferences, and help.\n");
-    subtitle.setXalign(0.0f);
-
     auto separator = new Separator(Orientation.HORIZONTAL);
 
     auto toolbar = new Box(Orientation.HORIZONTAL, 8);
@@ -809,7 +803,7 @@ int main(string[] args) {
         dialog.setModal(true);
         dialog.setProgramName("DosierSkanilo GUI");
         dialog.setVersion("0.1.0");
-        dialog.setComments("Classic GTK desktop frontend for DosierSkanilo JSON data files.");
+        dialog.setComments("Desktop frontend for DosierSkanilo.");
         dialog.setAuthors(["Carsten Schlote"]);
         dialog.run();
         dialog.destroy();
@@ -929,8 +923,6 @@ int main(string[] args) {
         updateSelectedRowDetails();
     });
 
-    content.packStart(title, false, false, 0);
-    content.packStart(subtitle, false, false, 0);
     content.packStart(separator, false, false, 0);
     content.packStart(toolbar, false, false, 0);
     content.packStart(split, true, true, 0);
