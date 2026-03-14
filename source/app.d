@@ -19,6 +19,7 @@ import std.file : exists, readText;
 import std.format : format;
 import std.json : JSONType, JSONValue, parseJSON;
 import std.string : join;
+import std.algorithm : canFind;
 
 struct BlobRow {
     string primaryFileName;
@@ -147,6 +148,53 @@ string rowsToDisplayText(string filePath, const(BlobRow)[] rows) {
     return lines.data.join("\n");
 }
 
+size_t countDuplicateDigestGroups(const(BlobRow)[] rows) {
+    string[] seen;
+    string[] duplicates;
+
+    foreach (row; rows) {
+        if (row.sha1.length == 0) {
+            continue;
+        }
+        if (seen.canFind(row.sha1)) {
+            if (!duplicates.canFind(row.sha1)) {
+                duplicates ~= row.sha1;
+            }
+            continue;
+        }
+        seen ~= row.sha1;
+    }
+
+    return duplicates.length;
+}
+
+BlobRow[] filterDuplicateRows(const(BlobRow)[] rows) {
+    string[] seen;
+    string[] duplicates;
+    auto filtered = appender!(BlobRow[])();
+
+    foreach (row; rows) {
+        if (row.sha1.length == 0) {
+            continue;
+        }
+        if (seen.canFind(row.sha1)) {
+            if (!duplicates.canFind(row.sha1)) {
+                duplicates ~= row.sha1;
+            }
+        } else {
+            seen ~= row.sha1;
+        }
+    }
+
+    foreach (row; rows) {
+        if (row.sha1.length > 0 && duplicates.canFind(row.sha1)) {
+            filtered.put(row);
+        }
+    }
+
+    return filtered.data;
+}
+
 int main(string[] args) {
     Main.init(args);
 
@@ -173,9 +221,11 @@ int main(string[] args) {
     pathEntry.setText("../DosierSkanilo/test/json_file_v2.json");
 
     auto btnLoad = new Button("Load JSON");
+    auto btnLoadDupes = new Button("Load Duplicates Only");
 
     toolbar.packStart(pathEntry, true, true, 0);
     toolbar.packStart(btnLoad, false, false, 0);
+    toolbar.packStart(btnLoadDupes, false, false, 0);
 
     auto output = new TextView();
     output.setEditable(false);
@@ -190,7 +240,7 @@ int main(string[] args) {
     auto status = new Label("Ready.");
     status.setXalign(0.0f);
 
-    void loadFromPath() {
+    void loadFromPath(bool duplicatesOnly = false) {
         auto filePath = pathEntry.getText();
         if (!exists(filePath)) {
             status.setText(format("File not found: %s", filePath));
@@ -201,9 +251,17 @@ int main(string[] args) {
         try {
             const content = readText(filePath);
             const parsed = parseJSON(content);
-            const rows = extractRowsFromRoot(parsed);
+            const allRows = extractRowsFromRoot(parsed);
+            const duplicateGroups = countDuplicateDigestGroups(allRows);
+            const rows = duplicatesOnly ? filterDuplicateRows(allRows) : allRows;
             output.getBuffer().setText(rowsToDisplayText(filePath, rows));
-            status.setText(format("Loaded %s blobs from %s", rows.length, filePath));
+            status.setText(format(
+                "Loaded %s/%s blobs from %s (duplicate digest groups: %s)",
+                rows.length,
+                allRows.length,
+                filePath,
+                duplicateGroups
+            ));
         } catch (Exception ex) {
             output.getBuffer().setText("");
             status.setText(format("Failed to parse JSON: %s", ex.msg));
@@ -212,6 +270,10 @@ int main(string[] args) {
 
     btnLoad.addOnClicked((Button _) {
         loadFromPath();
+    });
+
+    btnLoadDupes.addOnClicked((Button _) {
+        loadFromPath(true);
     });
 
     root.packStart(title, false, false, 0);
