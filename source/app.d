@@ -12,7 +12,10 @@ import gtk.ScrolledWindow;
 import gtk.TreeView;
 import gtk.ListStore;
 import gtk.CellRendererText;
+import gtk.TreeViewColumn;
 import gtk.TreeIter;
+import gtk.TreeSelection;
+import gtk.TreeModelIF;
 import gtk.MenuBar;
 import gtk.Menu;
 import gtk.MenuItem;
@@ -45,19 +48,26 @@ enum int COL_FILE_NAME = 5;
 enum int COL_COUNT = 6;
 
 void configureTableColumns(TreeView treeView) {
-    treeView.insertEditableColumn(-1, "#", new CellRendererText(), false);
-    treeView.insertEditableColumn(-1, "Size", new CellRendererText(), false);
-    treeView.insertEditableColumn(-1, "Files", new CellRendererText(), false);
-    treeView.insertEditableColumn(-1, "Media", new CellRendererText(), false);
-    treeView.insertEditableColumn(-1, "SHA1 (base64)", new CellRendererText(), false);
-    treeView.insertEditableColumn(-1, "Primary file", new CellRendererText(), false);
+    void addTextColumn(string title, int modelColumn) {
+        auto renderer = new CellRendererText();
+        auto column = new TreeViewColumn();
+        column.setTitle(title);
+        column.packStart(renderer, true);
+        column.addAttribute(renderer, "text", modelColumn);
+        column.setSortColumnId(modelColumn);
+        column.setResizable(true);
+        column.setClickable(true);
+        treeView.appendColumn(column);
+    }
+
+    addTextColumn("#", COL_INDEX);
+    addTextColumn("Size", COL_FILE_SIZE);
+    addTextColumn("Files", COL_FILE_COUNT);
+    addTextColumn("Media", COL_HAS_MEDIA);
+    addTextColumn("SHA1 (base64)", COL_SHA1);
+    addTextColumn("Primary file", COL_FILE_NAME);
 
     treeView.setHeadersClickable(true);
-    foreach (i; 0 .. COL_COUNT) {
-        auto col = treeView.getColumn(i);
-        col.setSortColumnId(i);
-        col.setResizable(true);
-    }
 }
 
 void populateTableRows(ListStore store, const(BlobRow)[] rows) {
@@ -149,6 +159,9 @@ int main(string[] args) {
     auto status = new Label("Ready.");
     status.setXalign(0.0f);
 
+    auto rowDetails = new Label("Selection: none");
+    rowDetails.setXalign(0.0f);
+
     BlobRow[] loadedRows;
     string loadedFilePath;
     size_t loadedDuplicateGroups;
@@ -163,11 +176,13 @@ int main(string[] args) {
     void renderRows(const(BlobRow)[] rows, string filterLabel = "") {
         if (loadedFilePath.length == 0) {
             tableStore.clear();
+            rowDetails.setText("Selection: none");
             status.setText("Ready.");
             return;
         }
 
         populateTableRows(tableStore, rows);
+        rowDetails.setText("Selection: none");
         auto mode = loadedDuplicatesOnly ? "duplicates" : "all";
         if (filterLabel.length > 0) {
             status.setText(format(
@@ -188,6 +203,30 @@ int main(string[] args) {
             loadedRows.length,
             mode,
             loadedDuplicateGroups
+        ));
+    }
+
+    void updateSelectedRowDetails() {
+        TreeModelIF model;
+        TreeIter iter;
+        auto selection = tableView.getSelection();
+        if (!selection.getSelected(model, iter)) {
+            rowDetails.setText("Selection: none");
+            return;
+        }
+
+        auto idx = model.getValueString(iter, COL_INDEX);
+        auto size = model.getValueString(iter, COL_FILE_SIZE);
+        auto files = model.getValueString(iter, COL_FILE_COUNT);
+        auto media = model.getValueString(iter, COL_HAS_MEDIA);
+        auto fileName = model.getValueString(iter, COL_FILE_NAME);
+        rowDetails.setText(format(
+            "Selection: #%s | size=%s | files=%s | media=%s | file=%s",
+            idx,
+            size,
+            files,
+            media,
+            fileName
         ));
     }
 
@@ -396,11 +435,16 @@ int main(string[] args) {
         applyFilterFromEntry();
     });
 
+    tableView.getSelection().addOnChanged((TreeSelection _) {
+        updateSelectedRowDetails();
+    });
+
     content.packStart(title, false, false, 0);
     content.packStart(subtitle, false, false, 0);
     content.packStart(separator, false, false, 0);
     content.packStart(toolbar, false, false, 0);
     content.packStart(scroll, true, true, 0);
+    content.packStart(rowDetails, false, false, 0);
     content.packStart(status, false, false, 0);
 
     root.packStart(menuBar, false, false, 0);
