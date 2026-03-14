@@ -17,6 +17,7 @@ import gtk.Button;
 import gtk.Separator;
 import gtk.Entry;
 import gtk.ScrolledWindow;
+import gtk.TextView;
 import gtk.TreeView;
 import gtk.ListStore;
 import gtk.CellRendererText;
@@ -24,6 +25,7 @@ import gtk.TreeViewColumn;
 import gtk.TreeIter;
 import gtk.TreeSelection;
 import gtk.TreeModelIF;
+import gtk.Paned;
 import gtk.MenuBar;
 import gtk.Menu;
 import gtk.MenuItem;
@@ -250,6 +252,21 @@ int main(string[] args) {
     scroll.setHexpand(true);
     scroll.add(tableView);
 
+    auto detailsView = new TextView();
+    detailsView.setEditable(false);
+    detailsView.setMonospace(true);
+    detailsView.getBuffer().setText("No row selected.");
+
+    auto detailsScroll = new ScrolledWindow(null, null);
+    detailsScroll.setVexpand(true);
+    detailsScroll.setHexpand(true);
+    detailsScroll.add(detailsView);
+
+    auto split = new Paned(Orientation.HORIZONTAL);
+    split.add1(scroll);
+    split.add2(detailsScroll);
+    split.setPosition(720);
+
     auto status = new Label("Ready.");
     status.setXalign(0.0f);
 
@@ -257,6 +274,7 @@ int main(string[] args) {
     rowDetails.setXalign(0.0f);
 
     BlobRow[] loadedRows;
+    BlobRow[] visibleRows;
     string loadedFilePath;
     size_t loadedDuplicateGroups;
     bool loadedDuplicatesOnly;
@@ -284,13 +302,17 @@ int main(string[] args) {
     void renderRows(const(BlobRow)[] rows, string filterLabel = "") {
         if (loadedFilePath.length == 0) {
             tableStore.clear();
+            visibleRows = [];
             rowDetails.setText("Selection: none");
+            detailsView.getBuffer().setText("No row selected.");
             status.setText("Ready.");
             return;
         }
 
         populateTableRows(tableStore, rows);
+        visibleRows = rows.dup;
         rowDetails.setText("Selection: none");
+        detailsView.getBuffer().setText("No row selected.");
         auto mode = loadedDuplicatesOnly ? "duplicates" : "all";
         if (filterLabel.length > 0) {
             status.setText(format(
@@ -320,6 +342,7 @@ int main(string[] args) {
         auto selection = tableView.getSelection();
         if (!selection.getSelected(model, iter)) {
             rowDetails.setText("Selection: none");
+            detailsView.getBuffer().setText("No row selected.");
             return;
         }
 
@@ -336,6 +359,41 @@ int main(string[] args) {
             media,
             fileName
         ));
+
+        size_t rowIndex = 0;
+        try {
+            rowIndex = to!size_t(idx) - 1;
+        } catch (Exception) {
+            detailsView.getBuffer().setText("Failed to resolve selected row index.");
+            return;
+        }
+
+        if (rowIndex >= visibleRows.length) {
+            detailsView.getBuffer().setText("Selected row is outside visible data range.");
+            return;
+        }
+
+        auto row = visibleRows[rowIndex];
+        auto detailsText = format(
+            "Selected Row Details\n\n" ~
+            "Index: %s\n" ~
+            "Primary file: %s\n" ~
+            "File size: %s bytes\n" ~
+            "File references: %s\n" ~
+            "SHA1 (base64): %s\n" ~
+            "File type: %s\n" ~
+            "Has media metadata: %s\n" ~
+            "Loaded source: %s\n",
+            idx,
+            row.primaryFileName.length > 0 ? row.primaryFileName : "-",
+            row.fileSize,
+            row.fileCount,
+            row.sha1.length > 0 ? row.sha1 : "-",
+            row.fileType.length > 0 ? row.fileType : "-",
+            row.hasMedia ? "yes" : "no",
+            loadedFilePath.length > 0 ? loadedFilePath : "-"
+        );
+        detailsView.getBuffer().setText(detailsText);
     }
 
     void applyFilterFromEntry() {
@@ -551,7 +609,7 @@ int main(string[] args) {
     content.packStart(subtitle, false, false, 0);
     content.packStart(separator, false, false, 0);
     content.packStart(toolbar, false, false, 0);
-    content.packStart(scroll, true, true, 0);
+    content.packStart(split, true, true, 0);
     content.packStart(rowDetails, false, false, 0);
     content.packStart(status, false, false, 0);
 

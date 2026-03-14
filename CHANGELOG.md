@@ -4,6 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Added a side panel showing the full details of the currently selected record alongside the main table.
 - Improved API documentation across all source modules, added startup usage examples to the README, and removed local paths from debugger configuration.
 - Added command-line options for opening a file, pre-setting a filter, or auto-loading records when the application starts.
 - Added VS Code build and test tasks, and an automated API documentation build using ADRDox.
