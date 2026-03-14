@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    container:
+      image: alpine:3.20
+    steps:
+      - name: Install base tools
+        run: apk add --no-cache git bash tar zstd
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache DUB
+        uses: actions/cache@v4
+        with:
+          path: |
+            .dub
+            /root/.dub
+          key: ${{ runner.os }}-dub-${{ hashFiles('dub.json', 'dub.selections.json') }}
+          restore-keys: |
+            ${{ runner.os }}-dub-
+
+      - name: Install lint dependencies
+        run: sh ./scripts/install-dependencies.sh lint
+
+      - name: Run lint
+        run: ./scripts/lint.sh
+
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    container:
+      image: alpine:3.20
+    needs:
+      - lint
+    steps:
+      - name: Install base tools
+        run: apk add --no-cache git bash tar zstd
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache DUB
+        uses: actions/cache@v4
+        with:
+          path: |
+            .dub
+            /root/.dub
+          key: ${{ runner.os }}-dub-${{ hashFiles('dub.json', 'dub.selections.json') }}
+          restore-keys: |
+            ${{ runner.os }}-dub-
+
+      - name: Install build dependencies
+        run: sh ./scripts/install-dependencies.sh build
+
+      - name: Show tool versions
+        run: |
+          ldc2 --version
+          dub --version
+
+      - name: Build project
+        run: ./scripts/build.sh
+
+  test:
+    name: Test
+    runs-on: ubuntu-24.04
+    container:
+      image: alpine:3.20
+    needs:
+      - build
+    steps:
+      - name: Install base tools
+        run: apk add --no-cache git bash tar zstd
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache DUB
+        uses: actions/cache@v4
+        with:
+          path: |
+            .dub
+            /root/.dub
+          key: ${{ runner.os }}-dub-${{ hashFiles('dub.json', 'dub.selections.json') }}
+          restore-keys: |
+            ${{ runner.os }}-dub-
+
+      - name: Install build dependencies
+        run: sh ./scripts/install-dependencies.sh build
+
+      - name: Run tests
+        run: ./scripts/test.sh

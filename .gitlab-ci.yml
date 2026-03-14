@@ -1,0 +1,47 @@
+variables:
+  VA_TEST: "gui"
+
+default:
+  image: "alpine:3.20"
+  tags:
+    - gitlabdocker
+    - ryzen
+  before_script:
+    - command -v image-info.sh && image-info.sh || true
+
+stages:
+  - lint
+  - build
+  - test
+
+lint:
+  stage: lint
+  before_script:
+    - sh ./scripts/install-dependencies.sh lint
+  script:
+    - ./scripts/lint.sh
+  cache:
+    key: "DUB-CACHE"
+    untracked: true
+    paths:
+      - .dub/
+
+build:
+  stage: build
+  before_script:
+    - sh ./scripts/install-dependencies.sh build
+  script:
+    - ldc2 --version
+    - dub --version
+    - ./scripts/build.sh
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - build/bin/dosierskanilo-gui
+
+test:
+  stage: test
+  before_script:
+    - sh ./scripts/install-dependencies.sh build
+  script:
+    - ./scripts/test.sh
