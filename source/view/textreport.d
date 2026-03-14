@@ -2,8 +2,9 @@ module view.textreport;
 
 import std.array : appender;
 import std.format : format;
-import std.string : join;
+import std.string : join, strip;
 import std.algorithm : canFind;
+import std.uni : toLower;
 
 import model.blobrow;
 
@@ -65,6 +66,30 @@ BlobRow[] filterDuplicateRows(const(BlobRow)[] rows) {
 
     foreach (row; rows) {
         if (row.sha1.length > 0 && duplicates.canFind(row.sha1)) {
+            filtered.put(row);
+        }
+    }
+
+    return filtered.data;
+}
+
+BlobRow[] filterRowsByText(const(BlobRow)[] rows, string needle) {
+    auto trimmed = needle.strip();
+    if (trimmed.length == 0) {
+        auto copy = appender!(BlobRow[])();
+        foreach (row; rows) {
+            copy.put(row);
+        }
+        return copy.data;
+    }
+
+    auto q = toLower(trimmed);
+    auto filtered = appender!(BlobRow[])();
+
+    foreach (row; rows) {
+        auto fileName = toLower(row.primaryFileName);
+        auto sha1 = toLower(row.sha1);
+        if (fileName.canFind(q) || sha1.canFind(q)) {
             filtered.put(row);
         }
     }

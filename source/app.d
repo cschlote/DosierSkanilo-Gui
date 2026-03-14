@@ -18,7 +18,8 @@ import std.format : format;
 import std.json : parseJSON;
 
 import io.dosierjson : extractRowsFromRoot;
-import view.textreport : rowsToDisplayText, countDuplicateDigestGroups, filterDuplicateRows;
+import model.blobrow : BlobRow;
+import view.textreport : rowsToDisplayText, countDuplicateDigestGroups, filterDuplicateRows, filterRowsByText;
 
 int main(string[] args) {
     Main.init(args);
@@ -47,10 +48,19 @@ int main(string[] args) {
 
     auto btnLoad = new Button("Load JSON");
     auto btnLoadDupes = new Button("Load Duplicates Only");
+    auto filterEntry = new Entry();
+    filterEntry.setHexpand(true);
+    filterEntry.setPlaceholderText("Filter by filename or SHA1...");
+
+    auto btnApplyFilter = new Button("Apply Filter");
+    auto btnClearFilter = new Button("Clear Filter");
 
     toolbar.packStart(pathEntry, true, true, 0);
     toolbar.packStart(btnLoad, false, false, 0);
     toolbar.packStart(btnLoadDupes, false, false, 0);
+    toolbar.packStart(filterEntry, true, true, 0);
+    toolbar.packStart(btnApplyFilter, false, false, 0);
+    toolbar.packStart(btnClearFilter, false, false, 0);
 
     auto output = new TextView();
     output.setEditable(false);
@@ -65,6 +75,41 @@ int main(string[] args) {
     auto status = new Label("Ready.");
     status.setXalign(0.0f);
 
+    BlobRow[] loadedRows;
+    string loadedFilePath;
+    size_t loadedDuplicateGroups;
+    bool loadedDuplicatesOnly;
+
+    void renderRows(const(BlobRow)[] rows, string filterLabel = "") {
+        if (loadedFilePath.length == 0) {
+            output.getBuffer().setText("No data loaded.");
+            status.setText("Ready.");
+            return;
+        }
+
+        output.getBuffer().setText(rowsToDisplayText(loadedFilePath, rows));
+        auto mode = loadedDuplicatesOnly ? "duplicates" : "all";
+        if (filterLabel.length > 0) {
+            status.setText(format(
+                "Showing %s/%s rows (%s mode, duplicate digest groups: %s, filter: %s)",
+                rows.length,
+                loadedRows.length,
+                mode,
+                loadedDuplicateGroups,
+                filterLabel
+            ));
+            return;
+        }
+
+        status.setText(format(
+            "Showing %s/%s rows (%s mode, duplicate digest groups: %s)",
+            rows.length,
+            loadedRows.length,
+            mode,
+            loadedDuplicateGroups
+        ));
+    }
+
     void loadFromPath(bool duplicatesOnly = false) {
         auto filePath = pathEntry.getText();
         if (!exists(filePath)) {
@@ -74,19 +119,14 @@ int main(string[] args) {
         }
 
         try {
-            const content = readText(filePath);
-            const parsed = parseJSON(content);
-            const allRows = extractRowsFromRoot(parsed);
-            const duplicateGroups = countDuplicateDigestGroups(allRows);
-            const rows = duplicatesOnly ? filterDuplicateRows(allRows) : allRows;
-            output.getBuffer().setText(rowsToDisplayText(filePath, rows));
-            status.setText(format(
-                "Loaded %s/%s blobs from %s (duplicate digest groups: %s)",
-                rows.length,
-                allRows.length,
-                filePath,
-                duplicateGroups
-            ));
+            auto content = readText(filePath);
+            auto parsed = parseJSON(content);
+            auto allRows = extractRowsFromRoot(parsed);
+            loadedDuplicateGroups = countDuplicateDigestGroups(allRows);
+            loadedRows = duplicatesOnly ? filterDuplicateRows(allRows) : allRows;
+            loadedFilePath = filePath;
+            loadedDuplicatesOnly = duplicatesOnly;
+            renderRows(loadedRows);
         } catch (Exception ex) {
             output.getBuffer().setText("");
             status.setText(format("Failed to parse JSON: %s", ex.msg));
@@ -99,6 +139,21 @@ int main(string[] args) {
 
     btnLoadDupes.addOnClicked((Button _) {
         loadFromPath(true);
+    });
+
+    btnApplyFilter.addOnClicked((Button _) {
+        if (loadedRows.length == 0) {
+            status.setText("No loaded rows to filter.");
+            return;
+        }
+        auto query = filterEntry.getText();
+        auto filtered = filterRowsByText(loadedRows, query);
+        renderRows(filtered, query);
+    });
+
+    btnClearFilter.addOnClicked((Button _) {
+        filterEntry.setText("");
+        renderRows(loadedRows);
     });
 
     root.packStart(title, false, false, 0);
