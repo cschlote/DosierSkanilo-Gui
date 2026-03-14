@@ -73,7 +73,7 @@ BlobRow[] filterDuplicateRows(const(BlobRow)[] rows) {
     return filtered.data;
 }
 
-BlobRow[] filterRowsByText(const(BlobRow)[] rows, string needle) {
+BlobRow[] filterRowsByText(const(BlobRow)[] rows, string needle, bool caseSensitive = false) {
     auto trimmed = needle.strip();
     if (trimmed.length == 0) {
         auto copy = appender!(BlobRow[])();
@@ -83,12 +83,12 @@ BlobRow[] filterRowsByText(const(BlobRow)[] rows, string needle) {
         return copy.data;
     }
 
-    auto q = toLower(trimmed);
+    auto q = caseSensitive ? trimmed : toLower(trimmed);
     auto filtered = appender!(BlobRow[])();
 
     foreach (row; rows) {
-        auto fileName = toLower(row.primaryFileName);
-        auto sha1 = toLower(row.sha1);
+        auto fileName = caseSensitive ? row.primaryFileName : toLower(row.primaryFileName);
+        auto sha1 = caseSensitive ? row.sha1 : toLower(row.sha1);
         if (fileName.canFind(q) || sha1.canFind(q)) {
             filtered.put(row);
         }
