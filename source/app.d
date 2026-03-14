@@ -16,6 +16,7 @@ import gtk.Label;
 import gtk.Button;
 import gtk.Separator;
 import gtk.Entry;
+import gtk.Spinner;
 import gtk.ScrolledWindow;
 import gtk.TextView;
 import gtk.TreeView;
@@ -36,8 +37,11 @@ import gtk.CheckButton;
 import gtk.AboutDialog;
 import gtk.MessageDialog;
 import gtk.c.types : Orientation, DialogFlags, ResponseType, ButtonsType, MessageType;
+import glib.Idle;
 import gobject.Type : GType;
 
+import core.thread : Thread;
+import core.time : MonoTime;
 import std.file : exists, readText;
 import std.format : format;
 import std.json : parseJSON;
@@ -69,6 +73,16 @@ struct CliOptions {
     bool caseSensitiveFilter;
     bool disableAutoFilter;
     bool showHelp;
+}
+
+/** Worker result payload for background JSON loading. */
+struct AsyncLoadResult {
+    BlobRow[] allRows;
+    size_t duplicateGroups;
+    string filePath;
+    bool duplicatesOnly;
+    string error;
+    long elapsedMs;
 }
 
 /** Return human-readable CLI usage text. */
@@ -220,6 +234,10 @@ int main(string[] args) {
     auto btnLoad = new Button("Load JSON");
     auto btnLoadDupes = new Button("Load Duplicates Only");
     auto btnReload = new Button("Reload");
+    auto btnCancelLoad = new Button("Cancel");
+    btnCancelLoad.setSensitive(false);
+    auto loadSpinner = new Spinner();
+    loadSpinner.setVisible(false);
 
     auto filterEntry = new Entry();
     filterEntry.setHexpand(true);
@@ -232,6 +250,8 @@ int main(string[] args) {
     toolbar.packStart(btnLoad, false, false, 0);
     toolbar.packStart(btnLoadDupes, false, false, 0);
     toolbar.packStart(btnReload, false, false, 0);
+    toolbar.packStart(btnCancelLoad, false, false, 0);
+    toolbar.packStart(loadSpinner, false, false, 0);
     toolbar.packStart(filterEntry, true, true, 0);
     toolbar.packStart(btnApplyFilter, false, false, 0);
     toolbar.packStart(btnClearFilter, false, false, 0);
@@ -282,6 +302,10 @@ int main(string[] args) {
     bool prefDefaultDuplicatesOnly = false;
     bool prefAutoApplyFilter = true;
     bool prefCaseSensitiveFilter = false;
+    bool isLoading;
+    ulong loadRequestId;
+    ulong renderRequestId;
+    long pendingLoadElapsedMs = -1;
 
     if (cli.disableAutoFilter) {
         prefAutoApplyFilter = false;
@@ -299,6 +323,32 @@ int main(string[] args) {
         filterEntry.setText(cli.filterOnStart);
     }
 
+    void setLoadingState(bool loading, string message = "") {
+        isLoading = loading;
+
+        pathEntry.setSensitive(!loading);
+        btnLoad.setSensitive(!loading);
+        btnLoadDupes.setSensitive(!loading);
+        btnReload.setSensitive(!loading);
+        btnCancelLoad.setSensitive(loading);
+        filterEntry.setSensitive(!loading);
+        btnApplyFilter.setSensitive(!loading);
+        btnClearFilter.setSensitive(!loading);
+
+        if (loading) {
+            loadSpinner.setVisible(true);
+            loadSpinner.start();
+            status.setText(message.length > 0 ? message : "Loading...");
+            return;
+        }
+
+        loadSpinner.stop();
+        loadSpinner.setVisible(false);
+        if (message.length > 0) {
+            status.setText(message);
+        }
+    }
+
     void renderRows(const(BlobRow)[] rows, string filterLabel = "") {
         if (loadedFilePath.length == 0) {
             tableStore.clear();
@@ -309,31 +359,87 @@ int main(string[] args) {
             return;
         }
 
-        populateTableRows(tableStore, rows);
-        visibleRows = rows.dup;
+        auto rowsCopy = rows.dup;
+        auto localRenderRequestId = ++renderRequestId;
+        enum size_t RENDER_BATCH_SIZE = 500;
+
+        tableStore.clear();
+        visibleRows = [];
         rowDetails.setText("Selection: none");
         detailsView.getBuffer().setText("No row selected.");
-        auto mode = loadedDuplicatesOnly ? "duplicates" : "all";
-        if (filterLabel.length > 0) {
-            status.setText(format(
-                "Showing %s/%s rows (%s mode, duplicate digest groups: %s, filter: %s, case-sensitive: %s)",
-                rows.length,
-                loadedRows.length,
-                mode,
-                loadedDuplicateGroups,
-                filterLabel,
-                prefCaseSensitiveFilter ? "yes" : "no"
-            ));
-            return;
-        }
 
-        status.setText(format(
-            "Showing %s/%s rows (%s mode, duplicate digest groups: %s)",
-            rows.length,
-            loadedRows.length,
-            mode,
-            loadedDuplicateGroups
-        ));
+        size_t nextIndex = 0;
+        bool delegate() renderStep;
+        renderStep = {
+            if (localRenderRequestId != renderRequestId) {
+                return false;
+            }
+
+            auto endIndex = nextIndex + RENDER_BATCH_SIZE;
+            if (endIndex > rowsCopy.length) {
+                endIndex = rowsCopy.length;
+            }
+
+            foreach (idx; nextIndex .. endIndex) {
+                auto row = rowsCopy[idx];
+                auto indexText = to!string(idx + 1);
+                auto sizeText = to!string(row.fileSize);
+                auto filesText = to!string(row.fileCount);
+                auto mediaText = row.hasMedia ? "yes" : "no";
+                auto shaText = row.sha1.length > 0 ? row.sha1 : "-";
+                auto fileText = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
+
+                TreeIter iter;
+                tableStore.append(iter);
+                tableStore.set(
+                    iter,
+                    [COL_INDEX, COL_FILE_SIZE, COL_FILE_COUNT, COL_HAS_MEDIA, COL_SHA1, COL_FILE_NAME],
+                    [indexText, sizeText, filesText, mediaText, shaText, fileText]
+                );
+            }
+
+            nextIndex = endIndex;
+            if (nextIndex < rowsCopy.length) {
+                status.setText(format("Rendering rows: %s/%s ...", nextIndex, rowsCopy.length));
+                return true;
+            }
+
+            visibleRows = rowsCopy.dup;
+            auto mode = loadedDuplicatesOnly ? "duplicates" : "all";
+            string baseStatus;
+            if (filterLabel.length > 0) {
+                baseStatus = format(
+                    "Showing %s/%s rows (%s mode, duplicate digest groups: %s, filter: %s, case-sensitive: %s)",
+                    rowsCopy.length,
+                    loadedRows.length,
+                    mode,
+                    loadedDuplicateGroups,
+                    filterLabel,
+                    prefCaseSensitiveFilter ? "yes" : "no"
+                );
+            } else {
+                baseStatus = format(
+                    "Showing %s/%s rows (%s mode, duplicate digest groups: %s)",
+                    rowsCopy.length,
+                    loadedRows.length,
+                    mode,
+                    loadedDuplicateGroups
+                );
+            }
+
+            if (pendingLoadElapsedMs >= 0) {
+                baseStatus = format("%s | load time: %s ms", baseStatus, pendingLoadElapsedMs);
+                pendingLoadElapsedMs = -1;
+            }
+
+            if (isLoading) {
+                setLoadingState(false);
+            }
+            status.setText(baseStatus);
+            return false;
+        };
+
+        new Idle(renderStep);
     }
 
     void updateSelectedRowDetails() {
@@ -397,6 +503,11 @@ int main(string[] args) {
     }
 
     void applyFilterFromEntry() {
+        if (isLoading) {
+            status.setText("Load in progress. Please wait before filtering.");
+            return;
+        }
+
         if (loadedRows.length == 0) {
             status.setText("No loaded rows to filter.");
             return;
@@ -407,6 +518,11 @@ int main(string[] args) {
     }
 
     void loadFromPath(bool duplicatesOnly = false) {
+        if (isLoading) {
+            status.setText("A load is already in progress.");
+            return;
+        }
+
         auto filePath = pathEntry.getText();
         if (!exists(filePath)) {
             status.setText(format("File not found: %s", filePath));
@@ -414,24 +530,73 @@ int main(string[] args) {
             return;
         }
 
-        try {
-            auto content = readText(filePath);
-            auto parsed = parseJSON(content);
-            auto allRows = extractRowsFromRoot(parsed);
-            loadedDuplicateGroups = countDuplicateDigestGroups(allRows);
-            loadedRows = duplicatesOnly ? filterDuplicateRows(allRows) : allRows;
-            loadedFilePath = filePath;
-            loadedDuplicatesOnly = duplicatesOnly;
+        auto requestId = ++loadRequestId;
+        setLoadingState(true, format("Loading %s ...", filePath));
 
-            if (prefAutoApplyFilter && filterEntry.getText().length > 0) {
-                applyFilterFromEntry();
-            } else {
-                renderRows(loadedRows);
+        auto worker = new Thread({
+            MonoTime started = MonoTime.currTime;
+
+            AsyncLoadResult result;
+            result.filePath = filePath;
+            result.duplicatesOnly = duplicatesOnly;
+
+            try {
+                auto content = readText(filePath);
+                auto parsed = parseJSON(content);
+                result.allRows = extractRowsFromRoot(parsed);
+                result.duplicateGroups = countDuplicateDigestGroups(result.allRows);
+            } catch (Exception ex) {
+                result.error = ex.msg;
             }
-        } catch (Exception ex) {
-            tableStore.clear();
-            status.setText(format("Failed to parse JSON: %s", ex.msg));
+
+            result.elapsedMs = cast(long) (MonoTime.currTime - started).total!"msecs";
+
+            new Idle({
+                if (requestId != loadRequestId) {
+                    return false;
+                }
+
+                if (result.error.length > 0) {
+                    tableStore.clear();
+                    loadedRows = [];
+                    visibleRows = [];
+                    loadedFilePath = "";
+                    pendingLoadElapsedMs = -1;
+                    rowDetails.setText("Selection: none");
+                    detailsView.getBuffer().setText("No row selected.");
+                    setLoadingState(false, format("Failed to parse JSON: %s", result.error));
+                    return false;
+                }
+
+                loadedDuplicateGroups = result.duplicateGroups;
+                loadedRows = result.duplicatesOnly ? filterDuplicateRows(result.allRows) : result.allRows;
+                loadedFilePath = result.filePath;
+                loadedDuplicatesOnly = result.duplicatesOnly;
+                pendingLoadElapsedMs = result.elapsedMs;
+
+                if (prefAutoApplyFilter && filterEntry.getText().length > 0) {
+                    applyFilterFromEntry();
+                } else {
+                    renderRows(loadedRows);
+                }
+                return false;
+            });
+        });
+
+        worker.start();
+    }
+
+    void cancelPendingLoad() {
+        if (!isLoading) {
+            status.setText("No load in progress.");
+            return;
         }
+
+        // Invalidate both pending load and any in-progress batched render.
+        ++loadRequestId;
+        ++renderRequestId;
+        pendingLoadElapsedMs = -1;
+        setLoadingState(false, "Load cancelled. Background result will be discarded.");
     }
 
     void showPreferencesDialog() {
@@ -582,6 +747,10 @@ int main(string[] args) {
 
     btnReload.addOnClicked((Button _) {
         loadFromPath(loadedDuplicatesOnly);
+    });
+
+    btnCancelLoad.addOnClicked((Button _) {
+        cancelPendingLoad();
     });
 
     btnApplyFilter.addOnClicked((Button _) {

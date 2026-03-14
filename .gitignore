@@ -2,6 +2,7 @@
 build/
 .dub/
 public/
+.filescanner.json
 
 # Editor/OS noise
 .DS_Store
