@@ -32,6 +32,8 @@ import std.file : exists, readText;
 import std.format : format;
 import std.json : parseJSON;
 import std.conv : to;
+import std.getopt : getopt, config;
+import std.stdio : writeln;
 
 import io.dosierjson : extractRowsFromRoot;
 import model.blobrow : BlobRow;
@@ -46,6 +48,57 @@ enum int COL_HAS_MEDIA = 3;
 enum int COL_SHA1 = 4;
 enum int COL_FILE_NAME = 5;
 enum int COL_COUNT = 6;
+
+struct CliOptions {
+    string jsonPath = DEFAULT_JSON_PATH;
+    bool jsonPathProvided;
+    bool loadOnStart;
+    bool duplicatesOnStart;
+    string filterOnStart;
+    bool caseSensitiveFilter;
+    bool disableAutoFilter;
+    bool showHelp;
+}
+
+string cliUsageText() {
+    return
+        "DosierSkanilo GUI\n" ~
+        "\n" ~
+        "Usage:\n" ~
+        "  dosierskanilo-gui [options]\n" ~
+        "\n" ~
+        "Options:\n" ~
+        "  -j, --json <file>         JSON file to open\n" ~
+        "  -l, --load                Load on startup\n" ~
+        "  -d, --duplicates          Load duplicate-only view on startup\n" ~
+        "  -q, --query <text>        Apply initial text filter\n" ~
+        "      --case-sensitive      Use case-sensitive text filtering\n" ~
+        "      --no-auto-filter      Disable auto filter after load\n" ~
+        "  -h, --help                Show this help text\n";
+}
+
+CliOptions parseCliOptions(ref string[] args) {
+    CliOptions opts;
+
+    getopt(
+        args,
+        config.passThrough,
+        "j|json", &opts.jsonPath,
+        "l|load", &opts.loadOnStart,
+        "d|duplicates", &opts.duplicatesOnStart,
+        "q|query", &opts.filterOnStart,
+        "case-sensitive", &opts.caseSensitiveFilter,
+        "no-auto-filter", &opts.disableAutoFilter,
+        "h|help", &opts.showHelp
+    );
+
+    opts.jsonPathProvided = opts.jsonPath != DEFAULT_JSON_PATH;
+    if (opts.jsonPathProvided) {
+        opts.loadOnStart = true;
+    }
+
+    return opts;
+}
 
 void configureTableColumns(TreeView treeView) {
     void addTextColumn(string title, int modelColumn) {
@@ -92,6 +145,12 @@ void populateTableRows(ListStore store, const(BlobRow)[] rows) {
 }
 
 int main(string[] args) {
+    auto cli = parseCliOptions(args);
+    if (cli.showHelp) {
+        writeln(cliUsageText());
+        return 0;
+    }
+
     Main.init(args);
 
     auto window = new Window("DosierSkanilo GUI");
@@ -171,7 +230,21 @@ int main(string[] args) {
     bool prefAutoApplyFilter = true;
     bool prefCaseSensitiveFilter = false;
 
+    if (cli.disableAutoFilter) {
+        prefAutoApplyFilter = false;
+    }
+    if (cli.caseSensitiveFilter) {
+        prefCaseSensitiveFilter = true;
+    }
+
     auto menuBar = new MenuBar();
+
+    if (cli.jsonPath.length > 0) {
+        pathEntry.setText(cli.jsonPath);
+    }
+    if (cli.filterOnStart.length > 0) {
+        filterEntry.setText(cli.filterOnStart);
+    }
 
     void renderRows(const(BlobRow)[] rows, string filterLabel = "") {
         if (loadedFilePath.length == 0) {
@@ -452,6 +525,10 @@ int main(string[] args) {
 
     window.add(root);
     window.showAll();
+
+    if (cli.loadOnStart) {
+        loadFromPath(cli.duplicatesOnStart || prefDefaultDuplicatesOnly);
+    }
 
     Main.run();
     return 0;

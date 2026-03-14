@@ -4,6 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Added command-line options for opening a file, pre-setting a filter, or auto-loading records when the application starts.
 - Added VS Code build and test tasks, and an automated API documentation build using ADRDox.
 - Added project documentation (README, architecture notes, TODO list) and a continuous integration pipeline with automated build and test checks.
 - Added a detail section below the table showing key fields for the currently selected record.
