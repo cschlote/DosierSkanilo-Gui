@@ -1,0 +1,9 @@
+# DUB build artifacts
+build/
+.dub/
+
+# Editor/OS noise
+.DS_Store
+*.swp
+*.swo
+.vscode/settings.json

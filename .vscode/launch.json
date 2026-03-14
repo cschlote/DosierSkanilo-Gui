@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Launch DosierSkanilo GUI (CodeLLDB)",
+      "program": "${workspaceFolder}/build/bin/dosierskanilo-gui",
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

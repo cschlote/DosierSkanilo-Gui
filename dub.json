@@ -1,0 +1,18 @@
+{
+  "targetType": "executable",
+  "name": "dosierskanilo-gui",
+  "targetPath": "build/bin",
+  "description": "GTKD GUI for browsing DosierSkanilo JSON data files.",
+  "authors": [
+    "Carsten Schlote"
+  ],
+  "copyright": "Created 2026, Carsten Schlote",
+  "license": "CC-BY-NC-SA 4.0",
+  "dependencies": {
+    "gtk-d:gtkd": "~>3.11.0"
+  },
+  "mainSourceFile": "source/app.d",
+  "sourcePaths": [
+    "source"
+  ]
+}
