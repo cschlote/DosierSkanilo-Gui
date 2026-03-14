@@ -23,4 +23,13 @@ Or run stages individually:
 ./scripts/lint.sh
 ./scripts/build.sh
 ./scripts/test.sh
+./scripts/build-docs.sh
+```
+
+## Debugging With Startup Arguments
+
+Example debug launch from terminal:
+
+```bash
+./build/bin/dosierskanilo-gui --json ./.filescanner.json --load --duplicates
 ```

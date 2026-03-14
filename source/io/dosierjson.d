@@ -1,3 +1,12 @@
+/** JSON extraction helpers for DosierSkanilo scan files.
+ *
+ * This module normalizes legacy and wrapper JSON variants into `BlobRow`
+ * projections used by the GUI. It intentionally performs tolerant extraction so
+ * partially populated archives can still be displayed.
+ *
+ * Authors: DosierSkanilo contributors
+ * License: CC-BY-NC-SA 4.0
+ */
 module io.dosierjson;
 
 import std.array : appender;
@@ -5,6 +14,13 @@ import std.json : JSONType, JSONValue;
 
 import model.blobrow;
 
+/** Convert a JSON number node into `ulong`.
+ *
+ * Params:
+ *   value = JSON value expected to be numeric
+ * Returns:
+ *   Numeric value converted to `ulong`, or `0` for non-numeric nodes
+ */
 ulong jsonAsULong(JSONValue value) {
     if (value.type == JSONType.integer) {
         return cast(ulong) value.integer;
@@ -18,6 +34,13 @@ ulong jsonAsULong(JSONValue value) {
     return 0;
 }
 
+/** Pick the first filename from a `fileSpecs` array.
+ *
+ * Params:
+ *   specs = JSON array containing object entries with optional `fileName`
+ * Returns:
+ *   The first available filename, or empty string when none is found
+ */
 string firstFileNameFromSpecs(JSONValue[] specs) {
     foreach (spec; specs) {
         if (spec.type != JSONType.object) {
@@ -31,6 +54,18 @@ string firstFileNameFromSpecs(JSONValue[] specs) {
     return "";
 }
 
+/** Map a single blob JSON object into a GUI row projection.
+ *
+ * The mapper supports modern and legacy fields:
+ * - digest via `checkSums.sha1sum_b64` and top-level fallback
+ * - file refs via `fileSpecs`, `fileNames`, or `fileName`
+ * - media flags via `mediaInfoSig` or legacy `mediaInfo`
+ *
+ * Params:
+ *   objValue = JSON object node representing one blob entry
+ * Returns:
+ *   Normalized `BlobRow` instance
+ */
 BlobRow rowFromJsonObject(JSONValue objValue) {
     BlobRow row;
     if (objValue.type != JSONType.object) {
@@ -83,6 +118,17 @@ BlobRow rowFromJsonObject(JSONValue objValue) {
     return row;
 }
 
+/** Extract all blob rows from the JSON root object.
+ *
+ * Supported root shapes:
+ * - legacy plain array
+ * - wrapper object containing `dataArray`
+ *
+ * Params:
+ *   root = parsed JSON root node
+ * Returns:
+ *   Array of normalized `BlobRow` entries
+ */
 BlobRow[] extractRowsFromRoot(JSONValue root) {
     JSONValue[] blobs;
 

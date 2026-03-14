@@ -1,3 +1,11 @@
+/** Main GTK application shell for DosierSkanilo GUI.
+ *
+ * This module wires together command-line startup options, JSON loading,
+ * row-table rendering, and classic desktop menu actions.
+ *
+ * Authors: DosierSkanilo contributors
+ * License: CC-BY-NC-SA 4.0
+ */
 module app;
 
 import gtk.Main;
@@ -49,6 +57,7 @@ enum int COL_SHA1 = 4;
 enum int COL_FILE_NAME = 5;
 enum int COL_COUNT = 6;
 
+/** Parsed startup options from command-line arguments. */
 struct CliOptions {
     string jsonPath = DEFAULT_JSON_PATH;
     bool jsonPathProvided;
@@ -60,6 +69,7 @@ struct CliOptions {
     bool showHelp;
 }
 
+/** Return human-readable CLI usage text. */
 string cliUsageText() {
     return
         "DosierSkanilo GUI\n" ~
@@ -77,6 +87,13 @@ string cliUsageText() {
         "  -h, --help                Show this help text\n";
 }
 
+/** Parse CLI arguments into startup option flags.
+ *
+ * Params:
+ *   args = command-line argument array (in/out for getopt)
+ * Returns:
+ *   Parsed options with defaults applied
+ */
 CliOptions parseCliOptions(ref string[] args) {
     CliOptions opts;
 
@@ -100,6 +117,11 @@ CliOptions parseCliOptions(ref string[] args) {
     return opts;
 }
 
+/** Configure columns for the main result table.
+ *
+ * Params:
+ *   treeView = target tree view instance
+ */
 void configureTableColumns(TreeView treeView) {
     void addTextColumn(string title, int modelColumn) {
         auto renderer = new CellRendererText();
@@ -123,6 +145,12 @@ void configureTableColumns(TreeView treeView) {
     treeView.setHeadersClickable(true);
 }
 
+/** Populate GTK list store with projected blob rows.
+ *
+ * Params:
+ *   store = destination list model
+ *   rows = normalized rows to append
+ */
 void populateTableRows(ListStore store, const(BlobRow)[] rows) {
     store.clear();
 
@@ -144,6 +172,13 @@ void populateTableRows(ListStore store, const(BlobRow)[] rows) {
     }
 }
 
+/** Program entry point.
+ *
+ * Params:
+ *   args = process command-line arguments
+ * Returns:
+ *   exit code
+ */
 int main(string[] args) {
     auto cli = parseCliOptions(args);
     if (cli.showHelp) {

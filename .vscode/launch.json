@@ -6,7 +6,34 @@
       "request": "launch",
       "name": "Launch DosierSkanilo GUI (CodeLLDB)",
       "program": "${workspaceFolder}/build/bin/dosierskanilo-gui",
-      "args": [ "-j", "/run/media/cschlote/nas-video/Filme/.filescanner.json"],
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Launch GUI: Auto-load Local Index",
+      "program": "${workspaceFolder}/build/bin/dosierskanilo-gui",
+      "args": [
+        "--json",
+        "./.filescanner.json",
+        "--load"
+      ],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Launch GUI: Auto-load + Duplicates + Filter",
+      "program": "${workspaceFolder}/build/bin/dosierskanilo-gui",
+      "args": [
+        "--json",
+        "./.filescanner.json",
+        "--load",
+        "--duplicates",
+        "--query",
+        "sample"
+      ],
       "cwd": "${workspaceFolder}"
     }
   ]

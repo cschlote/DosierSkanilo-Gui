@@ -23,6 +23,22 @@ dub build --compiler=ldc2
 ./build/bin/dosierskanilo-gui
 ```
 
+With startup arguments:
+
+```bash
+./build/bin/dosierskanilo-gui --json ./.filescanner.json --load
+```
+
+## CLI Options
+
+- `-j`, `--json <file>`: JSON file to open
+- `-l`, `--load`: load on startup
+- `-d`, `--duplicates`: start in duplicate-only mode
+- `-q`, `--query <text>`: apply initial text filter
+- `--case-sensitive`: case-sensitive filter matching
+- `--no-auto-filter`: disable auto-apply filter after load
+- `-h`, `--help`: print CLI help and exit
+
 ## Current Features
 
 - load JSON index file

@@ -17,7 +17,20 @@ This document describes the current architecture of `DosierSkanilo-Gui`.
 - `source/io/dosierjson.d`: JSON extraction/normalization
 - `source/view/textreport.d`: filtering and helper transformations
 
-## 3. UI Composition
+## 3. Startup CLI Layer
+
+`source/app.d` includes a `std.getopt`-based startup parser that can preload the
+GUI state for debugging and scripted launches.
+
+Supported startup controls include:
+
+- input JSON file
+- startup auto-load
+- duplicate-only mode
+- initial filter text
+- case sensitivity and auto-filter toggles
+
+## 4. UI Composition
 
 - classic menu bar
   - `File`: open, reload, quit
@@ -27,7 +40,7 @@ This document describes the current architecture of `DosierSkanilo-Gui`.
 - main `TreeView` table for rows
 - status line and selection detail line
 
-## 4. Design Principles
+## 5. Design Principles
 
 - keep parser compatibility logic outside GTK glue code
 - keep UI actions mapped to reusable helper functions
