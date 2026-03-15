@@ -1783,18 +1783,34 @@ int main(string[] args) {
     window.showAll();
 
     if (loadedState.hasWindowSize) {
-        auto restoredX = 0;
-        auto restoredY = 0;
         auto restoredWidth = loadedState.windowWidth;
         auto restoredHeight = loadedState.windowHeight;
-        clampWindowGeometryToVisibleArea(
-            restoredX,
-            restoredY,
-            restoredWidth,
-            restoredHeight,
-            -1
-        );
+
+        if (restoredWidth < 640) {
+            restoredWidth = 640;
+        }
+        if (restoredHeight < 400) {
+            restoredHeight = 400;
+        }
+
+        // Initial apply right after widgets are visible.
         new Idle({
+            window.resize(restoredWidth, restoredHeight);
+            lastKnownWindowWidth = restoredWidth;
+            lastKnownWindowHeight = restoredHeight;
+            return false;
+        });
+
+        // XFCE can apply its own first configure cycle after map; enforce once more.
+        new Timeout(120, {
+            window.resize(restoredWidth, restoredHeight);
+            lastKnownWindowWidth = restoredWidth;
+            lastKnownWindowHeight = restoredHeight;
+            return false;
+        });
+
+        // Second delayed pass to win late WM adjustments.
+        new Timeout(320, {
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
             lastKnownWindowHeight = restoredHeight;
