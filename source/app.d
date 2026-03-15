@@ -35,9 +35,10 @@ import gtk.SeparatorMenuItem;
 import gtk.AccelGroup;
 import gtk.Dialog;
 import gtk.CheckButton;
+import gtk.FileChooserDialog;
 import gtk.AboutDialog;
 import gtk.MessageDialog;
-import gtk.c.types : Orientation, DialogFlags, ResponseType, ButtonsType, MessageType;
+import gtk.c.types : Orientation, DialogFlags, ResponseType, ButtonsType, MessageType, FileChooserAction;
 import glib.Idle;
 import glib.Timeout;
 import gobject.Type : GType;
@@ -72,7 +73,10 @@ enum int COL_MD5 = 6;
 enum int COL_SHA1 = 7;
 enum int COL_XXH64 = 8;
 enum int COL_FILE_NAME = 9;
-enum int COL_COUNT = 10;
+enum int COL_INDEX_SORT = 10;
+enum int COL_FILE_SIZE_SORT = 11;
+enum int COL_FILE_COUNT_SORT = 12;
+enum int COL_COUNT = 13;
 
 /** Parsed startup options from command-line arguments. */
 struct CliOptions {
@@ -162,21 +166,21 @@ CliOptions parseCliOptions(ref string[] args) {
  *   treeView = target tree view instance
  */
 void configureTableColumns(TreeView treeView) {
-    void addTextColumn(string title, int modelColumn) {
+    void addTextColumn(string title, int modelColumn, int sortColumn = -1) {
         auto renderer = new CellRendererText();
         auto column = new TreeViewColumn();
         column.setTitle(title);
         column.packStart(renderer, true);
         column.addAttribute(renderer, "text", modelColumn);
-        column.setSortColumnId(modelColumn);
+        column.setSortColumnId(sortColumn >= 0 ? sortColumn : modelColumn);
         column.setResizable(true);
         column.setClickable(true);
         treeView.appendColumn(column);
     }
 
-    addTextColumn("#", COL_INDEX);
-    addTextColumn("Size", COL_FILE_SIZE);
-    addTextColumn("Files", COL_FILE_COUNT);
+    addTextColumn("#", COL_INDEX, COL_INDEX_SORT);
+    addTextColumn("Size", COL_FILE_SIZE, COL_FILE_SIZE_SORT);
+    addTextColumn("Files", COL_FILE_COUNT, COL_FILE_COUNT_SORT);
     addTextColumn("Media", COL_HAS_MEDIA);
     addTextColumn("Archive", COL_HAS_ARCHIVE);
     addTextColumn("Torrent", COL_HAS_TORRENT);
@@ -196,6 +200,10 @@ void configureTableColumns(TreeView treeView) {
  */
 void populateTableRows(ListStore store, const(BlobRow)[] rows) {
     store.clear();
+
+    string numericSortKey(ulong value) {
+        return format("%020d", value);
+    }
 
     foreach (idx, row; rows) {
         auto indexText = to!string(idx + 1);
@@ -223,7 +231,10 @@ void populateTableRows(ListStore store, const(BlobRow)[] rows) {
                 COL_MD5,
                 COL_SHA1,
                 COL_XXH64,
-                COL_FILE_NAME
+                COL_FILE_NAME,
+                COL_INDEX_SORT,
+                COL_FILE_SIZE_SORT,
+                COL_FILE_COUNT_SORT
             ],
             [
                 indexText,
@@ -235,7 +246,10 @@ void populateTableRows(ListStore store, const(BlobRow)[] rows) {
                 md5Text,
                 shaText,
                 xxh64Text,
-                fileText
+                fileText,
+                numericSortKey(to!ulong(idx + 1)),
+                numericSortKey(row.fileSize),
+                numericSortKey(to!ulong(row.fileCount))
             ]
         );
     }
@@ -321,6 +335,9 @@ int main(string[] args) {
         GType.STRING,
         GType.STRING,
         GType.STRING,
+        GType.STRING,
+        GType.STRING,
+        GType.STRING,
         GType.STRING
     ]);
     auto tableView = new TreeView(tableStore);
@@ -388,6 +405,7 @@ int main(string[] args) {
     bool prefDefaultDuplicatesOnly = false;
     bool prefAutoApplyFilter = true;
     bool prefCaseSensitiveFilter = false;
+    bool prefDetailsBelow;
     bool isLoading;
     ulong loadRequestId;
     ulong filterRequestId;
@@ -522,6 +540,22 @@ int main(string[] args) {
         detailsView.getBuffer().setText("No row selected.");
     }
 
+    void applyDetailsPanePreference() {
+        auto orientation = prefDetailsBelow ? Orientation.VERTICAL : Orientation.HORIZONTAL;
+        auto splitPosition = prefDetailsBelow ? 420 : 720;
+
+        content.remove(split);
+        auto updatedSplit = new Paned(orientation);
+        updatedSplit.add1(scroll);
+        updatedSplit.add2(detailsPane);
+        updatedSplit.setPosition(splitPosition);
+
+        split = updatedSplit;
+        content.packStart(split, true, true, 0);
+        content.reorderChild(split, 2);
+        split.showAll();
+    }
+
     void renderRows(const(BlobRow)[] rows, string filterLabel = "") {
         if (loadedFilePath.length == 0) {
             tableStore.clear();
@@ -569,6 +603,10 @@ int main(string[] args) {
                 auto xxh64Text = row.xxh64.length > 0 ? row.xxh64 : "-";
                 auto fileText = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
 
+                auto indexSortText = format("%020d", cast(ulong) idx + 1);
+                auto sizeSortText = format("%020d", row.fileSize);
+                auto filesSortText = format("%020d", cast(ulong) row.fileCount);
+
                 TreeIter iter;
                 tableStore.append(iter);
                 tableStore.set(
@@ -583,7 +621,10 @@ int main(string[] args) {
                         COL_MD5,
                         COL_SHA1,
                         COL_XXH64,
-                        COL_FILE_NAME
+                        COL_FILE_NAME,
+                        COL_INDEX_SORT,
+                        COL_FILE_SIZE_SORT,
+                        COL_FILE_COUNT_SORT
                     ],
                     [
                         indexText,
@@ -595,7 +636,10 @@ int main(string[] args) {
                         md5Text,
                         shaText,
                         xxh64Text,
-                        fileText
+                        fileText,
+                        indexSortText,
+                        sizeSortText,
+                        filesSortText
                     ]
                 );
             }
@@ -918,6 +962,37 @@ int main(string[] args) {
         worker.start();
     }
 
+    void chooseAndLoadPath(bool duplicatesOnly = false) {
+        if (isLoading) {
+            status.setText("A load is already in progress.");
+            return;
+        }
+
+        auto chooser = new FileChooserDialog(
+            "Open JSON",
+            window,
+            FileChooserAction.OPEN,
+            ["_Cancel", "_Open"],
+            [ResponseType.CANCEL, ResponseType.ACCEPT]
+        );
+
+        auto currentPath = pathEntry.getText();
+        if (currentPath.length > 0) {
+            chooser.setFilename(currentPath);
+        }
+
+        auto response = chooser.run();
+        if (response == cast(int) ResponseType.ACCEPT) {
+            auto selectedPath = chooser.getFilename();
+            if (selectedPath.length > 0) {
+                pathEntry.setText(selectedPath);
+                loadFromPath(duplicatesOnly);
+            }
+        }
+
+        chooser.destroy();
+    }
+
     void cancelPendingLoad() {
         if (!isLoading) {
             status.setText("No load in progress.");
@@ -955,9 +1030,13 @@ int main(string[] args) {
         auto optCaseSensitive = new CheckButton("Case-sensitive text filtering");
         optCaseSensitive.setActive(prefCaseSensitiveFilter);
 
+        auto optDetailsBelow = new CheckButton("Show details below list (instead of on the right)");
+        optDetailsBelow.setActive(prefDetailsBelow);
+
         prefsBox.packStart(optDefaultDupes, false, false, 0);
         prefsBox.packStart(optAutoApply, false, false, 0);
         prefsBox.packStart(optCaseSensitive, false, false, 0);
+        prefsBox.packStart(optDetailsBelow, false, false, 0);
         contentArea.packStart(prefsBox, true, true, 0);
 
         dialog.showAll();
@@ -967,6 +1046,11 @@ int main(string[] args) {
             prefDefaultDuplicatesOnly = optDefaultDupes.getActive();
             prefAutoApplyFilter = optAutoApply.getActive();
             prefCaseSensitiveFilter = optCaseSensitive.getActive();
+            auto oldDetailsBelow = prefDetailsBelow;
+            prefDetailsBelow = optDetailsBelow.getActive();
+            if (prefDetailsBelow != oldDetailsBelow) {
+                applyDetailsPanePreference();
+            }
             status.setText("Preferences saved.");
         }
 
@@ -1010,11 +1094,11 @@ int main(string[] args) {
     fileMenuItem.setSubmenu(fileMenu);
 
     auto fileOpen = new MenuItem((MenuItem _) {
-        loadFromPath(prefDefaultDuplicatesOnly);
+        chooseAndLoadPath(prefDefaultDuplicatesOnly);
     }, "_Open JSON", "file.open", true, accelGroup, 'o');
 
     auto fileOpenDupes = new MenuItem((MenuItem _) {
-        loadFromPath(true);
+        chooseAndLoadPath(true);
     }, "Open _Duplicates Only", "file.open.dupes", true, accelGroup, 'd');
 
     auto fileReload = new MenuItem((MenuItem _) {
