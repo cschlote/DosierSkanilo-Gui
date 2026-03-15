@@ -740,6 +740,7 @@ int main(string[] args) {
     int splitPositionVertical = loadedState.splitPositionVertical;
     int lastKnownWindowWidth = loadedState.windowWidth;
     int lastKnownWindowHeight = loadedState.windowHeight;
+    Timeout windowSizePersistTimer;
     bool isLoading;
     ulong loadRequestId;
     ulong filterRequestId;
@@ -1772,6 +1773,17 @@ int main(string[] args) {
         if (allocation.width > 0 && allocation.height > 0) {
             lastKnownWindowWidth = allocation.width;
             lastKnownWindowHeight = allocation.height;
+
+            // Persist size shortly after resize settles, independent of quit path.
+            if (windowSizePersistTimer !is null) {
+                windowSizePersistTimer.stop();
+                windowSizePersistTimer = null;
+            }
+            windowSizePersistTimer = new Timeout(350, {
+                persistCurrentState(clearSavedWindowGeometryOnExit);
+                windowSizePersistTimer = null;
+                return false;
+            });
         }
     });
 
@@ -1802,6 +1814,7 @@ int main(string[] args) {
 
         // Initial apply right after widgets are visible.
         new Idle({
+            window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
             lastKnownWindowHeight = restoredHeight;
@@ -1810,6 +1823,7 @@ int main(string[] args) {
 
         // XFCE can apply its own first configure cycle after map; enforce once more.
         new Timeout(120, {
+            window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
             lastKnownWindowHeight = restoredHeight;
@@ -1818,6 +1832,7 @@ int main(string[] args) {
 
         // Second delayed pass to win late WM adjustments.
         new Timeout(320, {
+            window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
             lastKnownWindowHeight = restoredHeight;
@@ -1826,6 +1841,16 @@ int main(string[] args) {
 
         // Some WMs settle size after initial composition; enforce a final pass.
         new Timeout(700, {
+            window.setDefaultSize(restoredWidth, restoredHeight);
+            window.resize(restoredWidth, restoredHeight);
+            lastKnownWindowWidth = restoredWidth;
+            lastKnownWindowHeight = restoredHeight;
+            return false;
+        });
+
+        // Final late pass to override very late WM/session adjustments.
+        new Timeout(1500, {
+            window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
             lastKnownWindowHeight = restoredHeight;
