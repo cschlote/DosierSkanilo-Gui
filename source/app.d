@@ -605,19 +605,29 @@ int main(string[] args) {
             "Selected Row Details\n\n" ~
             "Index: %s\n" ~
             "Primary file: %s\n" ~
+            "All file references: %s\n" ~
             "File size: %s bytes\n" ~
             "File references: %s\n" ~
+            "MD5 (base64): %s\n" ~
             "SHA1 (base64): %s\n" ~
+            "xxh64 (base64): %s\n" ~
             "File type: %s\n" ~
             "Has media metadata: %s\n" ~
+            "Has archive metadata: %s\n" ~
+            "Has torrent metadata: %s\n" ~
             "Loaded source: %s\n",
             idx,
             row.primaryFileName.length > 0 ? row.primaryFileName : "-",
+            row.fileNamesSummary.length > 0 ? row.fileNamesSummary : "-",
             row.fileSize,
             row.fileCount,
+            row.md5.length > 0 ? row.md5 : "-",
             row.sha1.length > 0 ? row.sha1 : "-",
+            row.xxh64.length > 0 ? row.xxh64 : "-",
             row.fileType.length > 0 ? row.fileType : "-",
             row.hasMedia ? "yes" : "no",
+            row.hasArchive ? "yes" : "no",
+            row.hasTorrent ? "yes" : "no",
             loadedFilePath.length > 0 ? loadedFilePath : "-"
         );
         selectedDetailsText = detailsText;

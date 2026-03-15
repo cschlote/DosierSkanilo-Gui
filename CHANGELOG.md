@@ -4,6 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Extended the record detail view with additional checksums (MD5, xxHash64), the full list of referenced filenames, and archive/torrent availability indicators.
 - Added clipboard copy buttons in the detail panel for copying the checksum, filename, or complete record details with one click.
 - Removed redundant title and description labels from the window header to reduce visual clutter.
 - Added a performance counter at the bottom of the window showing how long the last load, filter, and render operations took, with an Edit menu option to reset it.

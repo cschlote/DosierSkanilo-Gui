@@ -10,6 +10,7 @@
 module io.dosierjson;
 
 import std.array : appender;
+import std.string : join;
 import std.json : JSONType, JSONValue;
 
 import model.blobrow;
@@ -54,12 +55,38 @@ string firstFileNameFromSpecs(JSONValue[] specs) {
     return "";
 }
 
+/** Collect all filename values from a `fileSpecs` array.
+ *
+ * Params:
+ *   specs = JSON array containing object entries with optional `fileName`
+ * Returns:
+ *   Array of extracted filename values
+ */
+string[] allFileNamesFromSpecs(JSONValue[] specs) {
+    auto names = appender!(string[])();
+    foreach (spec; specs) {
+        if (spec.type != JSONType.object) {
+            continue;
+        }
+
+        auto obj = spec.object;
+        if ("fileName" in obj) {
+            auto value = (*("fileName" in obj)).str;
+            if (value.length > 0) {
+                names.put(value);
+            }
+        }
+    }
+    return names.data;
+}
+
 /** Map a single blob JSON object into a GUI row projection.
  *
  * The mapper supports modern and legacy fields:
- * - digest via `checkSums.sha1sum_b64` and top-level fallback
+ * - digest via `checkSums.md5sum_b64|sha1sum_b64|xxh64sum_b64` and top-level fallback
  * - file refs via `fileSpecs`, `fileNames`, or `fileName`
  * - media flags via `mediaInfoSig` or legacy `mediaInfo`
+ * - feature flags via `archiveSpecs` and `torrentInfo`
  *
  * Params:
  *   objValue = JSON object node representing one blob entry
@@ -80,27 +107,54 @@ BlobRow rowFromJsonObject(JSONValue objValue) {
 
     if ("checkSums" in obj && (*("checkSums" in obj)).type == JSONType.object) {
         auto checksums = (*("checkSums" in obj)).object;
+        if ("md5sum_b64" in checksums) {
+            row.md5 = (*("md5sum_b64" in checksums)).str;
+        }
         if ("sha1sum_b64" in checksums) {
             row.sha1 = (*("sha1sum_b64" in checksums)).str;
         }
+        if ("xxh64sum_b64" in checksums) {
+            row.xxh64 = (*("xxh64sum_b64" in checksums)).str;
+        }
+    }
+
+    if (row.md5.length == 0 && "md5sum_b64" in obj) {
+        row.md5 = (*("md5sum_b64" in obj)).str;
     }
     if (row.sha1.length == 0 && "sha1sum_b64" in obj) {
         row.sha1 = (*("sha1sum_b64" in obj)).str;
+    }
+    if (row.xxh64.length == 0 && "xxh64sum_b64" in obj) {
+        row.xxh64 = (*("xxh64sum_b64" in obj)).str;
     }
 
     if ("fileSpecs" in obj && (*("fileSpecs" in obj)).type == JSONType.array) {
         auto specs = (*("fileSpecs" in obj)).array;
         row.fileCount = specs.length;
         row.primaryFileName = firstFileNameFromSpecs(specs);
+        row.fileNamesSummary = allFileNamesFromSpecs(specs).join(", ");
     } else if ("fileNames" in obj && (*("fileNames" in obj)).type == JSONType.array) {
         auto names = (*("fileNames" in obj)).array;
         row.fileCount = names.length;
+        auto collectedNames = appender!(string[])();
+        foreach (name; names) {
+            auto value = name.str;
+            if (value.length > 0) {
+                collectedNames.put(value);
+            }
+        }
         if (names.length > 0) {
             row.primaryFileName = names[0].str;
         }
+        row.fileNamesSummary = collectedNames.data.join(", ");
     } else if ("fileName" in obj) {
         row.primaryFileName = (*("fileName" in obj)).str;
         row.fileCount = row.primaryFileName.length == 0 ? 0 : 1;
+        row.fileNamesSummary = row.primaryFileName;
+    }
+
+    if (row.fileNamesSummary.length == 0 && row.primaryFileName.length > 0) {
+        row.fileNamesSummary = row.primaryFileName;
     }
 
     row.hasMedia = false;
@@ -113,6 +167,16 @@ BlobRow rowFromJsonObject(JSONValue objValue) {
 
     if ("fileType" in obj) {
         row.fileType = (*("fileType" in obj)).str;
+    }
+
+    row.hasArchive = false;
+    if ("archiveSpecs" in obj && (*("archiveSpecs" in obj)).type == JSONType.array) {
+        row.hasArchive = (*("archiveSpecs" in obj)).array.length > 0;
+    }
+
+    row.hasTorrent = false;
+    if ("torrentInfo" in obj && (*("torrentInfo" in obj)).type == JSONType.object) {
+        row.hasTorrent = true;
     }
 
     return row;
