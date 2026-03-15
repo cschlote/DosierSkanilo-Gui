@@ -50,6 +50,7 @@ import core.time : MonoTime;
 import std.file : exists, readText;
 import std.format : format;
 import std.json : parseJSON, JSONType;
+import std.base64 : Base64;
 import std.conv : to;
 import std.getopt : getopt, config;
 import std.stdio : writeln;
@@ -69,14 +70,12 @@ enum int COL_FILE_COUNT = 2;
 enum int COL_HAS_MEDIA = 3;
 enum int COL_HAS_ARCHIVE = 4;
 enum int COL_HAS_TORRENT = 5;
-enum int COL_MD5 = 6;
-enum int COL_SHA1 = 7;
-enum int COL_XXH64 = 8;
-enum int COL_FILE_NAME = 9;
-enum int COL_INDEX_SORT = 10;
-enum int COL_FILE_SIZE_SORT = 11;
-enum int COL_FILE_COUNT_SORT = 12;
-enum int COL_COUNT = 13;
+enum int COL_CHECKSUM_SET = 6;
+enum int COL_FILE_NAME = 7;
+enum int COL_INDEX_SORT = 8;
+enum int COL_FILE_SIZE_SORT = 9;
+enum int COL_FILE_COUNT_SORT = 10;
+enum int COL_COUNT = 11;
 
 /** Parsed startup options from command-line arguments. */
 struct CliOptions {
@@ -184,12 +183,48 @@ void configureTableColumns(TreeView treeView) {
     addTextColumn("Media", COL_HAS_MEDIA);
     addTextColumn("Archive", COL_HAS_ARCHIVE);
     addTextColumn("Torrent", COL_HAS_TORRENT);
-    addTextColumn("MD5 (base64)", COL_MD5);
-    addTextColumn("SHA1 (base64)", COL_SHA1);
-    addTextColumn("xxh64 (base64)", COL_XXH64);
+    addTextColumn("Checksums", COL_CHECKSUM_SET);
     addTextColumn("Primary file", COL_FILE_NAME);
 
     treeView.setHeadersClickable(true);
+}
+
+string checksumSetStatus(const(BlobRow) row) {
+    auto present = 0;
+    if (row.md5.length > 0) {
+        ++present;
+    }
+    if (row.sha1.length > 0) {
+        ++present;
+    }
+    if (row.xxh64.length > 0) {
+        ++present;
+    }
+
+    if (present == 0) {
+        return "none";
+    }
+    if (present == 3) {
+        return "full";
+    }
+    return format("partial (%s/3)", present);
+}
+
+string digestBase64ToHex(string digest) {
+    if (digest.length == 0) {
+        return "-";
+    }
+
+    try {
+        auto bytes = Base64.decode(digest);
+        auto builder = appender!string();
+        foreach (b; bytes) {
+            builder.put(format("%02x", b));
+        }
+        return builder.data;
+    } catch (Exception) {
+        return "<invalid base64>";
+    }
 }
 
 /** Populate GTK list store with projected blob rows.
@@ -212,9 +247,7 @@ void populateTableRows(ListStore store, const(BlobRow)[] rows) {
         auto mediaText = row.hasMedia ? "yes" : "no";
         auto archiveText = row.hasArchive ? "yes" : "no";
         auto torrentText = row.hasTorrent ? "yes" : "no";
-        auto md5Text = row.md5.length > 0 ? row.md5 : "-";
-        auto shaText = row.sha1.length > 0 ? row.sha1 : "-";
-        auto xxh64Text = row.xxh64.length > 0 ? row.xxh64 : "-";
+        auto checksumsText = checksumSetStatus(row);
         auto fileText = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
 
         TreeIter iter;
@@ -228,9 +261,7 @@ void populateTableRows(ListStore store, const(BlobRow)[] rows) {
                 COL_HAS_MEDIA,
                 COL_HAS_ARCHIVE,
                 COL_HAS_TORRENT,
-                COL_MD5,
-                COL_SHA1,
-                COL_XXH64,
+                COL_CHECKSUM_SET,
                 COL_FILE_NAME,
                 COL_INDEX_SORT,
                 COL_FILE_SIZE_SORT,
@@ -243,9 +274,7 @@ void populateTableRows(ListStore store, const(BlobRow)[] rows) {
                 mediaText,
                 archiveText,
                 torrentText,
-                md5Text,
-                shaText,
-                xxh64Text,
+                checksumsText,
                 fileText,
                 numericSortKey(to!ulong(idx + 1)),
                 numericSortKey(row.fileSize),
@@ -326,8 +355,6 @@ int main(string[] args) {
     toolbar.packStart(progressBar, true, true, 0);
 
     auto tableStore = new ListStore([
-        GType.STRING,
-        GType.STRING,
         GType.STRING,
         GType.STRING,
         GType.STRING,
@@ -598,9 +625,7 @@ int main(string[] args) {
                 auto mediaText = row.hasMedia ? "yes" : "no";
                 auto archiveText = row.hasArchive ? "yes" : "no";
                 auto torrentText = row.hasTorrent ? "yes" : "no";
-                auto md5Text = row.md5.length > 0 ? row.md5 : "-";
-                auto shaText = row.sha1.length > 0 ? row.sha1 : "-";
-                auto xxh64Text = row.xxh64.length > 0 ? row.xxh64 : "-";
+                auto checksumsText = checksumSetStatus(row);
                 auto fileText = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
 
                 auto indexSortText = format("%020d", cast(ulong) idx + 1);
@@ -618,9 +643,7 @@ int main(string[] args) {
                         COL_HAS_MEDIA,
                         COL_HAS_ARCHIVE,
                         COL_HAS_TORRENT,
-                        COL_MD5,
-                        COL_SHA1,
-                        COL_XXH64,
+                        COL_CHECKSUM_SET,
                         COL_FILE_NAME,
                         COL_INDEX_SORT,
                         COL_FILE_SIZE_SORT,
@@ -633,9 +656,7 @@ int main(string[] args) {
                         mediaText,
                         archiveText,
                         torrentText,
-                        md5Text,
-                        shaText,
-                        xxh64Text,
+                        checksumsText,
                         fileText,
                         indexSortText,
                         sizeSortText,
@@ -708,13 +729,15 @@ int main(string[] args) {
         auto size = model.getValueString(iter, COL_FILE_SIZE);
         auto files = model.getValueString(iter, COL_FILE_COUNT);
         auto media = model.getValueString(iter, COL_HAS_MEDIA);
+        auto checksums = model.getValueString(iter, COL_CHECKSUM_SET);
         auto fileName = model.getValueString(iter, COL_FILE_NAME);
         rowDetails.setText(format(
-            "Selection: #%s | size=%s | files=%s | media=%s | file=%s",
+            "Selection: #%s | size=%s | files=%s | media=%s | checksums=%s | file=%s",
             idx,
             size,
             files,
             media,
+            checksums,
             fileName
         ));
 
@@ -742,9 +765,13 @@ int main(string[] args) {
             "All file references: %s\n" ~
             "File size: %s bytes\n" ~
             "File references: %s\n" ~
+            "Checksum set: %s\n" ~
             "MD5 (base64): %s\n" ~
+            "MD5 (hex): %s\n" ~
             "SHA1 (base64): %s\n" ~
+            "SHA1 (hex): %s\n" ~
             "xxh64 (base64): %s\n" ~
+            "xxh64 (hex): %s\n" ~
             "File type: %s\n" ~
             "Has media metadata: %s\n" ~
             "Has archive metadata: %s\n" ~
@@ -757,9 +784,13 @@ int main(string[] args) {
             row.fileNamesSummary.length > 0 ? row.fileNamesSummary : "-",
             row.fileSize,
             row.fileCount,
+            checksumSetStatus(row),
             row.md5.length > 0 ? row.md5 : "-",
+            digestBase64ToHex(row.md5),
             row.sha1.length > 0 ? row.sha1 : "-",
+            digestBase64ToHex(row.sha1),
             row.xxh64.length > 0 ? row.xxh64 : "-",
+            digestBase64ToHex(row.xxh64),
             row.fileType.length > 0 ? row.fileType : "-",
             row.hasMedia ? "yes" : "no",
             row.hasArchive ? "yes" : "no",
