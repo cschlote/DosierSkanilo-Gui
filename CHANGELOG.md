@@ -29,7 +29,7 @@ All notable changes to this project are documented in this file.
 - Added the ability to open a scanner data file and browse all records in the main window.
 - The project was started with a basic GTK window, debugger support, and version control configuration.
 
-## 0.1.0
+## Release 0.1.0
 
 - Bootstrapped DUB project with GtkD integration
 - Added initial runnable GUI window
