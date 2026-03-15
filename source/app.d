@@ -674,7 +674,14 @@ int main(string[] args) {
     auto detailsView = new TextView();
     detailsView.setEditable(false);
     detailsView.setMonospace(true);
-    detailsView.getBuffer().setText("No row selected.");
+    detailsView.getBuffer().setText(
+        "No details selected yet.\n\n" ~
+        "Select a table row to populate this panel.\n\n" ~
+        "SHA1: <none>\n" ~
+        "File: <none>\n" ~
+        "Checksums: <none>\n" ~
+        "Media: <none>\n"
+    );
 
     auto detailsActions = new Box(Orientation.HORIZONTAL, 6);
     auto btnCopySha1 = new Button("Copy SHA1");
@@ -697,8 +704,9 @@ int main(string[] args) {
     detailsPane.packStart(detailsScroll, true, true, 0);
 
     auto split = new Paned(Orientation.HORIZONTAL);
-    split.add1(scroll);
-    split.add2(detailsPane);
+    split.pack1(scroll, true, true);
+    // Keep details pane from collapsing away entirely.
+    split.pack2(detailsPane, true, false);
     split.setPosition(loadedState.splitPositionHorizontal);
 
     auto status = new Label("Ready.");
@@ -864,7 +872,44 @@ int main(string[] args) {
         btnCopyFile.setSensitive(false);
         btnCopyDetails.setSensitive(false);
         rowDetails.setText("Selection: none");
-        detailsView.getBuffer().setText("No row selected.");
+        detailsView.getBuffer().setText(
+            "No details selected yet.\n\n" ~
+            "Select a table row to populate this panel.\n\n" ~
+            "SHA1: <none>\n" ~
+            "File: <none>\n" ~
+            "Checksums: <none>\n" ~
+            "Media: <none>\n"
+        );
+    }
+
+    int clampSplitPositionToVisibleBounds(Orientation orientation, int requestedPosition) {
+        enum int MIN_PRIMARY_EXTENT = 240;
+        enum int MIN_DETAILS_EXTENT = 180;
+
+        int totalExtent = 0;
+        if (orientation == Orientation.VERTICAL) {
+            totalExtent = split.getAllocatedHeight();
+        } else {
+            totalExtent = split.getAllocatedWidth();
+        }
+
+        if (totalExtent <= 0) {
+            return requestedPosition;
+        }
+
+        if (totalExtent <= (MIN_PRIMARY_EXTENT + MIN_DETAILS_EXTENT)) {
+            return totalExtent / 2;
+        }
+
+        auto minPosition = MIN_PRIMARY_EXTENT;
+        auto maxPosition = totalExtent - MIN_DETAILS_EXTENT;
+        if (requestedPosition < minPosition) {
+            return minPosition;
+        }
+        if (requestedPosition > maxPosition) {
+            return maxPosition;
+        }
+        return requestedPosition;
     }
 
     void applyDetailsPanePreference(bool captureCurrentPosition = true) {
@@ -884,7 +929,21 @@ int main(string[] args) {
         // Keep the same paned instance and flip orientation in place.
         // Rebuilding/reparenting the children can invalidate GTK widget ownership.
         split.setOrientation(orientation);
-        split.setPosition(splitPosition);
+
+        auto clampedPosition = clampSplitPositionToVisibleBounds(orientation, splitPosition);
+        split.setPosition(clampedPosition);
+
+        // Re-apply once after layout to clamp against real allocated size.
+        new Idle({
+            auto realizedClamped = clampSplitPositionToVisibleBounds(orientation, splitPosition);
+            split.setPosition(realizedClamped);
+            if (orientation == Orientation.VERTICAL) {
+                splitPositionVertical = realizedClamped;
+            } else {
+                splitPositionHorizontal = realizedClamped;
+            }
+            return false;
+        });
     }
 
     AppState currentAppState(bool clearWindowGeometry = false) {
@@ -926,6 +985,7 @@ int main(string[] args) {
         state.windowMonitorIndex = -1;
         return state;
     }
+
 
     void persistCurrentState(bool clearWindowGeometry = false) {
         try {
