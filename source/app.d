@@ -48,10 +48,13 @@ import core.thread : Thread;
 import core.time : MonoTime;
 import std.file : exists, readText;
 import std.format : format;
-import std.json : parseJSON;
+import std.json : parseJSON, JSONType;
 import std.conv : to;
 import std.getopt : getopt, config;
 import std.stdio : writeln;
+import std.array : appender;
+import std.algorithm : sort;
+import std.string : join;
 
 import io.dosierjson : extractRowsFromRoot;
 import model.blobrow : BlobRow;
@@ -85,6 +88,9 @@ struct AsyncLoadResult {
     size_t duplicateGroups;
     string filePath;
     bool duplicatesOnly;
+    int dataVersion = -1;
+    string rootShape;
+    string rootKeysSummary;
     string error;
     long elapsedMs;
 }
@@ -323,6 +329,9 @@ int main(string[] args) {
     auto perfStatus = new Label("Timings: load=- ms | filter=- ms | render=- ms");
     perfStatus.setXalign(0.0f);
 
+    auto fileMetaStatus = new Label("File metadata: version=- | root=- | keys=-");
+    fileMetaStatus.setXalign(0.0f);
+
     auto rowDetails = new Label("Selection: none");
     rowDetails.setXalign(0.0f);
 
@@ -334,6 +343,9 @@ int main(string[] args) {
     string selectedSha1;
     string selectedFileName;
     string selectedDetailsText;
+    int loadedDataVersion = -1;
+    string loadedRootShape = "-";
+    string loadedRootKeysSummary = "-";
 
     bool prefDefaultDuplicatesOnly = false;
     bool prefAutoApplyFilter = true;
@@ -375,6 +387,16 @@ int main(string[] args) {
             formatTimingValue(lastLoadElapsedMs),
             formatTimingValue(lastFilterElapsedMs),
             formatTimingValue(lastRenderElapsedMs)
+        ));
+    }
+
+    void updateFileMetaStatus() {
+        auto dataVersionText = loadedDataVersion >= 0 ? to!string(loadedDataVersion) : "-";
+        fileMetaStatus.setText(format(
+            "File metadata: version=%s | root=%s | keys=%s",
+            dataVersionText,
+            loadedRootShape,
+            loadedRootKeysSummary
         ));
     }
 
@@ -467,6 +489,10 @@ int main(string[] args) {
             tableStore.clear();
             visibleRows = [];
             clearSelectionDetails();
+            loadedDataVersion = -1;
+            loadedRootShape = "-";
+            loadedRootKeysSummary = "-";
+            updateFileMetaStatus();
             status.setText("Ready.");
             return;
         }
@@ -746,6 +772,32 @@ int main(string[] args) {
                 setLoadingPhase(requestId, "Parsing JSON structure ...");
                 auto parsed = parseJSON(content);
 
+                if (parsed.type == JSONType.object) {
+                    result.rootShape = "object";
+                    auto keysAcc = appender!(string[])();
+                    foreach (key, _; parsed.object) {
+                        keysAcc.put(key);
+                    }
+                    auto keys = keysAcc.data;
+                    keys.sort();
+                    result.rootKeysSummary = keys.length > 0 ? keys.join(",") : "-";
+
+                    if ("dataVersion" in parsed.object) {
+                        auto versionValue = parsed.object["dataVersion"];
+                        if (versionValue.type == JSONType.integer) {
+                            result.dataVersion = cast(int) versionValue.integer;
+                        } else if (versionValue.type == JSONType.uinteger) {
+                            result.dataVersion = cast(int) versionValue.uinteger;
+                        }
+                    }
+                } else if (parsed.type == JSONType.array) {
+                    result.rootShape = "array";
+                    result.rootKeysSummary = "-";
+                } else {
+                    result.rootShape = "other";
+                    result.rootKeysSummary = "-";
+                }
+
                 setLoadingPhase(requestId, "Normalizing rows ...");
                 result.allRows = extractRowsFromRoot(parsed);
 
@@ -767,6 +819,10 @@ int main(string[] args) {
                     loadedRows = [];
                     visibleRows = [];
                     loadedFilePath = "";
+                    loadedDataVersion = -1;
+                    loadedRootShape = "-";
+                    loadedRootKeysSummary = "-";
+                    updateFileMetaStatus();
                     pendingLoadElapsedMs = -1;
                     pendingStatusSuffix = "";
                     clearSelectionDetails();
@@ -778,6 +834,10 @@ int main(string[] args) {
                 loadedRows = result.duplicatesOnly ? filterDuplicateRows(result.allRows) : result.allRows;
                 loadedFilePath = result.filePath;
                 loadedDuplicatesOnly = result.duplicatesOnly;
+                loadedDataVersion = result.dataVersion;
+                loadedRootShape = result.rootShape.length > 0 ? result.rootShape : "-";
+                loadedRootKeysSummary = result.rootKeysSummary.length > 0 ? result.rootKeysSummary : "-";
+                updateFileMetaStatus();
                 pendingLoadElapsedMs = result.elapsedMs;
                 lastLoadElapsedMs = result.elapsedMs;
                 updatePerfStatus();
@@ -1013,6 +1073,7 @@ int main(string[] args) {
     content.packStart(rowDetails, false, false, 0);
     content.packStart(status, false, false, 0);
     content.packStart(perfStatus, false, false, 0);
+    content.packStart(fileMetaStatus, false, false, 0);
 
     root.packStart(menuBar, false, false, 0);
     root.packStart(content, true, true, 0);
