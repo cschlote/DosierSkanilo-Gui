@@ -11,6 +11,7 @@ module io.dosierjson;
 
 import std.array : appender;
 import std.algorithm : sort;
+import std.algorithm.searching : canFind, startsWith, countUntil;
 import std.format : format;
 import std.string : join;
 import std.json : JSONType, JSONValue;
@@ -366,5 +367,5 @@ unittest {
         assert(pretty.canFind("\n  \"b\": 2\n"));
         assert(pretty.canFind("\"y\": 1"));
         assert(pretty.canFind("\"z\": 0"));
-        assert(pretty.indexOf("\"a\"") < pretty.indexOf("\"b\""));
+        assert(pretty.countUntil("\"a\"") < pretty.countUntil("\"b\""));
 }
