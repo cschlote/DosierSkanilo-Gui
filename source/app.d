@@ -45,8 +45,7 @@ import glib.Timeout;
 import gobject.Type : GType;
 import gtk.Clipboard;
 import gdk.Display;
-import gdk.MonitorG;
-import gdk.c.types : GdkRectangle, GdkEventConfigure;
+import gdk.c.types : GdkEventConfigure;
 
 import core.thread : Thread;
 import core.time : MonoTime;
@@ -56,7 +55,7 @@ import std.json : parseJSON, JSONType, JSONValue;
 import std.base64 : Base64;
 import std.conv : to;
 import std.getopt : getopt, config;
-import std.stdio : writeln, File;
+import std.stdio : writeln;
 import std.array : appender;
 import std.algorithm : sort;
 import std.string : join;
@@ -133,7 +132,6 @@ struct AppState {
 
 enum string CONFIG_DIR_NAME = ".config/dosierskanilo-gui";
 enum string CONFIG_FILE_NAME = "state.json";
-enum string RESTORE_LOG_FILE_NAME = "restore.log";
 enum int MIN_VALID_WINDOW_WIDTH = 320;
 enum int MIN_VALID_WINDOW_HEIGHT = 240;
 
@@ -149,23 +147,6 @@ string configDirPath() {
 /** Resolve the JSON state file path. */
 string configFilePath() {
     return buildPath(configDirPath(), CONFIG_FILE_NAME);
-}
-
-/** Resolve the diagnostic log path used for geometry restore troubleshooting. */
-string restoreLogFilePath() {
-    return buildPath(configDirPath(), RESTORE_LOG_FILE_NAME);
-}
-
-/** Append a single restore diagnostic line to the per-user log file. */
-void appendRestoreLog(string message) {
-    try {
-        mkdirRecurse(configDirPath());
-        auto file = File(restoreLogFilePath(), "a");
-        file.writeln(message);
-        file.close();
-    } catch (Exception) {
-        // Diagnostics must never break app startup.
-    }
 }
 
 /** Convert a JSON scalar into a bool with fallback semantics. */
@@ -294,96 +275,6 @@ void saveAppState(const(AppState) state) {
     );
 
     write(filePath, payload);
-}
-
-/** Map a screen position to the corresponding monitor index. */
-int monitorIndexForPoint(Display display, int x, int y) {
-    if (display is null) {
-        return -1;
-    }
-
-    auto monitor = display.getMonitorAtPoint(x, y);
-    if (monitor is null) {
-        return -1;
-    }
-
-    auto monitorCount = display.getNMonitors();
-    for (int i = 0; i < monitorCount; ++i) {
-        if (display.getMonitor(i) is monitor) {
-            return i;
-        }
-    }
-
-    return -1;
-}
-
-/** Clamp window geometry to a visible monitor work area. */
-void clampWindowGeometryToVisibleArea(ref int x, ref int y, ref int width, ref int height, int preferredMonitorIndex = -1) {
-    auto display = Display.getDefault();
-    if (display is null) {
-        return;
-    }
-
-    MonitorG monitor;
-    if (preferredMonitorIndex >= 0 && preferredMonitorIndex < display.getNMonitors()) {
-        monitor = display.getMonitor(preferredMonitorIndex);
-    }
-    if (monitor is null) {
-        monitor = display.getMonitorAtPoint(x, y);
-    }
-    if (monitor is null) {
-        monitor = display.getPrimaryMonitor();
-    }
-    if (monitor is null && display.getNMonitors() > 0) {
-        monitor = display.getMonitor(0);
-    }
-    if (monitor is null) {
-        return;
-    }
-
-    GdkRectangle bounds;
-    monitor.getWorkarea(bounds);
-    if (bounds.width <= 0 || bounds.height <= 0) {
-        monitor.getGeometry(bounds);
-    }
-    if (bounds.width <= 0 || bounds.height <= 0) {
-        return;
-    }
-
-    // Keep at least a usable minimum size and clamp to monitor work area.
-    if (width < 640) {
-        width = 640;
-    }
-    if (height < 400) {
-        height = 400;
-    }
-    if (width > bounds.width) {
-        width = bounds.width;
-    }
-    if (height > bounds.height) {
-        height = bounds.height;
-    }
-
-    auto maxX = bounds.x + bounds.width - width;
-    auto maxY = bounds.y + bounds.height - height;
-    if (maxX < bounds.x) {
-        maxX = bounds.x;
-    }
-    if (maxY < bounds.y) {
-        maxY = bounds.y;
-    }
-
-    if (x < bounds.x) {
-        x = bounds.x;
-    } else if (x > maxX) {
-        x = maxX;
-    }
-
-    if (y < bounds.y) {
-        y = bounds.y;
-    } else if (y > maxY) {
-        y = maxY;
-    }
 }
 
 /** Return human-readable CLI usage text. */
@@ -775,7 +666,6 @@ int main(string[] args) {
     int splitPositionVertical = loadedState.splitPositionVertical;
     int lastKnownWindowWidth = loadedState.windowWidth;
     int lastKnownWindowHeight = loadedState.windowHeight;
-    int startupSizeAllocateLogCount;
     Timeout windowSizePersistTimer;
     bool isLoading;
     ulong loadRequestId;
@@ -1034,15 +924,6 @@ int main(string[] args) {
         state.hasWindowSize = true;
         state.windowWidth = width;
         state.windowHeight = height;
-        appendRestoreLog(format(
-            "persist snapshot width=%s height=%s trackedWidth=%s trackedHeight=%s allocatedWidth=%s allocatedHeight=%s",
-            state.windowWidth,
-            state.windowHeight,
-            lastKnownWindowWidth,
-            lastKnownWindowHeight,
-            allocatedWidth,
-            allocatedHeight
-        ));
 
         if (clearWindowGeometry) {
             state.hasWindowGeometry = false;
@@ -1830,12 +1711,6 @@ int main(string[] args) {
         if (event !is null && event.width >= MIN_VALID_WINDOW_WIDTH && event.height >= MIN_VALID_WINDOW_HEIGHT) {
             lastKnownWindowWidth = event.width;
             lastKnownWindowHeight = event.height;
-            appendRestoreLog(format(
-                "configure width=%s height=%s runtimePersistence=%s",
-                event.width,
-                event.height,
-                allowRuntimeStatePersistence ? "on" : "off"
-            ));
         }
         return false;
     });
@@ -1844,17 +1719,6 @@ int main(string[] args) {
         if (allocation.width >= MIN_VALID_WINDOW_WIDTH && allocation.height >= MIN_VALID_WINDOW_HEIGHT) {
             lastKnownWindowWidth = allocation.width;
             lastKnownWindowHeight = allocation.height;
-
-            if (startupSizeAllocateLogCount < 8) {
-                ++startupSizeAllocateLogCount;
-                appendRestoreLog(format(
-                    "size-allocate[%s] width=%s height=%s runtimePersistence=%s",
-                    startupSizeAllocateLogCount,
-                    allocation.width,
-                    allocation.height,
-                    allowRuntimeStatePersistence ? "on" : "off"
-                ));
-            }
 
             // Persist size shortly after resize settles, independent of quit path.
             if (allowRuntimeStatePersistence) {
@@ -1884,15 +1748,6 @@ int main(string[] args) {
 
     window.add(root);
     window.showAll();
-    appendRestoreLog(format(
-        "startup loaded hasWindowSize=%s width=%s height=%s splitH=%s splitV=%s prefDetailsBelow=%s",
-        loadedState.hasWindowSize ? "true" : "false",
-        loadedState.windowWidth,
-        loadedState.windowHeight,
-        loadedState.splitPositionHorizontal,
-        loadedState.splitPositionVertical,
-        loadedState.prefDetailsBelow ? "true" : "false"
-    ));
 
     if (loadedState.hasWindowSize) {
         auto restoredWidth = loadedState.windowWidth;
@@ -1907,7 +1762,6 @@ int main(string[] args) {
 
         // Initial apply right after widgets are visible.
         new Idle({
-            appendRestoreLog(format("apply idle width=%s height=%s", restoredWidth, restoredHeight));
             window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
@@ -1917,7 +1771,6 @@ int main(string[] args) {
 
         // XFCE can apply its own first configure cycle after map; enforce once more.
         new Timeout(120, {
-            appendRestoreLog(format("apply t120 width=%s height=%s", restoredWidth, restoredHeight));
             window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
@@ -1927,7 +1780,6 @@ int main(string[] args) {
 
         // Second delayed pass to win late WM adjustments.
         new Timeout(320, {
-            appendRestoreLog(format("apply t320 width=%s height=%s", restoredWidth, restoredHeight));
             window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
@@ -1937,7 +1789,6 @@ int main(string[] args) {
 
         // Some WMs settle size after initial composition; enforce a final pass.
         new Timeout(700, {
-            appendRestoreLog(format("apply t700 width=%s height=%s", restoredWidth, restoredHeight));
             window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
@@ -1947,20 +1798,12 @@ int main(string[] args) {
 
         // Final late pass to override very late WM/session adjustments.
         new Timeout(1500, {
-            appendRestoreLog(format("apply t1500 width=%s height=%s", restoredWidth, restoredHeight));
             window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
             lastKnownWindowHeight = restoredHeight;
             allowRuntimeStatePersistence = true;
             persistCurrentState(clearSavedWindowGeometryOnExit);
-            appendRestoreLog(format(
-                "finalized width=%s height=%s persistedWidth=%s persistedHeight=%s",
-                window.getAllocatedWidth(),
-                window.getAllocatedHeight(),
-                lastKnownWindowWidth,
-                lastKnownWindowHeight
-            ));
             return false;
         });
     } else {
