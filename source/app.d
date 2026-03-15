@@ -1,3 +1,4 @@
+
 /** Main GTK application shell for DosierSkanilo GUI.
  *
  * This module wires together command-line startup options, JSON loading,
@@ -7,6 +8,15 @@
  * License: CC-BY-NC-SA 4.0
  */
 module app;
+
+/** Setzt die Resizability aller Hauptspalten der Blob-Tabelle. */
+void setTableColumnsResizable(DocumentTab document, bool resizable) {
+    if (document is null || document.tableView is null) return;
+    foreach (i; 0 .. 7) {
+        auto col = document.tableView.getColumn(i);
+        if (col !is null) col.setResizable(resizable);
+    }
+}
 
 import gtk.Main;
 import gtk.Widget;
@@ -62,7 +72,7 @@ import std.getopt : getopt, config;
 import std.stdio : writeln;
 import std.array : appender;
 import std.algorithm : sort;
-import std.string : join, replace;
+import std.string : join, replace, splitLines, indexOf;
 import std.path : buildPath, baseName;
 import std.process : environment;
 
@@ -151,25 +161,25 @@ class DocumentTab {
     Paned split;
     ListStore tableStore;
     TreeView tableView;
-    TextView detailsView;
     Entry detailIndexEntry;
     Entry detailSizeEntry;
-    Entry detailChecksumEntry;
-    Entry detailFileTypeEntry;
-    Entry detailFileCountEntry;
     Entry detailSha1HexEntry;
     Entry detailMd5HexEntry;
     Entry detailXxh64HexEntry;
-    Entry detailLoadedSourceEntry;
+    Label detailChecksumStatus;
+    Label detailFileNamesLabel;
     Label detailMediaInfoStatus;
     Label detailArchiveStatus;
     Label detailTorrentStatus;
+    Expander detailChecksumExpander;
     Expander detailMediaInfoExpander;
     Expander detailArchiveExpander;
     Expander detailTorrentExpander;
     TextView detailMediaInfoView;
     TextView detailArchiveView;
     TextView detailTorrentView;
+    ListStore detailFileNamesStore;
+    TreeView detailFileNamesView;
     Button btnCopySha1;
     Button btnCopyFile;
     Button btnCopyDetails;
@@ -487,7 +497,7 @@ void configureTableColumns(TreeView treeView) {
         column.setSortColumnId(sortColumn >= 0 ? sortColumn : modelColumn);
         column.setResizable(false);
         column.setAlignment(xalign);
-        column.setExpand(modelColumn == COL_MEDIA_INFO);
+        column.setExpand(false);
         column.setSizing(
             modelColumn == COL_HAS_ARCHIVE || modelColumn == COL_HAS_TORRENT
                 ? GtkTreeViewColumnSizing.FIXED
@@ -509,6 +519,26 @@ void configureTableColumns(TreeView treeView) {
     addTextColumn("Torrent", COL_HAS_TORRENT);
 
     treeView.setHeadersClickable(true);
+}
+
+/** Configure the known-files detail table with compact fixed columns. */
+void configureKnownFilesColumns(TreeView treeView) {
+    void addColumn(string title, int modelColumn, bool expand) {
+        auto renderer = new CellRendererText();
+        renderer.setAlignment(0.0f, 0.5f);
+        auto column = new TreeViewColumn();
+        column.setTitle(title);
+        column.packStart(renderer, true);
+        column.addAttribute(renderer, "text", modelColumn);
+        column.setResizable(false);
+        column.setExpand(expand);
+        column.setSizing(GtkTreeViewColumnSizing.AUTOSIZE);
+        treeView.appendColumn(column);
+    }
+
+    addColumn("Known file", 0, true);
+    addColumn("Last access", 1, false);
+    treeView.setHeadersClickable(false);
 }
 
 /** Summarize checksum availability for the list view. */
@@ -695,11 +725,6 @@ int main(string[] args) {
     auto separator = new Separator(Orientation.HORIZONTAL);
 
     auto toolbar = new Box(Orientation.HORIZONTAL, 8);
-    auto pathEntry = new Entry();
-    pathEntry.setHexpand(true);
-    pathEntry.setText(DEFAULT_JSON_PATH);
-
-    auto btnLoad = new Button("Load JSON");
     auto btnReload = new Button("Reload");
     auto btnCancelLoad = new Button("Cancel");
     btnCancelLoad.setSensitive(false);
@@ -730,8 +755,6 @@ int main(string[] args) {
     progressBar.setPulseStep(0.05);
     progressBar.setVisible(false);
 
-    toolbar.packStart(pathEntry, true, true, 0);
-    toolbar.packStart(btnLoad, false, false, 0);
     toolbar.packStart(btnReload, false, false, 0);
     toolbar.packStart(btnCancelLoad, false, false, 0);
     toolbar.packStart(loadSpinner, false, false, 0);
@@ -779,7 +802,7 @@ int main(string[] args) {
     auto menuBar = new MenuBar();
 
     if (cli.jsonPath.length > 0) {
-        pathEntry.setText(cli.jsonPath);
+        // pathEntry entfernt
     }
     if (cli.filterOnStart.length > 0) {
         filterEntry.setText(cli.filterOnStart);
@@ -842,6 +865,16 @@ int main(string[] args) {
         );
     }
 
+    /** Render a compact summary for checksum availability in the details form. */
+    string checksumStatusSummary(const(BlobRow) row) {
+        return format(
+            "MD5 %s  SHA1 %s  xxh64 %s",
+            boolStatusIcon(row.md5.length > 0),
+            boolStatusIcon(row.sha1.length > 0),
+            boolStatusIcon(row.xxh64.length > 0)
+        );
+    }
+
     /** Render a compact summary for boolean metadata blocks in the details form. */
     string metadataPresenceSummary(bool value) {
         return value ? format("%s present", boolStatusIcon(true)) : format("%s none", boolStatusIcon(false));
@@ -855,11 +888,36 @@ int main(string[] args) {
     /** Populate one expander-backed metadata details section. */
     void setMetadataDetails(Expander expander, TextView view, string title, string detailsText) {
         auto hasDetails = detailsText.length > 0;
-        expander.setLabel(hasDetails ? format("%s details", title) : format("%s details unavailable", title));
         expander.setSensitive(hasDetails);
         expander.setExpanded(false);
-        expander.setVisible(hasDetails);
+        expander.setVisible(true);
         view.getBuffer().setText(hasDetails ? detailsText : "No details available.");
+    }
+
+    /** Populate the known-files table from one multiline detail string. */
+    void setKnownFilesTable(DocumentTab document, string detailsText, size_t fileCount) {
+        document.detailFileNamesStore.clear();
+        document.detailFileNamesLabel.setText(format("Known file names (%s)", fileCount));
+
+        enum string LAST_ACCESS_SEPARATOR = " | last access: ";
+
+        foreach (line; detailsText.splitLines()) {
+            if (line.length == 0) {
+                continue;
+            }
+
+            auto separatorIndex = line.indexOf(LAST_ACCESS_SEPARATOR);
+            string fileName = line;
+            string lastAccess = "-";
+            if (separatorIndex >= 0) {
+                fileName = line[0 .. separatorIndex];
+                lastAccess = line[separatorIndex + LAST_ACCESS_SEPARATOR.length .. $];
+            }
+
+            TreeIter iter;
+            document.detailFileNamesStore.append(iter);
+            document.detailFileNamesStore.set(iter, [0, 1], [fileName, lastAccess]);
+        }
     }
 
     /** Format internal timing values for status labels. */
@@ -899,8 +957,7 @@ int main(string[] args) {
     /** Refresh toolbar sensitivity from the global busy state and active tab presence. */
     void syncToolbarSensitivity() {
         auto hasCurrentDocument = currentDocument() !is null;
-        pathEntry.setSensitive(!isLoading);
-        btnLoad.setSensitive(!isLoading);
+        // pathEntry und btnLoad entfernt
         btnReload.setSensitive(!isLoading && hasCurrentDocument);
         btnCancelLoad.setSensitive(isLoading);
         filterEntry.setSensitive(!isLoading && hasCurrentDocument);
@@ -918,7 +975,6 @@ int main(string[] args) {
         isSyncingToolbarState = true;
         auto document = currentDocument();
         if (document is null) {
-            pathEntry.setText(DEFAULT_JSON_PATH);
             filterEntry.setText("");
             filterVideo.setActive(false);
             filterAudio.setActive(false);
@@ -930,7 +986,7 @@ int main(string[] args) {
             return;
         }
 
-        pathEntry.setText(document.filePath);
+        // pathEntry entfernt
         filterEntry.setText(document.filterQuery);
         filterVideo.setActive(document.filterVideo);
         filterAudio.setActive(document.filterAudio);
@@ -967,6 +1023,9 @@ int main(string[] args) {
         isLoading = loading;
         busyDocument = loading ? document : null;
         syncToolbarSensitivity();
+
+        // Während Laden: Spalten-Resizing deaktivieren
+        setTableColumnsResizable(document, !loading ? true : false);
 
         if (loading) {
             loadSpinner.setVisible(true);
@@ -1044,26 +1103,25 @@ int main(string[] args) {
         document.selectedSha1 = "";
         document.selectedFileName = "";
         document.selectedDetailsText = "";
-        setDetailEntry(document.detailChecksumEntry, "");
         setDetailEntry(document.detailSha1HexEntry, "");
         setDetailEntry(document.detailMd5HexEntry, "");
         setDetailEntry(document.detailXxh64HexEntry, "");
         setDetailEntry(document.detailIndexEntry, "");
         setDetailEntry(document.detailSizeEntry, "");
-        setDetailEntry(document.detailFileTypeEntry, "");
-        setDetailEntry(document.detailFileCountEntry, "");
-        setDetailEntry(document.detailLoadedSourceEntry, "");
+        setMetadataStatusLabel(document.detailChecksumStatus, "Checksums", checksumStatusSummary(BlobRow.init));
+        document.detailChecksumExpander.setSensitive(false);
+        document.detailChecksumExpander.setExpanded(false);
         setMetadataStatusLabel(document.detailMediaInfoStatus, "MediaInfo", format("%s unavailable", boolStatusIcon(false)));
         setMetadataStatusLabel(document.detailArchiveStatus, "Archive", format("%s unavailable", boolStatusIcon(false)));
         setMetadataStatusLabel(document.detailTorrentStatus, "Torrent", format("%s unavailable", boolStatusIcon(false)));
         setMetadataDetails(document.detailMediaInfoExpander, document.detailMediaInfoView, "MediaInfo", "");
         setMetadataDetails(document.detailArchiveExpander, document.detailArchiveView, "Archive", "");
         setMetadataDetails(document.detailTorrentExpander, document.detailTorrentView, "Torrent", "");
+        setKnownFilesTable(document, "", 0);
         document.btnCopySha1.setSensitive(false);
         document.btnCopyFile.setSensitive(false);
         document.btnCopyDetails.setSensitive(false);
         document.rowDetails.setText("Selection: none");
-        document.detailsView.getBuffer().setText(emptyDetailsText());
     }
 
     /** Keep a document splitter divider within usable visible bounds. */
@@ -1093,6 +1151,69 @@ int main(string[] args) {
         return requestedPosition;
     }
 
+    /** Estimate the natural width required to show the blob list columns without truncating the split too early. */
+    int preferredListSplitPosition(DocumentTab document) {
+        enum int LIST_PADDING = 112;
+        enum int MIN_LIST_WIDTH = 420;
+
+        foreach (columnIndex; 0 .. 7) {
+            auto column = document.tableView.getColumn(columnIndex);
+            if (column !is null) {
+                column.queueResize();
+            }
+        }
+        document.tableView.columnsAutosize();
+
+        int totalWidth = 0;
+        foreach (columnIndex; 0 .. 7) {
+            auto column = document.tableView.getColumn(columnIndex);
+            if (column is null || !column.getVisible()) {
+                continue;
+            }
+            totalWidth += column.getWidth();
+        }
+
+        if (totalWidth <= 0) {
+            return splitPositionHorizontal;
+        }
+
+        totalWidth += LIST_PADDING;
+        return totalWidth < MIN_LIST_WIDTH ? MIN_LIST_WIDTH : totalWidth;
+    }
+
+    /** Re-fit the horizontal splitter after GTK has real column widths available. */
+    void schedulePreferredHorizontalSplit(DocumentTab document) {
+        if (prefDetailsBelow) {
+            return;
+        }
+
+        int attempt = 0;
+        void delegate() fitLater;
+        fitLater = {
+            ++attempt;
+            auto preferredPosition = preferredListSplitPosition(document);
+            auto currentPosition = document.split.getPosition();
+            auto targetPosition = preferredPosition > currentPosition ? preferredPosition : currentPosition;
+            auto clampedPosition = clampSplitPositionToVisibleBounds(document.split, Orientation.HORIZONTAL, targetPosition);
+            document.split.setPosition(clampedPosition);
+            splitPositionHorizontal = clampedPosition;
+
+            if (attempt >= 4) {
+                return;
+            }
+
+            new Timeout(60, {
+                fitLater();
+                return false;
+            });
+        };
+
+        new Idle({
+            fitLater();
+            return false;
+        });
+    }
+
     /** Apply the shared details-pane orientation and divider position to one tab. */
     void applyDetailsPanePreference(DocumentTab document, bool captureCurrentPosition = true) {
         if (captureCurrentPosition) {
@@ -1107,6 +1228,12 @@ int main(string[] args) {
 
         auto orientation = prefDetailsBelow ? Orientation.VERTICAL : Orientation.HORIZONTAL;
         auto splitPosition = prefDetailsBelow ? splitPositionVertical : splitPositionHorizontal;
+        if (orientation == Orientation.HORIZONTAL) {
+            auto preferredPosition = preferredListSplitPosition(document);
+            if (splitPosition < preferredPosition) {
+                splitPosition = preferredPosition;
+            }
+        }
         document.split.setOrientation(orientation);
 
         auto clampedPosition = clampSplitPositionToVisibleBounds(document.split, orientation, splitPosition);
@@ -1118,6 +1245,7 @@ int main(string[] args) {
                 splitPositionVertical = realizedClamped;
             } else {
                 splitPositionHorizontal = realizedClamped;
+                schedulePreferredHorizontalSplit(document);
             }
             return false;
         });
@@ -1166,8 +1294,8 @@ int main(string[] args) {
         scroll.setHexpand(true);
         scroll.add(document.tableView);
 
-        auto monospaceFont = PgFontDescription.fromString("Monospace 10");
-
+        document.detailChecksumStatus = new Label("");
+        document.detailChecksumStatus.setXalign(0.0f);
         document.detailMediaInfoStatus = new Label("");
         document.detailMediaInfoStatus.setXalign(0.0f);
         document.detailArchiveStatus = new Label("");
@@ -1175,60 +1303,57 @@ int main(string[] args) {
         document.detailTorrentStatus = new Label("");
         document.detailTorrentStatus.setXalign(0.0f);
 
+        document.detailChecksumExpander = new Expander("");
         document.detailMediaInfoView = createDetailTextView(true);
         document.detailArchiveView = createDetailTextView(true);
         document.detailTorrentView = createDetailTextView(true);
         document.detailMediaInfoExpander = new Expander("");
         document.detailArchiveExpander = new Expander("");
         document.detailTorrentExpander = new Expander("");
+        document.detailChecksumExpander.setLabelWidget(document.detailChecksumStatus);
+        document.detailMediaInfoExpander.setLabelWidget(document.detailMediaInfoStatus);
+        document.detailArchiveExpander.setLabelWidget(document.detailArchiveStatus);
+        document.detailTorrentExpander.setLabelWidget(document.detailTorrentStatus);
+
+        auto checksumGrid = new Grid();
+        checksumGrid.setColumnSpacing(10);
+        checksumGrid.setRowSpacing(6);
+
+        document.detailSha1HexEntry = createDetailEntry(40);
+        document.detailMd5HexEntry = createDetailEntry(40);
+        document.detailXxh64HexEntry = createDetailEntry(40);
+        setEntryMonospace(document.detailSha1HexEntry);
+        setEntryMonospace(document.detailMd5HexEntry);
+        setEntryMonospace(document.detailXxh64HexEntry);
+        attachField(checksumGrid, 0, 0, "SHA1 (hex)", document.detailSha1HexEntry, 3);
+        attachField(checksumGrid, 1, 0, "MD5 (hex)", document.detailMd5HexEntry, 3);
+        attachField(checksumGrid, 2, 0, "xxh64 (hex)", document.detailXxh64HexEntry, 3);
+
+        document.detailChecksumExpander.add(checksumGrid);
         document.detailMediaInfoExpander.add(document.detailMediaInfoView);
         document.detailArchiveExpander.add(document.detailArchiveView);
         document.detailTorrentExpander.add(document.detailTorrentView);
 
         auto detailVisuals = new Box(Orientation.VERTICAL, 4);
-        detailVisuals.packStart(createDetailCaption("Metadata Overview"), false, false, 0);
-        detailVisuals.packStart(document.detailMediaInfoStatus, false, false, 0);
+        detailVisuals.packStart(document.detailChecksumExpander, false, false, 0);
         detailVisuals.packStart(document.detailMediaInfoExpander, false, false, 0);
-        detailVisuals.packStart(document.detailArchiveStatus, false, false, 0);
         detailVisuals.packStart(document.detailArchiveExpander, false, false, 0);
-        detailVisuals.packStart(document.detailTorrentStatus, false, false, 0);
         detailVisuals.packStart(document.detailTorrentExpander, false, false, 0);
 
         auto detailGrid = new Grid();
         detailGrid.setColumnSpacing(10);
         detailGrid.setRowSpacing(6);
 
-        document.detailChecksumEntry = createDetailEntry(12);
-        document.detailSha1HexEntry = createDetailEntry(40);
-        document.detailMd5HexEntry = createDetailEntry(40);
-        document.detailXxh64HexEntry = createDetailEntry(40);
         document.detailIndexEntry = createDetailEntry(10);
         document.detailSizeEntry = createDetailEntry(14);
-        document.detailFileTypeEntry = createDetailEntry(14);
-        document.detailFileCountEntry = createDetailEntry(8);
-        document.detailLoadedSourceEntry = createDetailEntry(26);
+        attachField(detailGrid, 0, 0, "Index", document.detailIndexEntry);
+        attachField(detailGrid, 0, 2, "File size", document.detailSizeEntry);
 
-        setEntryMonospace(document.detailSha1HexEntry);
-        setEntryMonospace(document.detailMd5HexEntry);
-        setEntryMonospace(document.detailXxh64HexEntry);
+        document.detailFileNamesStore = new ListStore([GType.STRING, GType.STRING]);
+        document.detailFileNamesView = new TreeView(document.detailFileNamesStore);
+        configureKnownFilesColumns(document.detailFileNamesView);
 
-        attachField(detailGrid, 0, 0, "Checksum set", document.detailChecksumEntry);
-        attachField(detailGrid, 1, 0, "SHA1 (hex)", document.detailSha1HexEntry, 3);
-        attachField(detailGrid, 2, 0, "MD5 (hex)", document.detailMd5HexEntry, 3);
-        attachField(detailGrid, 3, 0, "xxh64 (hex)", document.detailXxh64HexEntry, 3);
-        attachField(detailGrid, 4, 0, "Index", document.detailIndexEntry);
-        attachField(detailGrid, 4, 2, "File size", document.detailSizeEntry);
-        attachField(detailGrid, 5, 0, "File type", document.detailFileTypeEntry);
-        attachField(detailGrid, 5, 2, "File refs", document.detailFileCountEntry);
-        attachField(detailGrid, 6, 0, "Loaded source", document.detailLoadedSourceEntry, 3);
-
-        document.detailsView = new TextView();
-        document.detailsView.setEditable(false);
-        document.detailsView.setMonospace(true);
-        document.detailsView.setWrapMode(GtkWrapMode.WORD_CHAR);
-        document.detailsView.getBuffer().setText(emptyDetailsText());
-
-        auto fileNamesLabel = createDetailCaption("Known file names");
+        document.detailFileNamesLabel = createDetailCaption("Known file names (0)");
 
         auto detailsActions = new Box(Orientation.HORIZONTAL, 6);
         document.btnCopySha1 = new Button("Copy SHA1");
@@ -1244,13 +1369,13 @@ int main(string[] args) {
         auto detailsScroll = new ScrolledWindow(null, null);
         detailsScroll.setVexpand(true);
         detailsScroll.setHexpand(true);
-        detailsScroll.add(document.detailsView);
+        detailsScroll.add(document.detailFileNamesView);
 
         auto detailsBody = new Box(Orientation.VERTICAL, 10);
         detailsBody.setBorderWidth(6);
         detailsBody.packStart(detailVisuals, false, false, 0);
         detailsBody.packStart(detailGrid, false, false, 0);
-        detailsBody.packStart(fileNamesLabel, false, false, 0);
+        detailsBody.packStart(document.detailFileNamesLabel, false, false, 0);
         detailsBody.packStart(detailsScroll, true, true, 0);
 
         auto detailsPane = new Box(Orientation.VERTICAL, 6);
@@ -1258,7 +1383,7 @@ int main(string[] args) {
         detailsPane.packStart(detailsBody, true, true, 0);
 
         document.split = new Paned(Orientation.HORIZONTAL);
-        document.split.pack1(scroll, true, true);
+        document.split.pack1(scroll, false, true);
         document.split.pack2(detailsPane, true, false);
         document.split.setPosition(splitPositionHorizontal);
 
@@ -1471,6 +1596,9 @@ int main(string[] args) {
             if (busyDocument is document) {
                 setLoadingState(document, false);
             }
+            // Nach dem Laden: Spalten-Resizing aktivieren und Autosizing
+            setTableColumnsResizable(document, true);
+            document.tableView.columnsAutosize();
             new Idle({
                 applyDetailsPanePreference(document, false);
                 return false;
@@ -1527,15 +1655,15 @@ int main(string[] args) {
         auto row = document.visibleRows[rowIndex];
         document.selectedSha1 = row.sha1;
         document.selectedFileName = row.primaryFileName;
-        setDetailEntry(document.detailChecksumEntry, checksumSetStatus(row));
         setDetailEntry(document.detailSha1HexEntry, digestBase64ToHex(row.sha1));
         setDetailEntry(document.detailMd5HexEntry, digestBase64ToHex(row.md5));
         setDetailEntry(document.detailXxh64HexEntry, digestBase64ToHex(row.xxh64));
         setDetailEntry(document.detailIndexEntry, idx);
         setDetailEntry(document.detailSizeEntry, format("%s bytes", row.fileSize));
-        setDetailEntry(document.detailFileTypeEntry, row.fileType);
-        setDetailEntry(document.detailFileCountEntry, to!string(row.fileCount));
-        setDetailEntry(document.detailLoadedSourceEntry, document.filePath);
+        setMetadataStatusLabel(document.detailChecksumStatus, "Checksums", checksumStatusSummary(row));
+        document.detailChecksumExpander.setSensitive(
+            row.md5.length > 0 || row.sha1.length > 0 || row.xxh64.length > 0
+        );
         setMetadataStatusLabel(document.detailMediaInfoStatus, "MediaInfo", mediaInfoStatusSummary(row));
         setMetadataStatusLabel(document.detailArchiveStatus, "Archive", metadataPresenceSummary(row.hasArchive));
         setMetadataStatusLabel(document.detailTorrentStatus, "Torrent", metadataPresenceSummary(row.hasTorrent));
@@ -1553,11 +1681,9 @@ int main(string[] args) {
             "MD5 (hex): %s\n" ~
             "SHA1 (hex): %s\n" ~
             "xxh64 (hex): %s\n" ~
-            "File type: %s\n" ~
             "Has media metadata: %s\n" ~
             "Has archive metadata: %s\n" ~
             "Has torrent metadata: %s\n" ~
-            "Loaded source: %s\n" ~
             "\nMediaInfo details\n%s\n" ~
             "\nArchive details\n%s\n" ~
             "\nTorrent details\n%s\n" ~
@@ -1575,11 +1701,9 @@ int main(string[] args) {
             digestBase64ToHex(row.md5),
             digestBase64ToHex(row.sha1),
             digestBase64ToHex(row.xxh64),
-            row.fileType.length > 0 ? row.fileType : "-",
             row.hasMedia ? "yes" : "no",
             row.hasArchive ? "yes" : "no",
             row.hasTorrent ? "yes" : "no",
-            document.filePath.length > 0 ? document.filePath : "-",
             row.mediaInfoDetails.length > 0 ? row.mediaInfoDetails : "-",
             row.archiveDetails.length > 0 ? row.archiveDetails : "-",
             row.torrentDetails.length > 0 ? row.torrentDetails : "-",
@@ -1589,8 +1713,10 @@ int main(string[] args) {
         document.btnCopySha1.setSensitive(!isLoading && document.selectedSha1.length > 0);
         document.btnCopyFile.setSensitive(!isLoading && document.selectedFileName.length > 0);
         document.btnCopyDetails.setSensitive(!isLoading && document.selectedDetailsText.length > 0);
-        document.detailsView.getBuffer().setText(
-            row.fileNamesDetails.length > 0 ? row.fileNamesDetails : stackedFileNames(row.fileNamesSummary)
+        setKnownFilesTable(
+            document,
+            row.fileNamesDetails.length > 0 ? row.fileNamesDetails : stackedFileNames(row.fileNamesSummary),
+            row.fileCount
         );
     };
 
@@ -1915,16 +2041,12 @@ int main(string[] args) {
             [ResponseType.CANCEL, ResponseType.ACCEPT]
         );
 
-        auto currentPath = pathEntry.getText();
-        if (currentPath.length > 0) {
-            chooser.setFilename(currentPath);
-        }
+        // pathEntry entfernt
 
         auto response = chooser.run();
         if (response == cast(int) ResponseType.ACCEPT) {
             auto selectedPath = chooser.getFilename();
             if (selectedPath.length > 0) {
-                pathEntry.setText(selectedPath);
                 auto document = openDocumentFromPath(selectedPath, true);
                 if (document.loadedRows.length == 0) {
                     loadDocument(document);
@@ -1955,14 +2077,7 @@ int main(string[] args) {
 
     /** Open the path from the toolbar as a new or existing tab and load if needed. */
     void loadFromPath() {
-        auto filePath = pathEntry.getText();
-        if (filePath.length == 0) {
-            return;
-        }
-        auto document = openDocumentFromPath(filePath, true);
-        if (document.loadedRows.length == 0) {
-            loadDocument(document);
-        }
+        // pathEntry entfernt
     }
 
     /** Reload the currently selected document tab from disk. */
@@ -2176,9 +2291,7 @@ int main(string[] args) {
     helpMenu.append(helpAbout);
     menuBar.append(helpMenuItem);
 
-    btnLoad.addOnClicked((Button _) {
-        loadFromPath();
-    });
+    // btnLoad entfernt
 
     btnReload.addOnClicked((Button _) {
         reloadCurrentDocument();
@@ -2207,9 +2320,7 @@ int main(string[] args) {
         renderRows(document, document.loadedRows);
     });
 
-    pathEntry.addOnActivate((Entry _) {
-        loadFromPath();
-    });
+    // pathEntry entfernt
 
     filterEntry.addOnActivate((Entry _) {
         applyFilterFromEntry();

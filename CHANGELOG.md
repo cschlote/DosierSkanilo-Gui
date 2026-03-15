@@ -8,6 +8,13 @@ All notable changes to this project are documented in this file.
 - Persisted window geometry, splitter positions, and key preferences under `~/.config/dosierskanilo-gui/state.json`, including an option in Preferences to clear saved window positions.
 - Improved media type filtering (`V/A/I/T`) with robust media key detection and status hit counters, and removed the obsolete duplicates-only load mode from the GUI.
 
+## Release 0.3.0 - 2026-03-15
+
+- Entfernt: Das String-Widget für den Dateinamen und der "Load JSON"-Button wurden aus der Toolbar und dem Code entfernt.
+- Die Toolbar ist jetzt kompakter und enthält nur noch relevante Filter- und Steuer-Elemente.
+- Alle Referenzen auf die entfernten UI-Elemente wurden bereinigt, der Build ist wieder fehlerfrei.
+- Interne Aufräumarbeiten und Refactoring im Zusammenhang mit der Entfernung der alten Lade-Logik.
+
 ## Release 0.2.1
 
 - Added GitLab release automation that publishes versioned assets to the GitLab Package Registry and creates GitLab Releases with persistent package links.
