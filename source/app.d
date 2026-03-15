@@ -124,6 +124,7 @@ struct AppState {
     bool hasWindowGeometry;
     int windowX;
     int windowY;
+    bool hasWindowSize;
     int windowWidth = 960;
     int windowHeight = 640;
     int windowMonitorIndex = -1;
@@ -218,6 +219,9 @@ AppState loadAppState() {
         if (auto value = "windowHeight" in root) {
             state.windowHeight = jsonToInt(*value, state.windowHeight);
         }
+        if (auto value = "hasWindowSize" in root) {
+            state.hasWindowSize = jsonToBool(*value, state.hasWindowSize);
+        }
         if (auto value = "windowMonitorIndex" in root) {
             state.windowMonitorIndex = jsonToInt(*value, state.windowMonitorIndex);
         }
@@ -243,6 +247,7 @@ void saveAppState(const(AppState) state) {
         "  \"hasWindowGeometry\": %s,\n" ~
         "  \"windowX\": %s,\n" ~
         "  \"windowY\": %s,\n" ~
+        "  \"hasWindowSize\": %s,\n" ~
         "  \"windowWidth\": %s,\n" ~
         "  \"windowHeight\": %s,\n" ~
         "  \"windowMonitorIndex\": %s\n" ~
@@ -255,6 +260,7 @@ void saveAppState(const(AppState) state) {
         state.hasWindowGeometry ? "true" : "false",
         state.windowX,
         state.windowY,
+        state.hasWindowSize ? "true" : "false",
         state.windowWidth,
         state.windowHeight,
         state.windowMonitorIndex
@@ -901,6 +907,7 @@ int main(string[] args) {
         int width = 960;
         int height = 640;
         window.getSize(width, height);
+        state.hasWindowSize = true;
         state.windowWidth = width;
         state.windowHeight = height;
 
@@ -908,16 +915,15 @@ int main(string[] args) {
             state.hasWindowGeometry = false;
             state.windowX = 0;
             state.windowY = 0;
+            state.windowMonitorIndex = -1;
             return state;
         }
 
-        int x = 0;
-        int y = 0;
-        window.getPosition(x, y);
-        state.hasWindowGeometry = true;
-        state.windowX = x;
-        state.windowY = y;
-        state.windowMonitorIndex = monitorIndexForPoint(Display.getDefault(), x, y);
+        // Do not persist window position to avoid monitor jump issues.
+        state.hasWindowGeometry = false;
+        state.windowX = 0;
+        state.windowY = 0;
+        state.windowMonitorIndex = -1;
         return state;
     }
 
@@ -1688,9 +1694,9 @@ int main(string[] args) {
     window.add(root);
     window.showAll();
 
-    if (loadedState.hasWindowGeometry) {
-        auto restoredX = loadedState.windowX;
-        auto restoredY = loadedState.windowY;
+    if (loadedState.hasWindowSize) {
+        auto restoredX = 0;
+        auto restoredY = 0;
         auto restoredWidth = loadedState.windowWidth;
         auto restoredHeight = loadedState.windowHeight;
         clampWindowGeometryToVisibleArea(
@@ -1698,10 +1704,9 @@ int main(string[] args) {
             restoredY,
             restoredWidth,
             restoredHeight,
-            loadedState.windowMonitorIndex
+            -1
         );
         new Idle({
-            window.move(restoredX, restoredY);
             window.resize(restoredWidth, restoredHeight);
             return false;
         });
