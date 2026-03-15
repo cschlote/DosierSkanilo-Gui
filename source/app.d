@@ -67,15 +67,18 @@ enum string DEFAULT_JSON_PATH = "./.filescanner.json";
 enum int COL_INDEX = 0;
 enum int COL_FILE_SIZE = 1;
 enum int COL_FILE_COUNT = 2;
-enum int COL_HAS_MEDIA = 3;
-enum int COL_HAS_ARCHIVE = 4;
-enum int COL_HAS_TORRENT = 5;
-enum int COL_CHECKSUM_SET = 6;
-enum int COL_FILE_NAME = 7;
-enum int COL_INDEX_SORT = 8;
-enum int COL_FILE_SIZE_SORT = 9;
-enum int COL_FILE_COUNT_SORT = 10;
-enum int COL_COUNT = 11;
+enum int COL_MEDIA_VIDEO = 3;
+enum int COL_MEDIA_AUDIO = 4;
+enum int COL_MEDIA_IMAGE = 5;
+enum int COL_MEDIA_TEXT = 6;
+enum int COL_HAS_ARCHIVE = 7;
+enum int COL_HAS_TORRENT = 8;
+enum int COL_CHECKSUM_SET = 9;
+enum int COL_FILE_NAME = 10;
+enum int COL_INDEX_SORT = 11;
+enum int COL_FILE_SIZE_SORT = 12;
+enum int COL_FILE_COUNT_SORT = 13;
+enum int COL_COUNT = 14;
 
 /** Parsed startup options from command-line arguments. */
 struct CliOptions {
@@ -180,7 +183,10 @@ void configureTableColumns(TreeView treeView) {
     addTextColumn("#", COL_INDEX, COL_INDEX_SORT);
     addTextColumn("Size", COL_FILE_SIZE, COL_FILE_SIZE_SORT);
     addTextColumn("Files", COL_FILE_COUNT, COL_FILE_COUNT_SORT);
-    addTextColumn("Media", COL_HAS_MEDIA);
+    addTextColumn("Video", COL_MEDIA_VIDEO);
+    addTextColumn("Audio", COL_MEDIA_AUDIO);
+    addTextColumn("Image", COL_MEDIA_IMAGE);
+    addTextColumn("Text", COL_MEDIA_TEXT);
     addTextColumn("Archive", COL_HAS_ARCHIVE);
     addTextColumn("Torrent", COL_HAS_TORRENT);
     addTextColumn("Checksums", COL_CHECKSUM_SET);
@@ -248,7 +254,10 @@ void populateTableRows(ListStore store, const(BlobRow)[] rows) {
         auto indexText = to!string(idx + 1);
         auto sizeText = to!string(row.fileSize);
         auto filesText = to!string(row.fileCount);
-        auto mediaText = boolStatusIcon(row.hasMedia);
+        auto videoText = boolStatusIcon(row.hasVideo);
+        auto audioText = boolStatusIcon(row.hasAudio);
+        auto imageText = boolStatusIcon(row.hasImage);
+        auto textText = boolStatusIcon(row.hasText);
         auto archiveText = boolStatusIcon(row.hasArchive);
         auto torrentText = boolStatusIcon(row.hasTorrent);
         auto checksumsText = checksumSetStatus(row);
@@ -262,7 +271,10 @@ void populateTableRows(ListStore store, const(BlobRow)[] rows) {
                 COL_INDEX,
                 COL_FILE_SIZE,
                 COL_FILE_COUNT,
-                COL_HAS_MEDIA,
+                COL_MEDIA_VIDEO,
+                COL_MEDIA_AUDIO,
+                COL_MEDIA_IMAGE,
+                COL_MEDIA_TEXT,
                 COL_HAS_ARCHIVE,
                 COL_HAS_TORRENT,
                 COL_CHECKSUM_SET,
@@ -275,7 +287,10 @@ void populateTableRows(ListStore store, const(BlobRow)[] rows) {
                 indexText,
                 sizeText,
                 filesText,
-                mediaText,
+                videoText,
+                audioText,
+                imageText,
+                textText,
                 archiveText,
                 torrentText,
                 checksumsText,
@@ -359,6 +374,9 @@ int main(string[] args) {
     toolbar.packStart(progressBar, true, true, 0);
 
     auto tableStore = new ListStore([
+        GType.STRING,
+        GType.STRING,
+        GType.STRING,
         GType.STRING,
         GType.STRING,
         GType.STRING,
@@ -620,7 +638,10 @@ int main(string[] args) {
                 auto indexText = to!string(idx + 1);
                 auto sizeText = to!string(row.fileSize);
                 auto filesText = to!string(row.fileCount);
-                auto mediaText = boolStatusIcon(row.hasMedia);
+                auto videoText = boolStatusIcon(row.hasVideo);
+                auto audioText = boolStatusIcon(row.hasAudio);
+                auto imageText = boolStatusIcon(row.hasImage);
+                auto textText = boolStatusIcon(row.hasText);
                 auto archiveText = boolStatusIcon(row.hasArchive);
                 auto torrentText = boolStatusIcon(row.hasTorrent);
                 auto checksumsText = checksumSetStatus(row);
@@ -638,7 +659,10 @@ int main(string[] args) {
                         COL_INDEX,
                         COL_FILE_SIZE,
                         COL_FILE_COUNT,
-                        COL_HAS_MEDIA,
+                        COL_MEDIA_VIDEO,
+                        COL_MEDIA_AUDIO,
+                        COL_MEDIA_IMAGE,
+                        COL_MEDIA_TEXT,
                         COL_HAS_ARCHIVE,
                         COL_HAS_TORRENT,
                         COL_CHECKSUM_SET,
@@ -651,7 +675,10 @@ int main(string[] args) {
                         indexText,
                         sizeText,
                         filesText,
-                        mediaText,
+                        videoText,
+                        audioText,
+                        imageText,
+                        textText,
                         archiveText,
                         torrentText,
                         checksumsText,
@@ -726,15 +753,21 @@ int main(string[] args) {
         auto idx = model.getValueString(iter, COL_INDEX);
         auto size = model.getValueString(iter, COL_FILE_SIZE);
         auto files = model.getValueString(iter, COL_FILE_COUNT);
-        auto media = model.getValueString(iter, COL_HAS_MEDIA);
+        auto video = model.getValueString(iter, COL_MEDIA_VIDEO);
+        auto audio = model.getValueString(iter, COL_MEDIA_AUDIO);
+        auto image = model.getValueString(iter, COL_MEDIA_IMAGE);
+        auto text = model.getValueString(iter, COL_MEDIA_TEXT);
         auto checksums = model.getValueString(iter, COL_CHECKSUM_SET);
         auto fileName = model.getValueString(iter, COL_FILE_NAME);
         rowDetails.setText(format(
-            "Selection: #%s | size=%s | files=%s | media=%s | checksums=%s | file=%s",
+            "Selection: #%s | size=%s | files=%s | V=%s A=%s I=%s T=%s | checksums=%s | file=%s",
             idx,
             size,
             files,
-            media,
+            video,
+            audio,
+            image,
+            text,
             checksums,
             fileName
         ));
@@ -763,6 +796,7 @@ int main(string[] args) {
             "All file references: %s\n" ~
             "File size: %s bytes\n" ~
             "File references: %s\n" ~
+            "Media types: video=%s | audio=%s | image=%s | text=%s\n" ~
             "Checksum set: %s\n" ~
             "MD5 (base64): %s\n" ~
             "MD5 (hex): %s\n" ~
@@ -782,6 +816,10 @@ int main(string[] args) {
             row.fileNamesSummary.length > 0 ? row.fileNamesSummary : "-",
             row.fileSize,
             row.fileCount,
+            row.hasVideo ? "yes" : "no",
+            row.hasAudio ? "yes" : "no",
+            row.hasImage ? "yes" : "no",
+            row.hasText ? "yes" : "no",
             checksumSetStatus(row),
             row.md5.length > 0 ? row.md5 : "-",
             digestBase64ToHex(row.md5),

@@ -23,6 +23,10 @@ struct BlobRow {
     size_t fileCount; /// Number of known file references for this blob.
     string fileNamesSummary; /// Concatenated file reference names for detail display.
     bool hasMedia; /// True when media metadata is present.
+    bool hasVideo; /// True when media metadata marks a video stream.
+    bool hasAudio; /// True when media metadata marks an audio stream.
+    bool hasImage; /// True when media metadata marks an image stream.
+    bool hasText; /// True when media metadata marks a text/subtitle stream.
     bool hasArchive; /// True when archive metadata is present.
     bool hasTorrent; /// True when torrent metadata is present.
     string fileType; /// Optional file type signature from scanner metadata.

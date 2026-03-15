@@ -216,12 +216,43 @@ BlobRow rowFromJsonObject(JSONValue objValue) {
     }
 
     row.hasMedia = false;
+    row.hasVideo = false;
+    row.hasAudio = false;
+    row.hasImage = false;
+    row.hasText = false;
     if ("mediaInfoSig" in obj && (*("mediaInfoSig" in obj)).type == JSONType.object) {
-        row.hasMedia = true;
+        auto sig = (*("mediaInfoSig" in obj)).object;
+        foreach (key, value; sig) {
+            bool isPresent = value.type != JSONType.false_ && value.type != JSONType.null_;
+            if (!isPresent) {
+                continue;
+            }
+
+            row.hasMedia = true;
+            switch (key) {
+                case "video":
+                    row.hasVideo = true;
+                    break;
+                case "audio":
+                    row.hasAudio = true;
+                    break;
+                case "image":
+                    row.hasImage = true;
+                    break;
+                case "text":
+                case "subtitle":
+                case "subtitles":
+                    row.hasText = true;
+                    break;
+                default:
+                    break;
+            }
+        }
     }
     if (!row.hasMedia && "mediaInfo" in obj && (*("mediaInfo" in obj)).type == JSONType.array) {
         row.hasMedia = (*("mediaInfo" in obj)).array.length > 0;
     }
+    row.hasMedia = row.hasMedia || row.hasVideo || row.hasAudio || row.hasImage || row.hasText;
 
     if ("fileType" in obj) {
         row.fileType = (*("fileType" in obj)).str;
@@ -304,6 +335,10 @@ unittest {
         assert(row.fileCount == 2);
         assert(row.fileNamesSummary == "alpha.mkv, beta.srt");
         assert(row.hasMedia);
+        assert(row.hasVideo);
+        assert(!row.hasAudio);
+        assert(!row.hasImage);
+        assert(!row.hasText);
         assert(row.hasArchive);
         assert(row.hasTorrent);
         assert(row.fileType == "video");
@@ -331,6 +366,10 @@ unittest {
         assert(row.fileCount == 2);
         assert(row.fileNamesSummary == "one.bin, two.bin");
         assert(row.hasMedia);
+        assert(!row.hasVideo);
+        assert(!row.hasAudio);
+        assert(!row.hasImage);
+        assert(!row.hasText);
         assert(!row.hasArchive);
         assert(!row.hasTorrent);
 }

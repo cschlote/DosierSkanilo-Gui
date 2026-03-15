@@ -139,10 +139,10 @@ BlobRow[] filterRowsByText(const(BlobRow)[] rows, string needle, bool caseSensit
 
 unittest {
     BlobRow[] rows = [
-        BlobRow("Alpha.mkv", 100, "", "sha-001", "", 1, "Alpha.mkv", true, false, false, "video", ""),
-        BlobRow("beta.zip", 200, "", "sha-002", "", 1, "beta.zip", false, true, false, "archive", ""),
-        BlobRow("gamma.txt", 50, "", "dup-sha", "", 1, "gamma.txt", false, false, false, "text", ""),
-        BlobRow("delta.txt", 50, "", "dup-sha", "", 1, "delta.txt", false, false, false, "text", "")
+        BlobRow(primaryFileName: "Alpha.mkv", fileSize: 100, sha1: "sha-001", fileCount: 1, fileNamesSummary: "Alpha.mkv", hasMedia: true, hasVideo: true, fileType: "video"),
+        BlobRow(primaryFileName: "beta.zip", fileSize: 200, sha1: "sha-002", fileCount: 1, fileNamesSummary: "beta.zip", hasArchive: true, fileType: "archive"),
+        BlobRow(primaryFileName: "gamma.txt", fileSize: 50, sha1: "dup-sha", fileCount: 1, fileNamesSummary: "gamma.txt", fileType: "text"),
+        BlobRow(primaryFileName: "delta.txt", fileSize: 50, sha1: "dup-sha", fileCount: 1, fileNamesSummary: "delta.txt", fileType: "text")
     ];
 
     auto filteredInsensitive = filterRowsByText(rows, "alpha");
@@ -158,10 +158,10 @@ unittest {
 
 unittest {
     BlobRow[] rows = [
-        BlobRow("one.bin", 1, "", "same", "", 1, "one.bin", false, false, false, "", ""),
-        BlobRow("two.bin", 2, "", "same", "", 1, "two.bin", false, false, false, "", ""),
-        BlobRow("three.bin", 3, "", "other", "", 1, "three.bin", false, false, false, "", ""),
-        BlobRow("empty.bin", 4, "", "", "", 1, "empty.bin", false, false, false, "", "")
+        BlobRow(primaryFileName: "one.bin", fileSize: 1, sha1: "same", fileCount: 1, fileNamesSummary: "one.bin"),
+        BlobRow(primaryFileName: "two.bin", fileSize: 2, sha1: "same", fileCount: 1, fileNamesSummary: "two.bin"),
+        BlobRow(primaryFileName: "three.bin", fileSize: 3, sha1: "other", fileCount: 1, fileNamesSummary: "three.bin"),
+        BlobRow(primaryFileName: "empty.bin", fileSize: 4, fileCount: 1, fileNamesSummary: "empty.bin")
     ];
 
     assert(countDuplicateDigestGroups(rows) == 1);
@@ -174,7 +174,7 @@ unittest {
 
 unittest {
     BlobRow[] rows = [
-        BlobRow("alpha.bin", 10, "", "sha-a", "", 1, "alpha.bin", false, false, false, "", "")
+        BlobRow(primaryFileName: "alpha.bin", fileSize: 10, sha1: "sha-a", fileCount: 1, fileNamesSummary: "alpha.bin")
     ];
 
     auto report = rowsToDisplayText("sample.json", rows);
