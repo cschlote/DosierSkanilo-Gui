@@ -45,6 +45,8 @@ import glib.Timeout;
 import gobject.Type : GType;
 import gtk.Clipboard;
 import gdk.Display;
+import gdk.MonitorG;
+import gdk.c.types : GdkRectangle;
 
 import core.thread : Thread;
 import core.time : MonoTime;
@@ -253,6 +255,68 @@ void saveAppState(const(AppState) state) {
     );
 
     write(filePath, payload);
+}
+
+void clampWindowGeometryToVisibleArea(ref int x, ref int y, ref int width, ref int height) {
+    auto display = Display.getDefault();
+    if (display is null) {
+        return;
+    }
+
+    MonitorG monitor = display.getMonitorAtPoint(x, y);
+    if (monitor is null) {
+        monitor = display.getPrimaryMonitor();
+    }
+    if (monitor is null && display.getNMonitors() > 0) {
+        monitor = display.getMonitor(0);
+    }
+    if (monitor is null) {
+        return;
+    }
+
+    GdkRectangle bounds;
+    monitor.getWorkarea(bounds);
+    if (bounds.width <= 0 || bounds.height <= 0) {
+        monitor.getGeometry(bounds);
+    }
+    if (bounds.width <= 0 || bounds.height <= 0) {
+        return;
+    }
+
+    // Keep at least a usable minimum size and clamp to monitor work area.
+    if (width < 640) {
+        width = 640;
+    }
+    if (height < 400) {
+        height = 400;
+    }
+    if (width > bounds.width) {
+        width = bounds.width;
+    }
+    if (height > bounds.height) {
+        height = bounds.height;
+    }
+
+    auto maxX = bounds.x + bounds.width - width;
+    auto maxY = bounds.y + bounds.height - height;
+    if (maxX < bounds.x) {
+        maxX = bounds.x;
+    }
+    if (maxY < bounds.y) {
+        maxY = bounds.y;
+    }
+
+    if (x < bounds.x) {
+        x = bounds.x;
+    } else if (x > maxX) {
+        x = maxX;
+    }
+
+    if (y < bounds.y) {
+        y = bounds.y;
+    } else if (y > maxY) {
+        y = maxY;
+    }
 }
 
 /** Return human-readable CLI usage text. */
@@ -1596,6 +1660,7 @@ int main(string[] args) {
         auto restoredY = loadedState.windowY;
         auto restoredWidth = loadedState.windowWidth;
         auto restoredHeight = loadedState.windowHeight;
+        clampWindowGeometryToVisibleArea(restoredX, restoredY, restoredWidth, restoredHeight);
         new Idle({
             window.move(restoredX, restoredY);
             window.resize(restoredWidth, restoredHeight);
