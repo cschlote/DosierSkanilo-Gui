@@ -571,16 +571,10 @@ int main(string[] args) {
         auto orientation = prefDetailsBelow ? Orientation.VERTICAL : Orientation.HORIZONTAL;
         auto splitPosition = prefDetailsBelow ? 420 : 720;
 
-        content.remove(split);
-        auto updatedSplit = new Paned(orientation);
-        updatedSplit.add1(scroll);
-        updatedSplit.add2(detailsPane);
-        updatedSplit.setPosition(splitPosition);
-
-        split = updatedSplit;
-        content.packStart(split, true, true, 0);
-        content.reorderChild(split, 2);
-        split.showAll();
+        // Keep the same paned instance and flip orientation in place.
+        // Rebuilding/reparenting the children can invalidate GTK widget ownership.
+        split.setOrientation(orientation);
+        split.setPosition(splitPosition);
     }
 
     void renderRows(const(BlobRow)[] rows, string filterLabel = "") {
