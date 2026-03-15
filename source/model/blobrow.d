@@ -26,4 +26,5 @@ struct BlobRow {
     bool hasArchive; /// True when archive metadata is present.
     bool hasTorrent; /// True when torrent metadata is present.
     string fileType; /// Optional file type signature from scanner metadata.
+    string rawJson; /// Full source JSON object for exhaustive detail inspection.
 }

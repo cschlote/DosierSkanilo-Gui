@@ -99,6 +99,8 @@ BlobRow rowFromJsonObject(JSONValue objValue) {
         return row;
     }
 
+    row.rawJson = objValue.toString();
+
     auto obj = objValue.object;
 
     if ("fileSize" in obj) {

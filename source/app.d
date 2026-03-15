@@ -615,7 +615,9 @@ int main(string[] args) {
             "Has media metadata: %s\n" ~
             "Has archive metadata: %s\n" ~
             "Has torrent metadata: %s\n" ~
-            "Loaded source: %s\n",
+            "Loaded source: %s\n" ~
+            "\nRaw JSON Object\n\n" ~
+            "%s\n",
             idx,
             row.primaryFileName.length > 0 ? row.primaryFileName : "-",
             row.fileNamesSummary.length > 0 ? row.fileNamesSummary : "-",
@@ -628,7 +630,8 @@ int main(string[] args) {
             row.hasMedia ? "yes" : "no",
             row.hasArchive ? "yes" : "no",
             row.hasTorrent ? "yes" : "no",
-            loadedFilePath.length > 0 ? loadedFilePath : "-"
+            loadedFilePath.length > 0 ? loadedFilePath : "-",
+            row.rawJson.length > 0 ? row.rawJson : "{}"
         );
         selectedDetailsText = detailsText;
         btnCopySha1.setSensitive(!isLoading && selectedSha1.length > 0);
