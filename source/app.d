@@ -63,7 +63,7 @@ import std.process : environment;
 
 import io.dosierjson : extractRowsFromRoot;
 import model.blobrow : BlobRow;
-import view.textreport : countDuplicateDigestGroups, filterDuplicateRows, filterRowsByText;
+import view.textreport : countDuplicateDigestGroups, filterRowsByText;
 
 enum string DEFAULT_JSON_PATH = "./.filescanner.json";
 
@@ -83,7 +83,6 @@ struct CliOptions {
     string jsonPath = DEFAULT_JSON_PATH;
     bool jsonPathProvided;
     bool loadOnStart;
-    bool duplicatesOnStart;
     string filterOnStart;
     bool caseSensitiveFilter;
     bool disableAutoFilter;
@@ -95,7 +94,6 @@ struct AsyncLoadResult {
     BlobRow[] allRows;
     size_t duplicateGroups;
     string filePath;
-    bool duplicatesOnly;
     int dataVersion = -1;
     string rootShape;
     string rootKeysSummary;
@@ -114,7 +112,6 @@ struct AsyncFilterResult {
 }
 
 struct AppState {
-    bool prefDefaultDuplicatesOnly;
     bool prefAutoApplyFilter = true;
     bool prefCaseSensitiveFilter;
     bool prefDetailsBelow;
@@ -186,9 +183,6 @@ AppState loadAppState() {
         }
 
         auto root = parsed.object;
-        if (auto value = "prefDefaultDuplicatesOnly" in root) {
-            state.prefDefaultDuplicatesOnly = jsonToBool(*value, state.prefDefaultDuplicatesOnly);
-        }
         if (auto value = "prefAutoApplyFilter" in root) {
             state.prefAutoApplyFilter = jsonToBool(*value, state.prefAutoApplyFilter);
         }
@@ -235,7 +229,6 @@ void saveAppState(const(AppState) state) {
 
     auto payload = format(
         "{\n" ~
-        "  \"prefDefaultDuplicatesOnly\": %s,\n" ~
         "  \"prefAutoApplyFilter\": %s,\n" ~
         "  \"prefCaseSensitiveFilter\": %s,\n" ~
         "  \"prefDetailsBelow\": %s,\n" ~
@@ -247,7 +240,6 @@ void saveAppState(const(AppState) state) {
         "  \"windowWidth\": %s,\n" ~
         "  \"windowHeight\": %s\n" ~
         "}\n",
-        state.prefDefaultDuplicatesOnly ? "true" : "false",
         state.prefAutoApplyFilter ? "true" : "false",
         state.prefCaseSensitiveFilter ? "true" : "false",
         state.prefDetailsBelow ? "true" : "false",
@@ -274,7 +266,6 @@ string cliUsageText() {
         "Options:\n" ~
         "  -j, --json <file>         JSON file to open\n" ~
         "  -l, --load                Load on startup\n" ~
-        "  -d, --duplicates          Load duplicate-only view on startup\n" ~
         "  -q, --query <text>        Apply initial text filter\n" ~
         "      --case-sensitive      Use case-sensitive text filtering\n" ~
         "      --no-auto-filter      Disable auto filter after load\n" ~
@@ -296,7 +287,6 @@ CliOptions parseCliOptions(ref string[] args) {
         config.passThrough,
         "j|json", &opts.jsonPath,
         "l|load", &opts.loadOnStart,
-        "d|duplicates", &opts.duplicatesOnStart,
         "q|query", &opts.filterOnStart,
         "case-sensitive", &opts.caseSensitiveFilter,
         "no-auto-filter", &opts.disableAutoFilter,
@@ -518,7 +508,6 @@ int main(string[] args) {
     pathEntry.setText(DEFAULT_JSON_PATH);
 
     auto btnLoad = new Button("Load JSON");
-    auto btnLoadDupes = new Button("Load Duplicates Only");
     auto btnReload = new Button("Reload");
     auto btnCancelLoad = new Button("Cancel");
     btnCancelLoad.setSensitive(false);
@@ -549,7 +538,6 @@ int main(string[] args) {
 
     toolbar.packStart(pathEntry, true, true, 0);
     toolbar.packStart(btnLoad, false, false, 0);
-    toolbar.packStart(btnLoadDupes, false, false, 0);
     toolbar.packStart(btnReload, false, false, 0);
     toolbar.packStart(btnCancelLoad, false, false, 0);
     toolbar.packStart(loadSpinner, false, false, 0);
@@ -627,7 +615,6 @@ int main(string[] args) {
     BlobRow[] visibleRows;
     string loadedFilePath;
     size_t loadedDuplicateGroups;
-    bool loadedDuplicatesOnly;
     string selectedSha1;
     string selectedFileName;
     string selectedDetailsText;
@@ -635,7 +622,6 @@ int main(string[] args) {
     string loadedRootShape = "-";
     string loadedRootKeysSummary = "-";
 
-    bool prefDefaultDuplicatesOnly = loadedState.prefDefaultDuplicatesOnly;
     bool prefAutoApplyFilter = loadedState.prefAutoApplyFilter;
     bool prefCaseSensitiveFilter = loadedState.prefCaseSensitiveFilter;
     bool prefDetailsBelow = loadedState.prefDetailsBelow;
@@ -697,7 +683,6 @@ int main(string[] args) {
 
         pathEntry.setSensitive(!loading);
         btnLoad.setSensitive(!loading);
-        btnLoadDupes.setSensitive(!loading);
         btnReload.setSensitive(!loading);
         btnCancelLoad.setSensitive(loading);
         filterEntry.setSensitive(!loading);
@@ -802,7 +787,6 @@ int main(string[] args) {
 
     AppState currentAppState(bool clearWindowGeometry = false) {
         AppState state;
-        state.prefDefaultDuplicatesOnly = prefDefaultDuplicatesOnly;
         state.prefAutoApplyFilter = prefAutoApplyFilter;
         state.prefCaseSensitiveFilter = prefCaseSensitiveFilter;
         state.prefDetailsBelow = prefDetailsBelow;
@@ -936,24 +920,21 @@ int main(string[] args) {
             visibleRows = rowsCopy.dup;
             lastRenderElapsedMs = cast(long) (MonoTime.currTime - renderStarted).total!"msecs";
             updatePerfStatus();
-            auto mode = loadedDuplicatesOnly ? "duplicates" : "all";
             string baseStatus;
             if (filterLabel.length > 0) {
                 baseStatus = format(
-                    "Showing %s/%s rows (%s mode, duplicate digest groups: %s, filter: %s, case-sensitive: %s)",
+                    "Showing %s/%s rows (duplicate digest groups: %s, filter: %s, case-sensitive: %s)",
                     rowsCopy.length,
                     loadedRows.length,
-                    mode,
                     loadedDuplicateGroups,
                     filterLabel,
                     prefCaseSensitiveFilter ? "yes" : "no"
                 );
             } else {
                 baseStatus = format(
-                    "Showing %s/%s rows (%s mode, duplicate digest groups: %s)",
+                    "Showing %s/%s rows (duplicate digest groups: %s)",
                     rowsCopy.length,
                     loadedRows.length,
-                    mode,
                     loadedDuplicateGroups
                 );
             }
@@ -1206,7 +1187,7 @@ int main(string[] args) {
         worker.start();
     }
 
-    void loadFromPath(bool duplicatesOnly = false) {
+    void loadFromPath() {
         if (isLoading) {
             status.setText("A load is already in progress.");
             return;
@@ -1227,7 +1208,6 @@ int main(string[] args) {
 
             AsyncLoadResult result;
             result.filePath = filePath;
-            result.duplicatesOnly = duplicatesOnly;
 
             try {
                 setLoadingPhase(requestId, "Reading file from disk ...");
@@ -1295,9 +1275,8 @@ int main(string[] args) {
                 }
 
                 loadedDuplicateGroups = result.duplicateGroups;
-                loadedRows = result.duplicatesOnly ? filterDuplicateRows(result.allRows) : result.allRows;
+                loadedRows = result.allRows;
                 loadedFilePath = result.filePath;
-                loadedDuplicatesOnly = result.duplicatesOnly;
                 loadedDataVersion = result.dataVersion;
                 loadedRootShape = result.rootShape.length > 0 ? result.rootShape : "-";
                 loadedRootKeysSummary = result.rootKeysSummary.length > 0 ? result.rootKeysSummary : "-";
@@ -1324,7 +1303,7 @@ int main(string[] args) {
         worker.start();
     }
 
-    void chooseAndLoadPath(bool duplicatesOnly = false) {
+    void chooseAndLoadPath() {
         if (isLoading) {
             status.setText("A load is already in progress.");
             return;
@@ -1348,7 +1327,7 @@ int main(string[] args) {
             auto selectedPath = chooser.getFilename();
             if (selectedPath.length > 0) {
                 pathEntry.setText(selectedPath);
-                loadFromPath(duplicatesOnly);
+                loadFromPath();
             }
         }
 
@@ -1383,9 +1362,6 @@ int main(string[] args) {
         auto prefsBox = new Box(Orientation.VERTICAL, 8);
         prefsBox.setBorderWidth(8);
 
-        auto optDefaultDupes = new CheckButton("Start normal loads in duplicate-only mode");
-        optDefaultDupes.setActive(prefDefaultDuplicatesOnly);
-
         auto optAutoApply = new CheckButton("Auto-apply filter after load/reload");
         optAutoApply.setActive(prefAutoApplyFilter);
 
@@ -1398,7 +1374,6 @@ int main(string[] args) {
         auto optClearWindowGeometry = new CheckButton("Delete saved window positions on save");
         optClearWindowGeometry.setActive(false);
 
-        prefsBox.packStart(optDefaultDupes, false, false, 0);
         prefsBox.packStart(optAutoApply, false, false, 0);
         prefsBox.packStart(optCaseSensitive, false, false, 0);
         prefsBox.packStart(optDetailsBelow, false, false, 0);
@@ -1409,7 +1384,6 @@ int main(string[] args) {
         auto response = dialog.run();
 
         if (response == cast(int) ResponseType.OK) {
-            prefDefaultDuplicatesOnly = optDefaultDupes.getActive();
             prefAutoApplyFilter = optAutoApply.getActive();
             prefCaseSensitiveFilter = optCaseSensitive.getActive();
             auto oldDetailsBelow = prefDetailsBelow;
@@ -1434,7 +1408,6 @@ int main(string[] args) {
             ButtonsType.CLOSE,
             "Keyboard Shortcuts\n\n" ~
             "Ctrl+O  Open JSON\n" ~
-            "Ctrl+D  Open Duplicates Only\n" ~
             "Ctrl+R  Reload\n" ~
             "Ctrl+K  Cancel Current Operation\n" ~
             "Ctrl+F  Apply Filter\n" ~
@@ -1463,15 +1436,11 @@ int main(string[] args) {
     fileMenuItem.setSubmenu(fileMenu);
 
     auto fileOpen = new MenuItem((MenuItem _) {
-        chooseAndLoadPath(prefDefaultDuplicatesOnly);
+        chooseAndLoadPath();
     }, "_Open JSON", "file.open", true, accelGroup, 'o');
 
-    auto fileOpenDupes = new MenuItem((MenuItem _) {
-        chooseAndLoadPath(true);
-    }, "Open _Duplicates Only", "file.open.dupes", true, accelGroup, 'd');
-
     auto fileReload = new MenuItem((MenuItem _) {
-        loadFromPath(loadedDuplicatesOnly);
+        loadFromPath();
     }, "_Reload", "file.reload", true, accelGroup, 'r');
 
     auto fileCancelOperation = new MenuItem((MenuItem _) {
@@ -1483,7 +1452,6 @@ int main(string[] args) {
     }, "_Quit", "file.quit", true, accelGroup, 'q');
 
     fileMenu.append(fileOpen);
-    fileMenu.append(fileOpenDupes);
     fileMenu.append(fileReload);
     fileMenu.append(fileCancelOperation);
     fileMenu.append(new SeparatorMenuItem());
@@ -1540,15 +1508,11 @@ int main(string[] args) {
     menuBar.append(helpMenuItem);
 
     btnLoad.addOnClicked((Button _) {
-        loadFromPath(prefDefaultDuplicatesOnly);
-    });
-
-    btnLoadDupes.addOnClicked((Button _) {
-        loadFromPath(true);
+        loadFromPath();
     });
 
     btnReload.addOnClicked((Button _) {
-        loadFromPath(loadedDuplicatesOnly);
+        loadFromPath();
     });
 
     btnCancelLoad.addOnClicked((Button _) {
@@ -1581,7 +1545,7 @@ int main(string[] args) {
     });
 
     pathEntry.addOnActivate((Entry _) {
-        loadFromPath(prefDefaultDuplicatesOnly);
+        loadFromPath();
     });
 
     filterEntry.addOnActivate((Entry _) {
@@ -1640,7 +1604,7 @@ int main(string[] args) {
     }
 
     if (cli.loadOnStart) {
-        loadFromPath(cli.duplicatesOnStart || prefDefaultDuplicatesOnly);
+        loadFromPath();
     }
 
     Main.run();
