@@ -1768,6 +1768,13 @@ int main(string[] args) {
         return false;
     });
 
+    window.addOnSizeAllocate((allocation, Widget _) {
+        if (allocation.width > 0 && allocation.height > 0) {
+            lastKnownWindowWidth = allocation.width;
+            lastKnownWindowHeight = allocation.height;
+        }
+    });
+
     content.packStart(separator, false, false, 0);
     content.packStart(toolbar, false, false, 0);
     content.packStart(split, true, true, 0);
@@ -1811,6 +1818,14 @@ int main(string[] args) {
 
         // Second delayed pass to win late WM adjustments.
         new Timeout(320, {
+            window.resize(restoredWidth, restoredHeight);
+            lastKnownWindowWidth = restoredWidth;
+            lastKnownWindowHeight = restoredHeight;
+            return false;
+        });
+
+        // Some WMs settle size after initial composition; enforce a final pass.
+        new Timeout(700, {
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
             lastKnownWindowHeight = restoredHeight;
