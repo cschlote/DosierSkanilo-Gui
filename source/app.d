@@ -66,9 +66,13 @@ enum int COL_INDEX = 0;
 enum int COL_FILE_SIZE = 1;
 enum int COL_FILE_COUNT = 2;
 enum int COL_HAS_MEDIA = 3;
-enum int COL_SHA1 = 4;
-enum int COL_FILE_NAME = 5;
-enum int COL_COUNT = 6;
+enum int COL_HAS_ARCHIVE = 4;
+enum int COL_HAS_TORRENT = 5;
+enum int COL_MD5 = 6;
+enum int COL_SHA1 = 7;
+enum int COL_XXH64 = 8;
+enum int COL_FILE_NAME = 9;
+enum int COL_COUNT = 10;
 
 /** Parsed startup options from command-line arguments. */
 struct CliOptions {
@@ -174,7 +178,11 @@ void configureTableColumns(TreeView treeView) {
     addTextColumn("Size", COL_FILE_SIZE);
     addTextColumn("Files", COL_FILE_COUNT);
     addTextColumn("Media", COL_HAS_MEDIA);
+    addTextColumn("Archive", COL_HAS_ARCHIVE);
+    addTextColumn("Torrent", COL_HAS_TORRENT);
+    addTextColumn("MD5 (base64)", COL_MD5);
     addTextColumn("SHA1 (base64)", COL_SHA1);
+    addTextColumn("xxh64 (base64)", COL_XXH64);
     addTextColumn("Primary file", COL_FILE_NAME);
 
     treeView.setHeadersClickable(true);
@@ -194,15 +202,41 @@ void populateTableRows(ListStore store, const(BlobRow)[] rows) {
         auto sizeText = to!string(row.fileSize);
         auto filesText = to!string(row.fileCount);
         auto mediaText = row.hasMedia ? "yes" : "no";
+        auto archiveText = row.hasArchive ? "yes" : "no";
+        auto torrentText = row.hasTorrent ? "yes" : "no";
+        auto md5Text = row.md5.length > 0 ? row.md5 : "-";
         auto shaText = row.sha1.length > 0 ? row.sha1 : "-";
+        auto xxh64Text = row.xxh64.length > 0 ? row.xxh64 : "-";
         auto fileText = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
 
         TreeIter iter;
         store.append(iter);
         store.set(
             iter,
-            [COL_INDEX, COL_FILE_SIZE, COL_FILE_COUNT, COL_HAS_MEDIA, COL_SHA1, COL_FILE_NAME],
-            [indexText, sizeText, filesText, mediaText, shaText, fileText]
+            [
+                COL_INDEX,
+                COL_FILE_SIZE,
+                COL_FILE_COUNT,
+                COL_HAS_MEDIA,
+                COL_HAS_ARCHIVE,
+                COL_HAS_TORRENT,
+                COL_MD5,
+                COL_SHA1,
+                COL_XXH64,
+                COL_FILE_NAME
+            ],
+            [
+                indexText,
+                sizeText,
+                filesText,
+                mediaText,
+                archiveText,
+                torrentText,
+                md5Text,
+                shaText,
+                xxh64Text,
+                fileText
+            ]
         );
     }
 }
@@ -278,6 +312,10 @@ int main(string[] args) {
     toolbar.packStart(progressBar, true, true, 0);
 
     auto tableStore = new ListStore([
+        GType.STRING,
+        GType.STRING,
+        GType.STRING,
+        GType.STRING,
         GType.STRING,
         GType.STRING,
         GType.STRING,
@@ -524,15 +562,41 @@ int main(string[] args) {
                 auto sizeText = to!string(row.fileSize);
                 auto filesText = to!string(row.fileCount);
                 auto mediaText = row.hasMedia ? "yes" : "no";
+                auto archiveText = row.hasArchive ? "yes" : "no";
+                auto torrentText = row.hasTorrent ? "yes" : "no";
+                auto md5Text = row.md5.length > 0 ? row.md5 : "-";
                 auto shaText = row.sha1.length > 0 ? row.sha1 : "-";
+                auto xxh64Text = row.xxh64.length > 0 ? row.xxh64 : "-";
                 auto fileText = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
 
                 TreeIter iter;
                 tableStore.append(iter);
                 tableStore.set(
                     iter,
-                    [COL_INDEX, COL_FILE_SIZE, COL_FILE_COUNT, COL_HAS_MEDIA, COL_SHA1, COL_FILE_NAME],
-                    [indexText, sizeText, filesText, mediaText, shaText, fileText]
+                    [
+                        COL_INDEX,
+                        COL_FILE_SIZE,
+                        COL_FILE_COUNT,
+                        COL_HAS_MEDIA,
+                        COL_HAS_ARCHIVE,
+                        COL_HAS_TORRENT,
+                        COL_MD5,
+                        COL_SHA1,
+                        COL_XXH64,
+                        COL_FILE_NAME
+                    ],
+                    [
+                        indexText,
+                        sizeText,
+                        filesText,
+                        mediaText,
+                        archiveText,
+                        torrentText,
+                        md5Text,
+                        shaText,
+                        xxh64Text,
+                        fileText
+                    ]
                 );
             }
 
