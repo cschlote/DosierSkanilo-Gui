@@ -28,6 +28,7 @@ import gtk.TreeIter;
 import gtk.TreeSelection;
 import gtk.TreeModelIF;
 import gtk.Paned;
+import gtk.Notebook;
 import gtk.MenuBar;
 import gtk.Menu;
 import gtk.MenuItem;
@@ -58,8 +59,8 @@ import std.getopt : getopt, config;
 import std.stdio : writeln;
 import std.array : appender;
 import std.algorithm : sort;
-import std.string : join;
-import std.path : buildPath;
+import std.string : join, replace;
+import std.path : buildPath, baseName;
 import std.process : environment;
 
 import io.dosierjson : extractRowsFromRoot;
@@ -117,6 +118,7 @@ struct AppState {
     bool prefAutoApplyFilter = true;
     bool prefCaseSensitiveFilter;
     bool prefDetailsBelow;
+    bool prefRestoreOpenFiles = true;
 
     int splitPositionHorizontal = 720;
     int splitPositionVertical = 420;
@@ -128,6 +130,51 @@ struct AppState {
     int windowWidth = 960;
     int windowHeight = 640;
     int windowMonitorIndex = -1;
+    string[] openFilePaths;
+    int activeTabIndex;
+}
+
+/** Per-document UI and data state for one open JSON file tab. */
+class DocumentTab {
+    string filePath;
+    string filterQuery;
+    bool filterVideo;
+    bool filterAudio;
+    bool filterImage;
+    bool filterText;
+    bool filterMediaNegated;
+
+    Box pageRoot;
+    Paned split;
+    ListStore tableStore;
+    TreeView tableView;
+    TextView detailsView;
+    Button btnCopySha1;
+    Button btnCopyFile;
+    Button btnCopyDetails;
+    Label rowDetails;
+    Label status;
+    Label perfStatus;
+    Label fileMetaStatus;
+
+    BlobRow[] loadedRows;
+    BlobRow[] visibleRows;
+    size_t loadedDuplicateGroups;
+    string selectedSha1;
+    string selectedFileName;
+    string selectedDetailsText;
+    int loadedDataVersion = -1;
+    string loadedRootShape = "-";
+    string loadedRootKeysSummary = "-";
+
+    ulong loadRequestId;
+    ulong filterRequestId;
+    ulong renderRequestId;
+    long pendingLoadElapsedMs = -1;
+    string pendingStatusSuffix;
+    long lastLoadElapsedMs = -1;
+    long lastFilterElapsedMs = -1;
+    long lastRenderElapsedMs = -1;
 }
 
 enum string CONFIG_DIR_NAME = ".config/dosierskanilo-gui";
@@ -179,6 +226,59 @@ int jsonToInt(JSONValue value, int fallback = 0) {
     }
 }
 
+/** Convert a JSON array of strings into a D string array. */
+string[] jsonToStringArray(JSONValue value) {
+    string[] result;
+    if (value.type != JSONType.array) {
+        return result;
+    }
+
+    foreach (entry; value.array) {
+        if (entry.type == JSONType.string) {
+            result ~= entry.str;
+        }
+    }
+    return result;
+}
+
+/** Escape a string for manual JSON serialization. */
+string jsonEscapeString(string value) {
+    auto escaped = appender!string();
+    foreach (ch; value) {
+        switch (ch) {
+            case '"':
+                escaped.put("\\\"");
+                break;
+            case '\\':
+                escaped.put("\\\\");
+                break;
+            case '\b':
+                escaped.put("\\b");
+                break;
+            case '\f':
+                escaped.put("\\f");
+                break;
+            case '\n':
+                escaped.put("\\n");
+                break;
+            case '\r':
+                escaped.put("\\r");
+                break;
+            case '\t':
+                escaped.put("\\t");
+                break;
+            default:
+                if (ch < 0x20) {
+                    escaped.put(format("\\u%04x", ch));
+                } else {
+                    escaped.put(cast(char) ch);
+                }
+                break;
+        }
+    }
+    return escaped.data;
+}
+
 /** Load persisted preferences, splitter state, and window geometry hints. */
 AppState loadAppState() {
     AppState state;
@@ -202,6 +302,9 @@ AppState loadAppState() {
         }
         if (auto value = "prefDetailsBelow" in root) {
             state.prefDetailsBelow = jsonToBool(*value, state.prefDetailsBelow);
+        }
+        if (auto value = "prefRestoreOpenFiles" in root) {
+            state.prefRestoreOpenFiles = jsonToBool(*value, state.prefRestoreOpenFiles);
         }
 
         if (auto value = "splitPositionHorizontal" in root) {
@@ -232,6 +335,12 @@ AppState loadAppState() {
         if (auto value = "windowMonitorIndex" in root) {
             state.windowMonitorIndex = jsonToInt(*value, state.windowMonitorIndex);
         }
+        if (auto value = "openFilePaths" in root) {
+            state.openFilePaths = jsonToStringArray(*value);
+        }
+        if (auto value = "activeTabIndex" in root) {
+            state.activeTabIndex = jsonToInt(*value, state.activeTabIndex);
+        }
     } catch (Exception) {
         // Keep defaults on invalid state file.
     }
@@ -244,12 +353,24 @@ void saveAppState(const(AppState) state) {
     auto dirPath = configDirPath();
     auto filePath = configFilePath();
     mkdirRecurse(dirPath);
+    auto openFileJson = appender!string();
+    openFileJson.put("[");
+    foreach (idx, filePathValue; state.openFilePaths) {
+        if (idx > 0) {
+            openFileJson.put(", ");
+        }
+        openFileJson.put("\"");
+        openFileJson.put(jsonEscapeString(filePathValue));
+        openFileJson.put("\"");
+    }
+    openFileJson.put("]");
 
     auto payload = format(
         "{\n" ~
         "  \"prefAutoApplyFilter\": %s,\n" ~
         "  \"prefCaseSensitiveFilter\": %s,\n" ~
         "  \"prefDetailsBelow\": %s,\n" ~
+        "  \"prefRestoreOpenFiles\": %s,\n" ~
         "  \"splitPositionHorizontal\": %s,\n" ~
         "  \"splitPositionVertical\": %s,\n" ~
         "  \"hasWindowGeometry\": %s,\n" ~
@@ -258,11 +379,14 @@ void saveAppState(const(AppState) state) {
         "  \"hasWindowSize\": %s,\n" ~
         "  \"windowWidth\": %s,\n" ~
         "  \"windowHeight\": %s,\n" ~
-        "  \"windowMonitorIndex\": %s\n" ~
+        "  \"windowMonitorIndex\": %s,\n" ~
+        "  \"openFilePaths\": %s,\n" ~
+        "  \"activeTabIndex\": %s\n" ~
         "}\n",
         state.prefAutoApplyFilter ? "true" : "false",
         state.prefCaseSensitiveFilter ? "true" : "false",
         state.prefDetailsBelow ? "true" : "false",
+        state.prefRestoreOpenFiles ? "true" : "false",
         state.splitPositionHorizontal,
         state.splitPositionVertical,
         state.hasWindowGeometry ? "true" : "false",
@@ -271,7 +395,9 @@ void saveAppState(const(AppState) state) {
         state.hasWindowSize ? "true" : "false",
         state.windowWidth,
         state.windowHeight,
-        state.windowMonitorIndex
+        state.windowMonitorIndex,
+        openFileJson.data,
+        state.activeTabIndex
     );
 
     write(filePath, payload);
@@ -331,14 +457,24 @@ CliOptions parseCliOptions(ref string[] args) {
 void configureTableColumns(TreeView treeView) {
     void addTextColumn(string title, int modelColumn, int sortColumn = -1) {
         auto renderer = new CellRendererText();
+        auto xalign = (modelColumn == COL_INDEX || modelColumn == COL_FILE_SIZE) ? 1.0f : 0.5f;
+        renderer.setAlignment(xalign, 0.5f);
         auto column = new TreeViewColumn();
         column.setTitle(title);
         column.packStart(renderer, false);
         column.addAttribute(renderer, "text", modelColumn);
         column.setSortColumnId(sortColumn >= 0 ? sortColumn : modelColumn);
         column.setResizable(false);
-        column.setExpand(false);
-        column.setSizing(GtkTreeViewColumnSizing.AUTOSIZE);
+        column.setAlignment(xalign);
+        column.setExpand(modelColumn == COL_MEDIA_INFO);
+        column.setSizing(
+            modelColumn == COL_HAS_ARCHIVE || modelColumn == COL_HAS_TORRENT
+                ? GtkTreeViewColumnSizing.FIXED
+                : GtkTreeViewColumnSizing.AUTOSIZE
+        );
+        if (modelColumn == COL_HAS_ARCHIVE || modelColumn == COL_HAS_TORRENT) {
+            column.setFixedWidth(68);
+        }
         column.setClickable(true);
         treeView.appendColumn(column);
     }
@@ -378,7 +514,15 @@ string checksumSetStatus(const(BlobRow) row) {
 
 /** Render a compact status icon for boolean table cells. */
 string boolStatusIcon(bool value) {
-    return value ? "🟢✓" : "🔴✗";
+    return value ? "✓" : "○";
+}
+
+/** Expand the stored filename summary into one line per known file name. */
+string stackedFileNames(string fileNamesSummary) {
+    if (fileNamesSummary.length == 0) {
+        return "-";
+    }
+    return fileNamesSummary.replace(", ", "\n");
 }
 
 /** Summarize media subtype flags for the list view. */
@@ -552,6 +696,8 @@ int main(string[] args) {
     filterImage.setTooltipText("Filter to rows with image media metadata");
     auto filterText = new CheckButton("T");
     filterText.setTooltipText("Filter to rows with text/subtitle media metadata");
+    auto filterMediaNot = new CheckButton("NOT");
+    filterMediaNot.setTooltipText("Invert the selected media-type filters");
 
     auto btnApplyFilter = new Button("Apply Filter");
     auto btnClearFilter = new Button("Clear Filter");
@@ -573,110 +719,34 @@ int main(string[] args) {
     toolbar.packStart(filterAudio, false, false, 0);
     toolbar.packStart(filterImage, false, false, 0);
     toolbar.packStart(filterText, false, false, 0);
+    toolbar.packStart(filterMediaNot, false, false, 0);
     toolbar.packStart(btnApplyFilter, false, false, 0);
     toolbar.packStart(btnClearFilter, false, false, 0);
     toolbar.packStart(progressBar, true, true, 0);
 
-    auto tableStore = new ListStore([
-        GType.STRING,
-        GType.STRING,
-        GType.STRING,
-        GType.STRING,
-        GType.STRING,
-        GType.STRING,
-        GType.STRING,
-        GType.STRING,
-        GType.STRING
-    ]);
-    auto tableView = new TreeView(tableStore);
-    configureTableColumns(tableView);
+    auto notebook = new Notebook();
+    notebook.setHexpand(true);
+    notebook.setVexpand(true);
 
-    auto scroll = new ScrolledWindow(null, null);
-    scroll.setVexpand(true);
-    scroll.setHexpand(true);
-    scroll.add(tableView);
-
-    auto detailsView = new TextView();
-    detailsView.setEditable(false);
-    detailsView.setMonospace(true);
-    detailsView.getBuffer().setText(
-        "No details selected yet.\n\n" ~
-        "Select a table row to populate this panel.\n\n" ~
-        "SHA1: <none>\n" ~
-        "File: <none>\n" ~
-        "Checksums: <none>\n" ~
-        "Media: <none>\n"
-    );
-
-    auto detailsActions = new Box(Orientation.HORIZONTAL, 6);
-    auto btnCopySha1 = new Button("Copy SHA1");
-    auto btnCopyFile = new Button("Copy File");
-    auto btnCopyDetails = new Button("Copy Details");
-    btnCopySha1.setSensitive(false);
-    btnCopyFile.setSensitive(false);
-    btnCopyDetails.setSensitive(false);
-    detailsActions.packStart(btnCopySha1, false, false, 0);
-    detailsActions.packStart(btnCopyFile, false, false, 0);
-    detailsActions.packStart(btnCopyDetails, false, false, 0);
-
-    auto detailsScroll = new ScrolledWindow(null, null);
-    detailsScroll.setVexpand(true);
-    detailsScroll.setHexpand(true);
-    detailsScroll.add(detailsView);
-
-    auto detailsPane = new Box(Orientation.VERTICAL, 6);
-    detailsPane.packStart(detailsActions, false, false, 0);
-    detailsPane.packStart(detailsScroll, true, true, 0);
-
-    auto split = new Paned(Orientation.HORIZONTAL);
-    split.pack1(scroll, true, true);
-    // Keep details pane from collapsing away entirely.
-    split.pack2(detailsPane, true, false);
-    split.setPosition(loadedState.splitPositionHorizontal);
-
-    auto status = new Label("Ready.");
-    status.setXalign(0.0f);
-
-    auto perfStatus = new Label("Timings: load=- ms | filter=- ms | render=- ms");
-    perfStatus.setXalign(0.0f);
-
-    auto fileMetaStatus = new Label("File metadata: version=- | root=- | keys=-");
-    fileMetaStatus.setXalign(0.0f);
-
-    auto rowDetails = new Label("Selection: none");
-    rowDetails.setXalign(0.0f);
-
-    BlobRow[] loadedRows;
-    BlobRow[] visibleRows;
-    string loadedFilePath;
-    size_t loadedDuplicateGroups;
-    string selectedSha1;
-    string selectedFileName;
-    string selectedDetailsText;
-    int loadedDataVersion = -1;
-    string loadedRootShape = "-";
-    string loadedRootKeysSummary = "-";
+    DocumentTab[] documents;
+    string[] pendingStartupPaths;
+    int pendingStartupSelectIndex = -1;
 
     bool prefAutoApplyFilter = loadedState.prefAutoApplyFilter;
     bool prefCaseSensitiveFilter = loadedState.prefCaseSensitiveFilter;
     bool prefDetailsBelow = loadedState.prefDetailsBelow;
+    bool prefRestoreOpenFiles = loadedState.prefRestoreOpenFiles;
     bool clearSavedWindowGeometryOnExit;
     bool allowRuntimeStatePersistence = !loadedState.hasWindowSize;
+    bool isSyncingToolbarState;
     int splitPositionHorizontal = loadedState.splitPositionHorizontal;
     int splitPositionVertical = loadedState.splitPositionVertical;
     int lastKnownWindowWidth = loadedState.windowWidth;
     int lastKnownWindowHeight = loadedState.windowHeight;
     Timeout windowSizePersistTimer;
     bool isLoading;
-    ulong loadRequestId;
-    ulong filterRequestId;
-    ulong renderRequestId;
-    long pendingLoadElapsedMs = -1;
-    string pendingStatusSuffix;
+    DocumentTab busyDocument;
     Timeout progressPulseTimer;
-    long lastLoadElapsedMs = -1;
-    long lastFilterElapsedMs = -1;
-    long lastRenderElapsedMs = -1;
 
     if (cli.disableAutoFilter) {
         prefAutoApplyFilter = false;
@@ -694,55 +764,126 @@ int main(string[] args) {
         filterEntry.setText(cli.filterOnStart);
     }
 
+    /** Return the default placeholder text for an empty details panel. */
+    string emptyDetailsText() {
+        return
+            "No details selected yet.\n\n" ~
+            "Select a table row to populate this panel.\n\n" ~
+            "SHA1: <none>\n" ~
+            "File: <none>\n" ~
+            "Checksums: <none>\n" ~
+            "Media: <none>\n";
+    }
+
     /** Format internal timing values for status labels. */
     string formatTimingValue(long valueMs) {
         return valueMs >= 0 ? format("%s", valueMs) : "-";
     }
 
-    /** Refresh the performance summary label. */
-    void updatePerfStatus() {
-        perfStatus.setText(format(
+    /** Return the currently selected document tab, if any. */
+    DocumentTab currentDocument() {
+        auto pageIndex = notebook.getCurrentPage();
+        if (pageIndex < 0 || pageIndex >= documents.length) {
+            return null;
+        }
+        return documents[pageIndex];
+    }
+
+    /** Return the notebook page index for a given document instance. */
+    int indexOfDocument(DocumentTab target) {
+        foreach (idx, document; documents) {
+            if (document is target) {
+                return cast(int) idx;
+            }
+        }
+        return -1;
+    }
+
+    /** Find an already open document tab by JSON file path. */
+    DocumentTab findDocumentByPath(string filePath) {
+        foreach (document; documents) {
+            if (document.filePath == filePath) {
+                return document;
+            }
+        }
+        return null;
+    }
+
+    /** Refresh toolbar sensitivity from the global busy state and active tab presence. */
+    void syncToolbarSensitivity() {
+        auto hasCurrentDocument = currentDocument() !is null;
+        pathEntry.setSensitive(!isLoading);
+        btnLoad.setSensitive(!isLoading);
+        btnReload.setSensitive(!isLoading && hasCurrentDocument);
+        btnCancelLoad.setSensitive(isLoading);
+        filterEntry.setSensitive(!isLoading && hasCurrentDocument);
+        filterVideo.setSensitive(!isLoading && hasCurrentDocument);
+        filterAudio.setSensitive(!isLoading && hasCurrentDocument);
+        filterImage.setSensitive(!isLoading && hasCurrentDocument);
+        filterText.setSensitive(!isLoading && hasCurrentDocument);
+        filterMediaNot.setSensitive(!isLoading && hasCurrentDocument);
+        btnApplyFilter.setSensitive(!isLoading && hasCurrentDocument);
+        btnClearFilter.setSensitive(!isLoading && hasCurrentDocument);
+    }
+
+    /** Mirror the active tab's path and filter settings back into the shared toolbar. */
+    void syncToolbarFromCurrentDocument() {
+        isSyncingToolbarState = true;
+        auto document = currentDocument();
+        if (document is null) {
+            pathEntry.setText(DEFAULT_JSON_PATH);
+            filterEntry.setText("");
+            filterVideo.setActive(false);
+            filterAudio.setActive(false);
+            filterImage.setActive(false);
+            filterText.setActive(false);
+            filterMediaNot.setActive(false);
+            syncToolbarSensitivity();
+            isSyncingToolbarState = false;
+            return;
+        }
+
+        pathEntry.setText(document.filePath);
+        filterEntry.setText(document.filterQuery);
+        filterVideo.setActive(document.filterVideo);
+        filterAudio.setActive(document.filterAudio);
+        filterImage.setActive(document.filterImage);
+        filterText.setActive(document.filterText);
+        filterMediaNot.setActive(document.filterMediaNegated);
+        syncToolbarSensitivity();
+        isSyncingToolbarState = false;
+    }
+
+    /** Refresh the performance summary label for a document tab. */
+    void updatePerfStatus(DocumentTab document) {
+        document.perfStatus.setText(format(
             "Timings: load=%s ms | filter=%s ms | render=%s ms",
-            formatTimingValue(lastLoadElapsedMs),
-            formatTimingValue(lastFilterElapsedMs),
-            formatTimingValue(lastRenderElapsedMs)
+            formatTimingValue(document.lastLoadElapsedMs),
+            formatTimingValue(document.lastFilterElapsedMs),
+            formatTimingValue(document.lastRenderElapsedMs)
         ));
     }
 
-    /** Refresh the metadata status label for the loaded JSON file. */
-    void updateFileMetaStatus() {
-        auto dataVersionText = loadedDataVersion >= 0 ? to!string(loadedDataVersion) : "-";
-        fileMetaStatus.setText(format(
+    /** Refresh the metadata status label for a document tab. */
+    void updateFileMetaStatus(DocumentTab document) {
+        auto dataVersionText = document.loadedDataVersion >= 0 ? to!string(document.loadedDataVersion) : "-";
+        document.fileMetaStatus.setText(format(
             "File metadata: version=%s | root=%s | keys=%s",
             dataVersionText,
-            loadedRootShape,
-            loadedRootKeysSummary
+            document.loadedRootShape,
+            document.loadedRootKeysSummary
         ));
     }
 
-    /** Toggle the loading UI state consistently across controls. */
-    void setLoadingState(bool loading, string message = "") {
+    /** Publish a global busy state while a tab-specific worker is active. */
+    void setLoadingState(DocumentTab document, bool loading, string message = "") {
         isLoading = loading;
-
-        pathEntry.setSensitive(!loading);
-        btnLoad.setSensitive(!loading);
-        btnReload.setSensitive(!loading);
-        btnCancelLoad.setSensitive(loading);
-        filterEntry.setSensitive(!loading);
-        filterVideo.setSensitive(!loading);
-        filterAudio.setSensitive(!loading);
-        filterImage.setSensitive(!loading);
-        filterText.setSensitive(!loading);
-        btnApplyFilter.setSensitive(!loading);
-        btnClearFilter.setSensitive(!loading);
-        btnCopySha1.setSensitive(!loading && selectedSha1.length > 0);
-        btnCopyFile.setSensitive(!loading && selectedFileName.length > 0);
-        btnCopyDetails.setSensitive(!loading && selectedDetailsText.length > 0);
+        busyDocument = loading ? document : null;
+        syncToolbarSensitivity();
 
         if (loading) {
             loadSpinner.setVisible(true);
             loadSpinner.start();
-
             progressBar.setVisible(true);
             auto loadingText = message.length > 0 ? message : "Loading...";
             progressBar.setText(loadingText);
@@ -756,14 +897,17 @@ int main(string[] args) {
                     return true;
                 });
             }
-
-            status.setText(loadingText);
+            if (document !is null) {
+                document.status.setText(loadingText);
+                document.btnCopySha1.setSensitive(false);
+                document.btnCopyFile.setSensitive(false);
+                document.btnCopyDetails.setSensitive(false);
+            }
             return;
         }
 
         loadSpinner.stop();
         loadSpinner.setVisible(false);
-
         if (progressPulseTimer !is null) {
             progressPulseTimer.stop();
             progressPulseTimer = null;
@@ -772,68 +916,66 @@ int main(string[] args) {
         progressBar.setFraction(0.0);
         progressBar.setText("Idle");
 
-        if (message.length > 0) {
-            status.setText(message);
+        if (document !is null) {
+            document.btnCopySha1.setSensitive(document.selectedSha1.length > 0);
+            document.btnCopyFile.setSensitive(document.selectedFileName.length > 0);
+            document.btnCopyDetails.setSensitive(document.selectedDetailsText.length > 0);
+            if (message.length > 0) {
+                document.status.setText(message);
+            }
         }
     }
 
-    /** Publish a worker phase update back onto the GTK main loop. */
-    void setLoadingPhase(ulong expectedRequestId, string phaseText) {
+    /** Publish a load phase update onto the GTK main loop for a single document tab. */
+    void setLoadingPhase(DocumentTab document, ulong expectedRequestId, string phaseText) {
         new Idle({
-            if (expectedRequestId != loadRequestId || !isLoading) {
+            if (!isLoading || busyDocument !is document || expectedRequestId != document.loadRequestId) {
                 return false;
             }
 
-            status.setText(phaseText);
+            document.status.setText(phaseText);
             progressBar.setText(phaseText);
             return false;
         });
     }
 
-    /** Clear collected performance timings shown in the footer. */
+    /** Clear collected performance timings for the active document tab. */
     void resetPerfMetrics() {
-        lastLoadElapsedMs = -1;
-        lastFilterElapsedMs = -1;
-        lastRenderElapsedMs = -1;
-        updatePerfStatus();
-        status.setText("Performance metrics reset.");
+        auto document = currentDocument();
+        if (document is null) {
+            return;
+        }
+        document.lastLoadElapsedMs = -1;
+        document.lastFilterElapsedMs = -1;
+        document.lastRenderElapsedMs = -1;
+        updatePerfStatus(document);
+        document.status.setText("Performance metrics reset.");
     }
 
     /** Reset selection-dependent detail fields to the empty placeholder state. */
-    void clearSelectionDetails() {
-        selectedSha1 = "";
-        selectedFileName = "";
-        selectedDetailsText = "";
-        btnCopySha1.setSensitive(false);
-        btnCopyFile.setSensitive(false);
-        btnCopyDetails.setSensitive(false);
-        rowDetails.setText("Selection: none");
-        detailsView.getBuffer().setText(
-            "No details selected yet.\n\n" ~
-            "Select a table row to populate this panel.\n\n" ~
-            "SHA1: <none>\n" ~
-            "File: <none>\n" ~
-            "Checksums: <none>\n" ~
-            "Media: <none>\n"
-        );
+    void clearSelectionDetails(DocumentTab document) {
+        document.selectedSha1 = "";
+        document.selectedFileName = "";
+        document.selectedDetailsText = "";
+        document.btnCopySha1.setSensitive(false);
+        document.btnCopyFile.setSensitive(false);
+        document.btnCopyDetails.setSensitive(false);
+        document.rowDetails.setText("Selection: none");
+        document.detailsView.getBuffer().setText(emptyDetailsText());
     }
 
-    /** Keep the splitter divider within usable visible bounds. */
-    int clampSplitPositionToVisibleBounds(Orientation orientation, int requestedPosition) {
+    /** Keep a document splitter divider within usable visible bounds. */
+    int clampSplitPositionToVisibleBounds(Paned splitWidget, Orientation orientation, int requestedPosition) {
         enum int MIN_PRIMARY_EXTENT = 240;
         enum int MIN_DETAILS_EXTENT = 180;
 
-        int totalExtent = 0;
-        if (orientation == Orientation.VERTICAL) {
-            totalExtent = split.getAllocatedHeight();
-        } else {
-            totalExtent = split.getAllocatedWidth();
-        }
+        int totalExtent = orientation == Orientation.VERTICAL
+            ? splitWidget.getAllocatedHeight()
+            : splitWidget.getAllocatedWidth();
 
         if (totalExtent <= 0) {
             return requestedPosition;
         }
-
         if (totalExtent <= (MIN_PRIMARY_EXTENT + MIN_DETAILS_EXTENT)) {
             return totalExtent / 2;
         }
@@ -849,11 +991,11 @@ int main(string[] args) {
         return requestedPosition;
     }
 
-    /** Apply the preferred splitter orientation and the matching saved divider position. */
-    void applyDetailsPanePreference(bool captureCurrentPosition = true) {
+    /** Apply the shared details-pane orientation and divider position to one tab. */
+    void applyDetailsPanePreference(DocumentTab document, bool captureCurrentPosition = true) {
         if (captureCurrentPosition) {
-            auto currentOrientation = split.getOrientation();
-            auto currentPosition = split.getPosition();
+            auto currentOrientation = document.split.getOrientation();
+            auto currentPosition = document.split.getPosition();
             if (currentOrientation == Orientation.VERTICAL) {
                 splitPositionVertical = currentPosition;
             } else {
@@ -863,18 +1005,13 @@ int main(string[] args) {
 
         auto orientation = prefDetailsBelow ? Orientation.VERTICAL : Orientation.HORIZONTAL;
         auto splitPosition = prefDetailsBelow ? splitPositionVertical : splitPositionHorizontal;
+        document.split.setOrientation(orientation);
 
-        // Keep the same paned instance and flip orientation in place.
-        // Rebuilding/reparenting the children can invalidate GTK widget ownership.
-        split.setOrientation(orientation);
-
-        auto clampedPosition = clampSplitPositionToVisibleBounds(orientation, splitPosition);
-        split.setPosition(clampedPosition);
-
-        // Re-apply once after layout to clamp against real allocated size.
+        auto clampedPosition = clampSplitPositionToVisibleBounds(document.split, orientation, splitPosition);
+        document.split.setPosition(clampedPosition);
         new Idle({
-            auto realizedClamped = clampSplitPositionToVisibleBounds(orientation, splitPosition);
-            split.setPosition(realizedClamped);
+            auto realizedClamped = clampSplitPositionToVisibleBounds(document.split, orientation, splitPosition);
+            document.split.setPosition(realizedClamped);
             if (orientation == Orientation.VERTICAL) {
                 splitPositionVertical = realizedClamped;
             } else {
@@ -884,19 +1021,127 @@ int main(string[] args) {
         });
     }
 
-    /** Snapshot the current preferences, splitter state, and window size. */
+    /** Apply the shared details-pane preference to all open document tabs. */
+    void applyDetailsPanePreferenceToAll(bool captureCurrentPosition = true) {
+        foreach (document; documents) {
+            applyDetailsPanePreference(document, captureCurrentPosition);
+        }
+    }
+
+    void delegate(DocumentTab) updateSelectedRowDetails;
+    void delegate(string, string, DocumentTab) copyTextToClipboard;
+    DocumentTab delegate(string, bool) openDocumentFromPath;
+    void delegate(DocumentTab) applyFilterForDocument;
+    void delegate(DocumentTab) loadDocument;
+
+    /** Build and wire a new document tab widget hierarchy. */
+    DocumentTab createDocumentTab(string filePath) {
+        auto document = new DocumentTab();
+        document.filePath = filePath;
+
+        document.tableStore = new ListStore([
+            GType.STRING,
+            GType.STRING,
+            GType.STRING,
+            GType.STRING,
+            GType.STRING,
+            GType.STRING,
+            GType.STRING,
+            GType.STRING,
+            GType.STRING
+        ]);
+        document.tableView = new TreeView(document.tableStore);
+        configureTableColumns(document.tableView);
+
+        auto scroll = new ScrolledWindow(null, null);
+        scroll.setVexpand(true);
+        scroll.setHexpand(true);
+        scroll.add(document.tableView);
+
+        document.detailsView = new TextView();
+        document.detailsView.setEditable(false);
+        document.detailsView.setMonospace(true);
+        document.detailsView.getBuffer().setText(emptyDetailsText());
+
+        auto detailsActions = new Box(Orientation.HORIZONTAL, 6);
+        document.btnCopySha1 = new Button("Copy SHA1");
+        document.btnCopyFile = new Button("Copy File");
+        document.btnCopyDetails = new Button("Copy Details");
+        document.btnCopySha1.setSensitive(false);
+        document.btnCopyFile.setSensitive(false);
+        document.btnCopyDetails.setSensitive(false);
+        detailsActions.packStart(document.btnCopySha1, false, false, 0);
+        detailsActions.packStart(document.btnCopyFile, false, false, 0);
+        detailsActions.packStart(document.btnCopyDetails, false, false, 0);
+
+        auto detailsScroll = new ScrolledWindow(null, null);
+        detailsScroll.setVexpand(true);
+        detailsScroll.setHexpand(true);
+        detailsScroll.add(document.detailsView);
+
+        auto detailsPane = new Box(Orientation.VERTICAL, 6);
+        detailsPane.packStart(detailsActions, false, false, 0);
+        detailsPane.packStart(detailsScroll, true, true, 0);
+
+        document.split = new Paned(Orientation.HORIZONTAL);
+        document.split.pack1(scroll, true, true);
+        document.split.pack2(detailsPane, true, false);
+        document.split.setPosition(splitPositionHorizontal);
+
+        document.rowDetails = new Label("Selection: none");
+        document.rowDetails.setXalign(0.0f);
+        document.status = new Label(format("Ready: %s", filePath));
+        document.status.setXalign(0.0f);
+        document.perfStatus = new Label("Timings: load=- ms | filter=- ms | render=- ms");
+        document.perfStatus.setXalign(0.0f);
+        document.fileMetaStatus = new Label("File metadata: version=- | root=- | keys=-");
+        document.fileMetaStatus.setXalign(0.0f);
+
+        document.pageRoot = new Box(Orientation.VERTICAL, 0);
+        document.pageRoot.packStart(document.split, true, true, 0);
+        document.pageRoot.packStart(document.rowDetails, false, false, 0);
+        document.pageRoot.packStart(document.status, false, false, 0);
+        document.pageRoot.packStart(document.perfStatus, false, false, 0);
+        document.pageRoot.packStart(document.fileMetaStatus, false, false, 0);
+        document.pageRoot.showAll();
+
+        document.btnCopySha1.addOnClicked((Button _) {
+            copyTextToClipboard("SHA1", document.selectedSha1, document);
+        });
+        document.btnCopyFile.addOnClicked((Button _) {
+            copyTextToClipboard("file name", document.selectedFileName, document);
+        });
+        document.btnCopyDetails.addOnClicked((Button _) {
+            copyTextToClipboard("details", document.selectedDetailsText, document);
+        });
+        document.tableView.getSelection().addOnChanged((TreeSelection _) {
+            updateSelectedRowDetails(document);
+        });
+
+        clearSelectionDetails(document);
+        updatePerfStatus(document);
+        updateFileMetaStatus(document);
+        applyDetailsPanePreference(document, false);
+        return document;
+    }
+
+    /** Snapshot the current preferences, splitter state, window size, and open tabs. */
     AppState currentAppState(bool clearWindowGeometry = false) {
         AppState state;
         state.prefAutoApplyFilter = prefAutoApplyFilter;
         state.prefCaseSensitiveFilter = prefCaseSensitiveFilter;
         state.prefDetailsBelow = prefDetailsBelow;
+        state.prefRestoreOpenFiles = prefRestoreOpenFiles;
 
-        auto currentOrientation = split.getOrientation();
-        auto currentSplitPosition = split.getPosition();
-        if (currentOrientation == Orientation.VERTICAL) {
-            splitPositionVertical = currentSplitPosition;
-        } else {
-            splitPositionHorizontal = currentSplitPosition;
+        auto document = currentDocument();
+        if (document !is null) {
+            auto currentOrientation = document.split.getOrientation();
+            auto currentSplitPosition = document.split.getPosition();
+            if (currentOrientation == Orientation.VERTICAL) {
+                splitPositionVertical = currentSplitPosition;
+            } else {
+                splitPositionHorizontal = currentSplitPosition;
+            }
         }
 
         state.splitPositionHorizontal = splitPositionHorizontal;
@@ -904,14 +1149,12 @@ int main(string[] args) {
 
         int width = lastKnownWindowWidth;
         int height = lastKnownWindowHeight;
-
         auto allocatedWidth = window.getAllocatedWidth();
         auto allocatedHeight = window.getAllocatedHeight();
         if (allocatedWidth >= MIN_VALID_WINDOW_WIDTH && allocatedHeight >= MIN_VALID_WINDOW_HEIGHT) {
             width = allocatedWidth;
             height = allocatedHeight;
         }
-
         if (width < MIN_VALID_WINDOW_WIDTH) {
             width = 960;
         }
@@ -924,6 +1167,10 @@ int main(string[] args) {
         state.hasWindowSize = true;
         state.windowWidth = width;
         state.windowHeight = height;
+        foreach (openDocument; documents) {
+            state.openFilePaths ~= openDocument.filePath;
+        }
+        state.activeTabIndex = notebook.getCurrentPage();
 
         if (clearWindowGeometry) {
             state.hasWindowGeometry = false;
@@ -933,7 +1180,6 @@ int main(string[] args) {
             return state;
         }
 
-        // Do not persist window position to avoid monitor jump issues.
         state.hasWindowGeometry = false;
         state.windowX = 0;
         state.windowY = 0;
@@ -941,46 +1187,45 @@ int main(string[] args) {
         return state;
     }
 
-
-    /** Persist the current application state and surface write failures in the UI. */
+    /** Persist the current application state and surface write failures in the active tab. */
     void persistCurrentState(bool clearWindowGeometry = false) {
         try {
             saveAppState(currentAppState(clearWindowGeometry));
         } catch (Exception ex) {
-            status.setText(format("Failed to persist app state: %s", ex.msg));
+            auto document = currentDocument();
+            if (document !is null) {
+                document.status.setText(format("Failed to persist app state: %s", ex.msg));
+            }
         }
     }
 
-    // Apply persisted splitter orientation/position once the helper is available.
-    applyDetailsPanePreference(false);
-
-    /** Re-render the current row set into the table model in small GTK-friendly batches. */
-    void renderRows(const(BlobRow)[] rows, string filterLabel = "") {
-        if (loadedFilePath.length == 0) {
-            tableStore.clear();
-            visibleRows = [];
-            clearSelectionDetails();
-            loadedDataVersion = -1;
-            loadedRootShape = "-";
-            loadedRootKeysSummary = "-";
-            updateFileMetaStatus();
-            status.setText("Ready.");
+    /** Re-render one document's row set into its list model in GTK-friendly batches. */
+    void renderRows(DocumentTab document, const(BlobRow)[] rows, string filterLabel = "") {
+        if (document.filePath.length == 0) {
+            document.tableStore.clear();
+            document.visibleRows = [];
+            clearSelectionDetails(document);
+            document.loadedDataVersion = -1;
+            document.loadedRootShape = "-";
+            document.loadedRootKeysSummary = "-";
+            updateFileMetaStatus(document);
+            document.status.setText("Ready.");
             return;
         }
 
         auto rowsCopy = rows.dup;
         MonoTime renderStarted = MonoTime.currTime;
-        auto localRenderRequestId = ++renderRequestId;
+        auto localRenderRequestId = ++document.renderRequestId;
         enum size_t RENDER_BATCH_SIZE = 500;
 
-        tableStore.clear();
-        visibleRows = [];
-        clearSelectionDetails();
+        document.tableStore.clear();
+        document.visibleRows = [];
+        clearSelectionDetails(document);
 
         size_t nextIndex = 0;
         bool delegate() renderStep;
         renderStep = {
-            if (localRenderRequestId != renderRequestId) {
+            if (localRenderRequestId != document.renderRequestId) {
                 return false;
             }
 
@@ -1003,50 +1248,31 @@ int main(string[] args) {
                 auto sizeSortText = format("%020d", row.fileSize);
 
                 TreeIter iter;
-                tableStore.append(iter);
-                tableStore.set(
+                document.tableStore.append(iter);
+                document.tableStore.set(
                     iter,
-                    [
-                        COL_INDEX,
-                        COL_FILE_SIZE,
-                        COL_CHECKSUM_SET,
-                        COL_FILE_TYPE,
-                        COL_MEDIA_INFO,
-                        COL_HAS_ARCHIVE,
-                        COL_HAS_TORRENT,
-                        COL_INDEX_SORT,
-                        COL_FILE_SIZE_SORT
-                    ],
-                    [
-                        indexText,
-                        sizeText,
-                        checksumsText,
-                        fileTypeText,
-                        mediaInfoText,
-                        archiveText,
-                        torrentText,
-                        indexSortText,
-                        sizeSortText
-                    ]
+                    [COL_INDEX, COL_FILE_SIZE, COL_CHECKSUM_SET, COL_FILE_TYPE, COL_MEDIA_INFO, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_INDEX_SORT, COL_FILE_SIZE_SORT],
+                    [indexText, sizeText, checksumsText, fileTypeText, mediaInfoText, archiveText, torrentText, indexSortText, sizeSortText]
                 );
             }
 
             nextIndex = endIndex;
             if (nextIndex < rowsCopy.length) {
-                status.setText(format("Rendering rows: %s/%s ...", nextIndex, rowsCopy.length));
+                document.status.setText(format("Rendering rows: %s/%s ...", nextIndex, rowsCopy.length));
                 return true;
             }
 
-            visibleRows = rowsCopy.dup;
-            lastRenderElapsedMs = cast(long) (MonoTime.currTime - renderStarted).total!"msecs";
-            updatePerfStatus();
+            document.visibleRows = rowsCopy.dup;
+            document.lastRenderElapsedMs = cast(long) (MonoTime.currTime - renderStarted).total!"msecs";
+            updatePerfStatus(document);
+
             string baseStatus;
             if (filterLabel.length > 0) {
                 baseStatus = format(
                     "Showing %s/%s rows (duplicate digest groups: %s, filter: %s, case-sensitive: %s)",
                     rowsCopy.length,
-                    loadedRows.length,
-                    loadedDuplicateGroups,
+                    document.loadedRows.length,
+                    document.loadedDuplicateGroups,
                     filterLabel,
                     prefCaseSensitiveFilter ? "yes" : "no"
                 );
@@ -1054,38 +1280,41 @@ int main(string[] args) {
                 baseStatus = format(
                     "Showing %s/%s rows (duplicate digest groups: %s)",
                     rowsCopy.length,
-                    loadedRows.length,
-                    loadedDuplicateGroups
+                    document.loadedRows.length,
+                    document.loadedDuplicateGroups
                 );
             }
 
-            if (pendingLoadElapsedMs >= 0) {
-                baseStatus = format("%s | load time: %s ms", baseStatus, pendingLoadElapsedMs);
-                pendingLoadElapsedMs = -1;
+            if (document.pendingLoadElapsedMs >= 0) {
+                baseStatus = format("%s | load time: %s ms", baseStatus, document.pendingLoadElapsedMs);
+                document.pendingLoadElapsedMs = -1;
+            }
+            if (document.pendingStatusSuffix.length > 0) {
+                baseStatus = format("%s | %s", baseStatus, document.pendingStatusSuffix);
+                document.pendingStatusSuffix = "";
             }
 
-            if (pendingStatusSuffix.length > 0) {
-                baseStatus = format("%s | %s", baseStatus, pendingStatusSuffix);
-                pendingStatusSuffix = "";
+            if (busyDocument is document) {
+                setLoadingState(document, false);
             }
-
-            if (isLoading) {
-                setLoadingState(false);
-            }
-            status.setText(baseStatus);
+            new Idle({
+                applyDetailsPanePreference(document, false);
+                return false;
+            });
+            document.status.setText(baseStatus);
             return false;
         };
 
         new Idle(renderStep);
     }
 
-    /** Update the detail pane for the currently selected table row. */
-    void updateSelectedRowDetails() {
+    /** Update one document tab's detail pane from the selected row. */
+    updateSelectedRowDetails = (DocumentTab document) {
         TreeModelIF model;
         TreeIter iter;
-        auto selection = tableView.getSelection();
+        auto selection = document.tableView.getSelection();
         if (!selection.getSelected(model, iter)) {
-            clearSelectionDetails();
+            clearSelectionDetails(document);
             return;
         }
 
@@ -1096,7 +1325,7 @@ int main(string[] args) {
         auto mediaInfo = model.getValueString(iter, COL_MEDIA_INFO);
         auto archive = model.getValueString(iter, COL_HAS_ARCHIVE);
         auto torrent = model.getValueString(iter, COL_HAS_TORRENT);
-        rowDetails.setText(format(
+        document.rowDetails.setText(format(
             "Selection: #%s | size=%s | checksums=%s | type=%s | media=%s | archive=%s | torrent=%s",
             idx,
             size,
@@ -1111,19 +1340,18 @@ int main(string[] args) {
         try {
             rowIndex = to!size_t(idx) - 1;
         } catch (Exception) {
-            detailsView.getBuffer().setText("Failed to resolve selected row index.");
+            document.detailsView.getBuffer().setText("Failed to resolve selected row index.");
+            return;
+        }
+        if (rowIndex >= document.visibleRows.length) {
+            clearSelectionDetails(document);
+            document.detailsView.getBuffer().setText("Selected row is outside visible data range.");
             return;
         }
 
-        if (rowIndex >= visibleRows.length) {
-            clearSelectionDetails();
-            detailsView.getBuffer().setText("Selected row is outside visible data range.");
-            return;
-        }
-
-        auto row = visibleRows[rowIndex];
-        selectedSha1 = row.sha1;
-        selectedFileName = row.primaryFileName;
+        auto row = document.visibleRows[rowIndex];
+        document.selectedSha1 = row.sha1;
+        document.selectedFileName = row.primaryFileName;
         auto detailsText = format(
             "Selected Row Details\n\n" ~
             "Index: %s\n" ~
@@ -1148,7 +1376,7 @@ int main(string[] args) {
             "%s\n",
             idx,
             row.primaryFileName.length > 0 ? row.primaryFileName : "-",
-            row.fileNamesSummary.length > 0 ? row.fileNamesSummary : "-",
+            stackedFileNames(row.fileNamesSummary),
             row.fileSize,
             row.fileCount,
             row.hasVideo ? "yes" : "no",
@@ -1166,59 +1394,113 @@ int main(string[] args) {
             row.hasMedia ? "yes" : "no",
             row.hasArchive ? "yes" : "no",
             row.hasTorrent ? "yes" : "no",
-            loadedFilePath.length > 0 ? loadedFilePath : "-",
+            document.filePath.length > 0 ? document.filePath : "-",
             row.rawJson.length > 0 ? row.rawJson : "{}"
         );
-        selectedDetailsText = detailsText;
-        btnCopySha1.setSensitive(!isLoading && selectedSha1.length > 0);
-        btnCopyFile.setSensitive(!isLoading && selectedFileName.length > 0);
-        btnCopyDetails.setSensitive(!isLoading && selectedDetailsText.length > 0);
-        detailsView.getBuffer().setText(detailsText);
-    }
+        document.selectedDetailsText = detailsText;
+        document.btnCopySha1.setSensitive(!isLoading && document.selectedSha1.length > 0);
+        document.btnCopyFile.setSensitive(!isLoading && document.selectedFileName.length > 0);
+        document.btnCopyDetails.setSensitive(!isLoading && document.selectedDetailsText.length > 0);
+        document.detailsView.getBuffer().setText(detailsText);
+    };
 
     /** Copy a selected value into the system clipboard. */
-    void copyTextToClipboard(string label, string value) {
+    copyTextToClipboard = (string label, string value, DocumentTab document) {
         if (value.length == 0) {
-            status.setText(format("No %s value available for selected row.", label));
+            document.status.setText(format("No %s value available for selected row.", label));
             return;
         }
 
         auto display = Display.getDefault();
         if (display is null) {
-            status.setText("Clipboard unavailable: no active display.");
+            document.status.setText("Clipboard unavailable: no active display.");
             return;
         }
 
         auto clipboard = Clipboard.getDefault(display);
         if (clipboard is null) {
-            status.setText("Clipboard unavailable.");
+            document.status.setText("Clipboard unavailable.");
             return;
         }
 
         clipboard.setText(value, -1);
-        status.setText(format("Copied %s to clipboard.", label));
+        document.status.setText(format("Copied %s to clipboard.", label));
+    };
+
+    /** Continue automatic startup restoration of saved tabs one file at a time. */
+    void loadNextPendingStartupPath() {
+        if (isLoading || pendingStartupPaths.length == 0) {
+            if (!isLoading && pendingStartupSelectIndex >= 0 && pendingStartupSelectIndex < notebook.getNPages()) {
+                notebook.setCurrentPage(pendingStartupSelectIndex);
+            }
+            return;
+        }
+
+        auto nextPath = pendingStartupPaths[0];
+        pendingStartupPaths = pendingStartupPaths[1 .. $];
+        auto document = openDocumentFromPath(nextPath, false);
+        loadDocument(document);
     }
 
-    /** Apply the current text and media filters in a background worker. */
+    /** Open a document in a tab, selecting it optionally, without forcing a reload. */
+    openDocumentFromPath = (string filePath, bool selectTab) {
+        auto document = findDocumentByPath(filePath);
+        if (document is null) {
+            document = createDocumentTab(filePath);
+            documents ~= document;
+            auto pageIndex = notebook.appendPage(document.pageRoot, baseName(filePath));
+            notebook.setTabReorderable(document.pageRoot, true);
+            if (selectTab) {
+                notebook.setCurrentPage(pageIndex);
+            }
+            persistCurrentState(clearSavedWindowGeometryOnExit);
+        } else if (selectTab) {
+            notebook.setCurrentPage(indexOfDocument(document));
+        }
+
+        syncToolbarFromCurrentDocument();
+        return document;
+    };
+
+    /** Apply the active toolbar filter settings to the current document tab. */
     void applyFilterFromEntry() {
+        if (isSyncingToolbarState) {
+            return;
+        }
+        auto document = currentDocument();
+        if (document is null) {
+            return;
+        }
+
+        document.filterQuery = filterEntry.getText();
+        document.filterVideo = filterVideo.getActive();
+        document.filterAudio = filterAudio.getActive();
+        document.filterImage = filterImage.getActive();
+        document.filterText = filterText.getActive();
+        document.filterMediaNegated = filterMediaNot.getActive();
+        applyFilterForDocument(document);
+    }
+
+    /** Apply one document tab's stored text and media filters in a background worker. */
+    applyFilterForDocument = (DocumentTab document) {
         if (isLoading) {
-            status.setText("Background operation in progress. Please wait before filtering.");
+            document.status.setText("Background operation in progress. Please wait before filtering.");
+            return;
+        }
+        if (document.loadedRows.length == 0) {
+            document.status.setText("No loaded rows to filter.");
             return;
         }
 
-        if (loadedRows.length == 0) {
-            status.setText("No loaded rows to filter.");
-            return;
-        }
-        auto query = filterEntry.getText();
+        auto query = document.filterQuery;
         auto caseSensitive = prefCaseSensitiveFilter;
-        auto requireVideo = filterVideo.getActive();
-        auto requireAudio = filterAudio.getActive();
-        auto requireImage = filterImage.getActive();
-        auto requireText = filterText.getActive();
-        auto sourceRows = loadedRows.dup;
-        auto requestId = ++filterRequestId;
-
+        auto requireVideo = document.filterVideo;
+        auto requireAudio = document.filterAudio;
+        auto requireImage = document.filterImage;
+        auto requireText = document.filterText;
+        auto negateMediaFilter = document.filterMediaNegated;
+        auto sourceRows = document.loadedRows.dup;
+        auto requestId = ++document.filterRequestId;
         bool hasMediaTypeFilters = requireVideo || requireAudio || requireImage || requireText;
 
         string mediaFilterSummary() {
@@ -1226,27 +1508,19 @@ int main(string[] args) {
                 return "";
             }
             auto labels = appender!(string[])();
-            if (requireVideo) {
-                labels.put("V");
-            }
-            if (requireAudio) {
-                labels.put("A");
-            }
-            if (requireImage) {
-                labels.put("I");
-            }
-            if (requireText) {
-                labels.put("T");
-            }
-            return labels.data.join(",");
+            if (requireVideo) labels.put("V");
+            if (requireAudio) labels.put("A");
+            if (requireImage) labels.put("I");
+            if (requireText) labels.put("T");
+            auto summary = labels.data.join(",");
+            return negateMediaFilter ? format("NOT %s", summary) : summary;
         }
 
-        setLoadingState(true, format("Filtering %s rows ...", sourceRows.length));
+        setLoadingState(document, true, format("Filtering %s rows ...", sourceRows.length));
         progressBar.setText("Filtering rows ...");
 
         auto worker = new Thread({
             MonoTime started = MonoTime.currTime;
-
             AsyncFilterResult result;
             result.query = query;
             result.caseSensitive = caseSensitive;
@@ -1261,10 +1535,10 @@ int main(string[] args) {
                             (requireAudio && row.hasAudio) ||
                             (requireImage && row.hasImage) ||
                             (requireText && row.hasText);
-                        if (!matchesMedia) {
-                            continue;
+                        auto keepRow = negateMediaFilter ? !matchesMedia : matchesMedia;
+                        if (keepRow) {
+                            mediaFiltered.put(row);
                         }
-                        mediaFiltered.put(row);
                     }
                     result.filteredRows = mediaFiltered.data;
                 }
@@ -1276,18 +1550,18 @@ int main(string[] args) {
             result.elapsedMs = cast(long) (MonoTime.currTime - started).total!"msecs";
 
             new Idle({
-                if (requestId != filterRequestId) {
+                if (requestId != document.filterRequestId) {
                     return false;
                 }
-
                 if (result.error.length > 0) {
-                    setLoadingState(false, format("Filtering failed: %s", result.error));
+                    setLoadingState(document, false, format("Filtering failed: %s", result.error));
                     return false;
                 }
 
-                pendingStatusSuffix = format("filter time: %s ms", result.elapsedMs);
-                lastFilterElapsedMs = result.elapsedMs;
-                updatePerfStatus();
+                document.pendingStatusSuffix = format("filter time: %s ms", result.elapsedMs);
+                document.lastFilterElapsedMs = result.elapsedMs;
+                updatePerfStatus(document);
+
                 auto filterLabel = result.query;
                 auto mediaSummary = mediaFilterSummary();
                 if (mediaSummary.length > 0 && filterLabel.length > 0) {
@@ -1296,48 +1570,47 @@ int main(string[] args) {
                     filterLabel = format("media:%s", mediaSummary);
                 }
                 if (result.mediaStats.length > 0) {
-                    if (filterLabel.length > 0) {
-                        filterLabel = format("%s | %s", filterLabel, result.mediaStats);
-                    } else {
-                        filterLabel = result.mediaStats;
-                    }
+                    filterLabel = filterLabel.length > 0
+                        ? format("%s | %s", filterLabel, result.mediaStats)
+                        : result.mediaStats;
                 }
-                renderRows(result.filteredRows, filterLabel);
+                renderRows(document, result.filteredRows, filterLabel);
                 return false;
             });
         });
 
         worker.start();
-    }
+    };
 
-    /** Load and normalize the JSON file currently referenced by the path entry. */
-    void loadFromPath() {
+    /** Load and normalize the JSON file for one open document tab. */
+    loadDocument = (DocumentTab document) {
         if (isLoading) {
-            status.setText("A load is already in progress.");
+            auto current = currentDocument();
+            if (current !is null) {
+                current.status.setText("A load is already in progress.");
+            }
             return;
         }
 
-        auto filePath = pathEntry.getText();
-        if (!exists(filePath)) {
-            status.setText(format("File not found: %s", filePath));
-            tableStore.clear();
+        if (!exists(document.filePath)) {
+            document.status.setText(format("File not found: %s", document.filePath));
+            document.tableStore.clear();
             return;
         }
 
-        auto requestId = ++loadRequestId;
-        setLoadingState(true, format("Loading %s ...", filePath));
+        auto requestId = ++document.loadRequestId;
+        setLoadingState(document, true, format("Loading %s ...", document.filePath));
 
         auto worker = new Thread({
             MonoTime started = MonoTime.currTime;
-
             AsyncLoadResult result;
-            result.filePath = filePath;
+            result.filePath = document.filePath;
 
             try {
-                setLoadingPhase(requestId, "Reading file from disk ...");
-                auto content = readText(filePath);
+                setLoadingPhase(document, requestId, "Reading file from disk ...");
+                auto content = readText(document.filePath);
 
-                setLoadingPhase(requestId, "Parsing JSON structure ...");
+                setLoadingPhase(document, requestId, "Parsing JSON structure ...");
                 auto parsed = parseJSON(content);
 
                 if (parsed.type == JSONType.object) {
@@ -1366,10 +1639,10 @@ int main(string[] args) {
                     result.rootKeysSummary = "-";
                 }
 
-                setLoadingPhase(requestId, "Normalizing rows ...");
+                setLoadingPhase(document, requestId, "Normalizing rows ...");
                 result.allRows = extractRowsFromRoot(parsed);
 
-                setLoadingPhase(requestId, "Computing duplicate groups ...");
+                setLoadingPhase(document, requestId, "Computing duplicate groups ...");
                 result.duplicateGroups = countDuplicateDigestGroups(result.allRows);
             } catch (Exception ex) {
                 result.error = ex.msg;
@@ -1378,59 +1651,69 @@ int main(string[] args) {
             result.elapsedMs = cast(long) (MonoTime.currTime - started).total!"msecs";
 
             new Idle({
-                if (requestId != loadRequestId) {
+                if (requestId != document.loadRequestId) {
                     return false;
                 }
 
                 if (result.error.length > 0) {
-                    tableStore.clear();
-                    loadedRows = [];
-                    visibleRows = [];
-                    loadedFilePath = "";
-                    loadedDataVersion = -1;
-                    loadedRootShape = "-";
-                    loadedRootKeysSummary = "-";
-                    updateFileMetaStatus();
-                    pendingLoadElapsedMs = -1;
-                    pendingStatusSuffix = "";
-                    clearSelectionDetails();
-                    setLoadingState(false, format("Failed to parse JSON: %s", result.error));
+                    document.tableStore.clear();
+                    document.loadedRows = [];
+                    document.visibleRows = [];
+                    document.loadedDataVersion = -1;
+                    document.loadedRootShape = "-";
+                    document.loadedRootKeysSummary = "-";
+                    updateFileMetaStatus(document);
+                    document.pendingLoadElapsedMs = -1;
+                    document.pendingStatusSuffix = "";
+                    clearSelectionDetails(document);
+                    setLoadingState(document, false, format("Failed to parse JSON: %s", result.error));
+                    if (pendingStartupPaths.length > 0) {
+                        new Idle({ loadNextPendingStartupPath(); return false; });
+                    }
                     return false;
                 }
 
-                loadedDuplicateGroups = result.duplicateGroups;
-                loadedRows = result.allRows;
-                loadedFilePath = result.filePath;
-                loadedDataVersion = result.dataVersion;
-                loadedRootShape = result.rootShape.length > 0 ? result.rootShape : "-";
-                loadedRootKeysSummary = result.rootKeysSummary.length > 0 ? result.rootKeysSummary : "-";
-                updateFileMetaStatus();
-                pendingLoadElapsedMs = result.elapsedMs;
-                lastLoadElapsedMs = result.elapsedMs;
-                updatePerfStatus();
+                document.loadedDuplicateGroups = result.duplicateGroups;
+                document.loadedRows = result.allRows;
+                document.loadedDataVersion = result.dataVersion;
+                document.loadedRootShape = result.rootShape.length > 0 ? result.rootShape : "-";
+                document.loadedRootKeysSummary = result.rootKeysSummary.length > 0 ? result.rootKeysSummary : "-";
+                updateFileMetaStatus(document);
+                document.pendingLoadElapsedMs = result.elapsedMs;
+                document.lastLoadElapsedMs = result.elapsedMs;
+                updatePerfStatus(document);
 
                 if (prefAutoApplyFilter && (
-                    filterEntry.getText().length > 0 ||
-                    filterVideo.getActive() ||
-                    filterAudio.getActive() ||
-                    filterImage.getActive() ||
-                    filterText.getActive()
+                    document.filterQuery.length > 0 ||
+                    document.filterVideo ||
+                    document.filterAudio ||
+                    document.filterImage ||
+                    document.filterText ||
+                    document.filterMediaNegated
                 )) {
-                    applyFilterFromEntry();
+                    applyFilterForDocument(document);
                 } else {
-                    renderRows(loadedRows);
+                    renderRows(document, document.loadedRows);
+                }
+
+                persistCurrentState(clearSavedWindowGeometryOnExit);
+                if (pendingStartupPaths.length > 0 && !isLoading) {
+                    new Idle({ loadNextPendingStartupPath(); return false; });
                 }
                 return false;
             });
         });
 
         worker.start();
-    }
+    };
 
-    /** Open a file chooser and load the selected JSON file. */
+    /** Open a file chooser and create or select the corresponding document tab. */
     void chooseAndLoadPath() {
         if (isLoading) {
-            status.setText("A load is already in progress.");
+            auto document = currentDocument();
+            if (document !is null) {
+                document.status.setText("A load is already in progress.");
+            }
             return;
         }
 
@@ -1452,28 +1735,74 @@ int main(string[] args) {
             auto selectedPath = chooser.getFilename();
             if (selectedPath.length > 0) {
                 pathEntry.setText(selectedPath);
-                loadFromPath();
+                auto document = openDocumentFromPath(selectedPath, true);
+                if (document.loadedRows.length == 0) {
+                    loadDocument(document);
+                }
             }
         }
 
         chooser.destroy();
     }
 
-    /** Cancel any in-flight background load or filter request. */
+    /** Cancel the currently active background request. */
     void cancelPendingLoad() {
-        if (!isLoading) {
-            status.setText("No load in progress.");
+        if (!isLoading || busyDocument is null) {
+            auto document = currentDocument();
+            if (document !is null) {
+                document.status.setText("No load in progress.");
+            }
             return;
         }
 
-        // Invalidate pending load/filter work and any in-progress batched render.
-        ++loadRequestId;
-        ++filterRequestId;
-        ++renderRequestId;
-        pendingLoadElapsedMs = -1;
-        pendingStatusSuffix = "";
-        setLoadingState(false, "Operation cancelled. Background result will be discarded.");
+        ++busyDocument.loadRequestId;
+        ++busyDocument.filterRequestId;
+        ++busyDocument.renderRequestId;
+        busyDocument.pendingLoadElapsedMs = -1;
+        busyDocument.pendingStatusSuffix = "";
+        setLoadingState(busyDocument, false, "Operation cancelled. Background result will be discarded.");
     }
+
+    /** Open the path from the toolbar as a new or existing tab and load if needed. */
+    void loadFromPath() {
+        auto filePath = pathEntry.getText();
+        if (filePath.length == 0) {
+            return;
+        }
+        auto document = openDocumentFromPath(filePath, true);
+        if (document.loadedRows.length == 0) {
+            loadDocument(document);
+        }
+    }
+
+    /** Reload the currently selected document tab from disk. */
+    void reloadCurrentDocument() {
+        auto document = currentDocument();
+        if (document is null) {
+            return;
+        }
+        loadDocument(document);
+    }
+
+    /** Close the currently selected document tab and persist the remaining open set. */
+    void closeCurrentDocument() {
+        auto pageIndex = notebook.getCurrentPage();
+        if (pageIndex < 0 || pageIndex >= documents.length) {
+            return;
+        }
+        auto document = documents[pageIndex];
+        if (isLoading && busyDocument is document) {
+            document.status.setText("Cannot close a tab while it is loading.");
+            return;
+        }
+
+        notebook.removePage(pageIndex);
+        documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $];
+        syncToolbarFromCurrentDocument();
+        persistCurrentState(clearSavedWindowGeometryOnExit);
+    }
+
+    // Apply persisted splitter orientation/position to any tabs created later.
 
     /** Show and apply user preferences that affect filtering and layout. */
     void showPreferencesDialog() {
@@ -1498,12 +1827,16 @@ int main(string[] args) {
         auto optDetailsBelow = new CheckButton("Show details below list (instead of on the right)");
         optDetailsBelow.setActive(prefDetailsBelow);
 
+        auto optRestoreOpenFiles = new CheckButton("Reopen previously open data files on startup");
+        optRestoreOpenFiles.setActive(prefRestoreOpenFiles);
+
         auto optClearWindowGeometry = new CheckButton("Delete saved window positions on save");
         optClearWindowGeometry.setActive(false);
 
         prefsBox.packStart(optAutoApply, false, false, 0);
         prefsBox.packStart(optCaseSensitive, false, false, 0);
         prefsBox.packStart(optDetailsBelow, false, false, 0);
+        prefsBox.packStart(optRestoreOpenFiles, false, false, 0);
         prefsBox.packStart(optClearWindowGeometry, false, false, 0);
         contentArea.packStart(prefsBox, true, true, 0);
 
@@ -1513,15 +1846,19 @@ int main(string[] args) {
         if (response == cast(int) ResponseType.OK) {
             prefAutoApplyFilter = optAutoApply.getActive();
             prefCaseSensitiveFilter = optCaseSensitive.getActive();
+            prefRestoreOpenFiles = optRestoreOpenFiles.getActive();
             auto oldDetailsBelow = prefDetailsBelow;
             prefDetailsBelow = optDetailsBelow.getActive();
             if (prefDetailsBelow != oldDetailsBelow) {
-                applyDetailsPanePreference();
+                applyDetailsPanePreferenceToAll();
             }
             auto clearGeometry = optClearWindowGeometry.getActive();
             clearSavedWindowGeometryOnExit = clearGeometry;
             persistCurrentState(clearGeometry);
-            status.setText(clearGeometry ? "Preferences saved. Stored window positions were deleted." : "Preferences saved.");
+            auto document = currentDocument();
+            if (document !is null) {
+                document.status.setText(clearGeometry ? "Preferences saved. Stored window positions were deleted." : "Preferences saved.");
+            }
         }
 
         dialog.destroy();
@@ -1536,6 +1873,7 @@ int main(string[] args) {
             ButtonsType.CLOSE,
             "Keyboard Shortcuts\n\n" ~
             "Ctrl+O  Open JSON\n" ~
+            "Ctrl+W  Close Current Tab\n" ~
             "Ctrl+R  Reload\n" ~
             "Ctrl+K  Cancel Current Operation\n" ~
             "Ctrl+F  Apply Filter\n" ~
@@ -1569,8 +1907,12 @@ int main(string[] args) {
     }, "_Open JSON", "file.open", true, accelGroup, 'o');
 
     auto fileReload = new MenuItem((MenuItem _) {
-        loadFromPath();
+        reloadCurrentDocument();
     }, "_Reload", "file.reload", true, accelGroup, 'r');
+
+    auto fileClose = new MenuItem((MenuItem _) {
+        closeCurrentDocument();
+    }, "_Close Current Tab", "file.close", true, accelGroup, 'w');
 
     auto fileCancelOperation = new MenuItem((MenuItem _) {
         cancelPendingLoad();
@@ -1582,6 +1924,7 @@ int main(string[] args) {
     }, "_Quit", "file.quit", true, accelGroup, 'q');
 
     fileMenu.append(fileOpen);
+    fileMenu.append(fileClose);
     fileMenu.append(fileReload);
     fileMenu.append(fileCancelOperation);
     fileMenu.append(new SeparatorMenuItem());
@@ -1597,12 +1940,18 @@ int main(string[] args) {
     }, "_Apply Filter", "edit.applyFilter", true, accelGroup, 'f');
 
     auto editClearFilter = new MenuItem((MenuItem _) {
-        filterEntry.setText("");
-        filterVideo.setActive(false);
-        filterAudio.setActive(false);
-        filterImage.setActive(false);
-        filterText.setActive(false);
-        renderRows(loadedRows);
+        auto document = currentDocument();
+        if (document is null) {
+            return;
+        }
+        document.filterQuery = "";
+        document.filterVideo = false;
+        document.filterAudio = false;
+        document.filterImage = false;
+        document.filterText = false;
+        document.filterMediaNegated = false;
+        syncToolbarFromCurrentDocument();
+        renderRows(document, document.loadedRows);
     }, "C_lear Filter", "edit.clearFilter", true, accelGroup, 'l');
 
     auto editPreferences = new MenuItem((MenuItem _) {
@@ -1642,7 +1991,7 @@ int main(string[] args) {
     });
 
     btnReload.addOnClicked((Button _) {
-        loadFromPath();
+        reloadCurrentDocument();
     });
 
     btnCancelLoad.addOnClicked((Button _) {
@@ -1654,24 +2003,18 @@ int main(string[] args) {
     });
 
     btnClearFilter.addOnClicked((Button _) {
-        filterEntry.setText("");
-        filterVideo.setActive(false);
-        filterAudio.setActive(false);
-        filterImage.setActive(false);
-        filterText.setActive(false);
-        renderRows(loadedRows);
-    });
-
-    btnCopySha1.addOnClicked((Button _) {
-        copyTextToClipboard("SHA1", selectedSha1);
-    });
-
-    btnCopyFile.addOnClicked((Button _) {
-        copyTextToClipboard("file name", selectedFileName);
-    });
-
-    btnCopyDetails.addOnClicked((Button _) {
-        copyTextToClipboard("details", selectedDetailsText);
+        auto document = currentDocument();
+        if (document is null) {
+            return;
+        }
+        document.filterQuery = "";
+        document.filterVideo = false;
+        document.filterAudio = false;
+        document.filterImage = false;
+        document.filterText = false;
+        document.filterMediaNegated = false;
+        syncToolbarFromCurrentDocument();
+        renderRows(document, document.loadedRows);
     });
 
     pathEntry.addOnActivate((Entry _) {
@@ -1698,8 +2041,13 @@ int main(string[] args) {
         applyFilterFromEntry();
     });
 
-    tableView.getSelection().addOnChanged((TreeSelection _) {
-        updateSelectedRowDetails();
+    filterMediaNot.addOnToggled((ToggleButton _) {
+        applyFilterFromEntry();
+    });
+
+    notebook.addOnSwitchPage((Widget pageWidget, uint pageNum, Notebook tabNotebook) {
+        syncToolbarFromCurrentDocument();
+        persistCurrentState(clearSavedWindowGeometryOnExit);
     });
 
     window.addOnDestroy((Widget _) {
@@ -1737,11 +2085,7 @@ int main(string[] args) {
 
     content.packStart(separator, false, false, 0);
     content.packStart(toolbar, false, false, 0);
-    content.packStart(split, true, true, 0);
-    content.packStart(rowDetails, false, false, 0);
-    content.packStart(status, false, false, 0);
-    content.packStart(perfStatus, false, false, 0);
-    content.packStart(fileMetaStatus, false, false, 0);
+    content.packStart(notebook, true, true, 0);
 
     root.packStart(menuBar, false, false, 0);
     root.packStart(content, true, true, 0);
@@ -1810,8 +2154,14 @@ int main(string[] args) {
         allowRuntimeStatePersistence = true;
     }
 
+    syncToolbarFromCurrentDocument();
+
     if (cli.loadOnStart) {
         loadFromPath();
+    } else if (prefRestoreOpenFiles && loadedState.openFilePaths.length > 0) {
+        pendingStartupPaths = loadedState.openFilePaths.dup;
+        pendingStartupSelectIndex = loadedState.activeTabIndex;
+        loadNextPendingStartupPath();
     }
 
     Main.run();
