@@ -1551,6 +1551,7 @@ int main(string[] args) {
     }, "_Cancel Current Operation", "file.cancelOperation", true, accelGroup, 'k');
 
     auto fileQuit = new MenuItem((MenuItem _) {
+        persistCurrentState(clearSavedWindowGeometryOnExit);
         Main.quit();
     }, "_Quit", "file.quit", true, accelGroup, 'q');
 
@@ -1717,5 +1718,7 @@ int main(string[] args) {
     }
 
     Main.run();
+    // Fallback persistence for quit paths that may bypass window destroy.
+    persistCurrentState(clearSavedWindowGeometryOnExit);
     return 0;
 }
