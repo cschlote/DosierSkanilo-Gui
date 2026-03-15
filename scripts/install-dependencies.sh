@@ -9,7 +9,8 @@ if command -v apk >/dev/null 2>&1; then
       apk add --no-cache bash dub ldc
       ;;
     build|runtime)
-      apk add --no-cache bash dub ldc gtk+3.0-dev
+      # ldc delegates final linking to cc; build-base provides gcc/cc on Alpine.
+      apk add --no-cache bash dub ldc build-base gtk+3.0-dev
       ;;
     *)
       echo "Unknown mode: ${MODE}" >&2
