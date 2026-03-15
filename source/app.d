@@ -126,6 +126,7 @@ struct AppState {
     int windowY;
     int windowWidth = 960;
     int windowHeight = 640;
+    int windowMonitorIndex = -1;
 }
 
 enum string CONFIG_DIR_NAME = ".config/dosierskanilo-gui";
@@ -217,6 +218,9 @@ AppState loadAppState() {
         if (auto value = "windowHeight" in root) {
             state.windowHeight = jsonToInt(*value, state.windowHeight);
         }
+        if (auto value = "windowMonitorIndex" in root) {
+            state.windowMonitorIndex = jsonToInt(*value, state.windowMonitorIndex);
+        }
     } catch (Exception) {
         // Keep defaults on invalid state file.
     }
@@ -240,7 +244,8 @@ void saveAppState(const(AppState) state) {
         "  \"windowX\": %s,\n" ~
         "  \"windowY\": %s,\n" ~
         "  \"windowWidth\": %s,\n" ~
-        "  \"windowHeight\": %s\n" ~
+        "  \"windowHeight\": %s,\n" ~
+        "  \"windowMonitorIndex\": %s\n" ~
         "}\n",
         state.prefAutoApplyFilter ? "true" : "false",
         state.prefCaseSensitiveFilter ? "true" : "false",
@@ -251,19 +256,46 @@ void saveAppState(const(AppState) state) {
         state.windowX,
         state.windowY,
         state.windowWidth,
-        state.windowHeight
+        state.windowHeight,
+        state.windowMonitorIndex
     );
 
     write(filePath, payload);
 }
 
-void clampWindowGeometryToVisibleArea(ref int x, ref int y, ref int width, ref int height) {
+int monitorIndexForPoint(Display display, int x, int y) {
+    if (display is null) {
+        return -1;
+    }
+
+    auto monitor = display.getMonitorAtPoint(x, y);
+    if (monitor is null) {
+        return -1;
+    }
+
+    auto monitorCount = display.getNMonitors();
+    for (int i = 0; i < monitorCount; ++i) {
+        if (display.getMonitor(i) is monitor) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+void clampWindowGeometryToVisibleArea(ref int x, ref int y, ref int width, ref int height, int preferredMonitorIndex = -1) {
     auto display = Display.getDefault();
     if (display is null) {
         return;
     }
 
-    MonitorG monitor = display.getMonitorAtPoint(x, y);
+    MonitorG monitor;
+    if (preferredMonitorIndex >= 0 && preferredMonitorIndex < display.getNMonitors()) {
+        monitor = display.getMonitor(preferredMonitorIndex);
+    }
+    if (monitor is null) {
+        monitor = display.getMonitorAtPoint(x, y);
+    }
     if (monitor is null) {
         monitor = display.getPrimaryMonitor();
     }
@@ -885,6 +917,7 @@ int main(string[] args) {
         state.hasWindowGeometry = true;
         state.windowX = x;
         state.windowY = y;
+        state.windowMonitorIndex = monitorIndexForPoint(Display.getDefault(), x, y);
         return state;
     }
 
@@ -1660,7 +1693,13 @@ int main(string[] args) {
         auto restoredY = loadedState.windowY;
         auto restoredWidth = loadedState.windowWidth;
         auto restoredHeight = loadedState.windowHeight;
-        clampWindowGeometryToVisibleArea(restoredX, restoredY, restoredWidth, restoredHeight);
+        clampWindowGeometryToVisibleArea(
+            restoredX,
+            restoredY,
+            restoredWidth,
+            restoredHeight,
+            loadedState.windowMonitorIndex
+        );
         new Idle({
             window.move(restoredX, restoredY);
             window.resize(restoredWidth, restoredHeight);
