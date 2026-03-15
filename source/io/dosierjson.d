@@ -10,6 +10,8 @@
 module io.dosierjson;
 
 import std.array : appender;
+import std.algorithm : sort;
+import std.format : format;
 import std.string : join;
 import std.json : JSONType, JSONValue;
 
@@ -33,6 +35,59 @@ ulong jsonAsULong(JSONValue value) {
         return cast(ulong) value.floating;
     }
     return 0;
+}
+
+/** Return two-space indentation prefix for pretty JSON rendering. */
+string jsonIndent(size_t level) {
+    string result;
+    foreach (_; 0 .. level) {
+        result ~= "  ";
+    }
+    return result;
+}
+
+/** Render JSON value into a stable, multi-line human-readable representation. */
+string prettyJsonValue(JSONValue value, size_t indentLevel = 0) {
+    if (value.type == JSONType.object) {
+        auto keysAcc = appender!(string[])();
+        foreach (key, _; value.object) {
+            keysAcc.put(key);
+        }
+        auto keys = keysAcc.data;
+        keys.sort();
+
+        if (keys.length == 0) {
+            return "{}";
+        }
+
+        auto lines = appender!(string[])();
+        lines.put("{");
+        foreach (idx, key; keys) {
+            auto child = prettyJsonValue(value.object[key], indentLevel + 1);
+            auto suffix = idx + 1 < keys.length ? "," : "";
+            lines.put(format("%s\"%s\": %s%s", jsonIndent(indentLevel + 1), key, child, suffix));
+        }
+        lines.put(format("%s}", jsonIndent(indentLevel)));
+        return lines.data.join("\n");
+    }
+
+    if (value.type == JSONType.array) {
+        if (value.array.length == 0) {
+            return "[]";
+        }
+
+        auto lines = appender!(string[])();
+        lines.put("[");
+        foreach (idx, childValue; value.array) {
+            auto child = prettyJsonValue(childValue, indentLevel + 1);
+            auto suffix = idx + 1 < value.array.length ? "," : "";
+            lines.put(format("%s%s%s", jsonIndent(indentLevel + 1), child, suffix));
+        }
+        lines.put(format("%s]", jsonIndent(indentLevel)));
+        return lines.data.join("\n");
+    }
+
+    return value.toString();
 }
 
 /** Pick the first filename from a `fileSpecs` array.
@@ -99,7 +154,7 @@ BlobRow rowFromJsonObject(JSONValue objValue) {
         return row;
     }
 
-    row.rawJson = objValue.toString();
+    row.rawJson = prettyJsonValue(objValue);
 
     auto obj = objValue.object;
 

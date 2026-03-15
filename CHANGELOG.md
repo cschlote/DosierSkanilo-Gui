@@ -4,6 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Added file-level metadata status (, root shape, root keys) to expose top-level JSON context
 - Added a status line showing the format version and data structure of the currently loaded file.
 - Extended the record detail view with additional checksums (MD5, xxHash64), the full list of referenced filenames, and archive/torrent availability indicators.
 - Added clipboard copy buttons in the detail panel for copying the checksum, filename, or complete record details with one click.
