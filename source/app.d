@@ -41,6 +41,8 @@ import gtk.c.types : Orientation, DialogFlags, ResponseType, ButtonsType, Messag
 import glib.Idle;
 import glib.Timeout;
 import gobject.Type : GType;
+import gtk.Clipboard;
+import gdk.Display;
 
 import core.thread : Thread;
 import core.time : MonoTime;
@@ -290,14 +292,29 @@ int main(string[] args) {
     detailsView.setMonospace(true);
     detailsView.getBuffer().setText("No row selected.");
 
+    auto detailsActions = new Box(Orientation.HORIZONTAL, 6);
+    auto btnCopySha1 = new Button("Copy SHA1");
+    auto btnCopyFile = new Button("Copy File");
+    auto btnCopyDetails = new Button("Copy Details");
+    btnCopySha1.setSensitive(false);
+    btnCopyFile.setSensitive(false);
+    btnCopyDetails.setSensitive(false);
+    detailsActions.packStart(btnCopySha1, false, false, 0);
+    detailsActions.packStart(btnCopyFile, false, false, 0);
+    detailsActions.packStart(btnCopyDetails, false, false, 0);
+
     auto detailsScroll = new ScrolledWindow(null, null);
     detailsScroll.setVexpand(true);
     detailsScroll.setHexpand(true);
     detailsScroll.add(detailsView);
 
+    auto detailsPane = new Box(Orientation.VERTICAL, 6);
+    detailsPane.packStart(detailsActions, false, false, 0);
+    detailsPane.packStart(detailsScroll, true, true, 0);
+
     auto split = new Paned(Orientation.HORIZONTAL);
     split.add1(scroll);
-    split.add2(detailsScroll);
+    split.add2(detailsPane);
     split.setPosition(720);
 
     auto status = new Label("Ready.");
@@ -314,6 +331,9 @@ int main(string[] args) {
     string loadedFilePath;
     size_t loadedDuplicateGroups;
     bool loadedDuplicatesOnly;
+    string selectedSha1;
+    string selectedFileName;
+    string selectedDetailsText;
 
     bool prefDefaultDuplicatesOnly = false;
     bool prefAutoApplyFilter = true;
@@ -369,6 +389,9 @@ int main(string[] args) {
         filterEntry.setSensitive(!loading);
         btnApplyFilter.setSensitive(!loading);
         btnClearFilter.setSensitive(!loading);
+        btnCopySha1.setSensitive(!loading && selectedSha1.length > 0);
+        btnCopyFile.setSensitive(!loading && selectedFileName.length > 0);
+        btnCopyDetails.setSensitive(!loading && selectedDetailsText.length > 0);
 
         if (loading) {
             loadSpinner.setVisible(true);
@@ -428,12 +451,22 @@ int main(string[] args) {
         status.setText("Performance metrics reset.");
     }
 
+    void clearSelectionDetails() {
+        selectedSha1 = "";
+        selectedFileName = "";
+        selectedDetailsText = "";
+        btnCopySha1.setSensitive(false);
+        btnCopyFile.setSensitive(false);
+        btnCopyDetails.setSensitive(false);
+        rowDetails.setText("Selection: none");
+        detailsView.getBuffer().setText("No row selected.");
+    }
+
     void renderRows(const(BlobRow)[] rows, string filterLabel = "") {
         if (loadedFilePath.length == 0) {
             tableStore.clear();
             visibleRows = [];
-            rowDetails.setText("Selection: none");
-            detailsView.getBuffer().setText("No row selected.");
+            clearSelectionDetails();
             status.setText("Ready.");
             return;
         }
@@ -445,8 +478,7 @@ int main(string[] args) {
 
         tableStore.clear();
         visibleRows = [];
-        rowDetails.setText("Selection: none");
-        detailsView.getBuffer().setText("No row selected.");
+        clearSelectionDetails();
 
         size_t nextIndex = 0;
         bool delegate() renderStep;
@@ -534,8 +566,7 @@ int main(string[] args) {
         TreeIter iter;
         auto selection = tableView.getSelection();
         if (!selection.getSelected(model, iter)) {
-            rowDetails.setText("Selection: none");
-            detailsView.getBuffer().setText("No row selected.");
+            clearSelectionDetails();
             return;
         }
 
@@ -562,11 +593,14 @@ int main(string[] args) {
         }
 
         if (rowIndex >= visibleRows.length) {
+            clearSelectionDetails();
             detailsView.getBuffer().setText("Selected row is outside visible data range.");
             return;
         }
 
         auto row = visibleRows[rowIndex];
+        selectedSha1 = row.sha1;
+        selectedFileName = row.primaryFileName;
         auto detailsText = format(
             "Selected Row Details\n\n" ~
             "Index: %s\n" ~
@@ -586,7 +620,33 @@ int main(string[] args) {
             row.hasMedia ? "yes" : "no",
             loadedFilePath.length > 0 ? loadedFilePath : "-"
         );
+        selectedDetailsText = detailsText;
+        btnCopySha1.setSensitive(!isLoading && selectedSha1.length > 0);
+        btnCopyFile.setSensitive(!isLoading && selectedFileName.length > 0);
+        btnCopyDetails.setSensitive(!isLoading && selectedDetailsText.length > 0);
         detailsView.getBuffer().setText(detailsText);
+    }
+
+    void copyTextToClipboard(string label, string value) {
+        if (value.length == 0) {
+            status.setText(format("No %s value available for selected row.", label));
+            return;
+        }
+
+        auto display = Display.getDefault();
+        if (display is null) {
+            status.setText("Clipboard unavailable: no active display.");
+            return;
+        }
+
+        auto clipboard = Clipboard.getDefault(display);
+        if (clipboard is null) {
+            status.setText("Clipboard unavailable.");
+            return;
+        }
+
+        clipboard.setText(value, -1);
+        status.setText(format("Copied %s to clipboard.", label));
     }
 
     void applyFilterFromEntry() {
@@ -605,6 +665,7 @@ int main(string[] args) {
         auto requestId = ++filterRequestId;
 
         setLoadingState(true, format("Filtering %s rows ...", sourceRows.length));
+        progressBar.setText("Filtering rows ...");
 
         auto worker = new Thread({
             MonoTime started = MonoTime.currTime;
@@ -680,7 +741,6 @@ int main(string[] args) {
             } catch (Exception ex) {
                 result.error = ex.msg;
             }
-    progressBar.setText("Filtering rows ...");
 
             result.elapsedMs = cast(long) (MonoTime.currTime - started).total!"msecs";
 
@@ -696,8 +756,7 @@ int main(string[] args) {
                     loadedFilePath = "";
                     pendingLoadElapsedMs = -1;
                     pendingStatusSuffix = "";
-                    rowDetails.setText("Selection: none");
-                    detailsView.getBuffer().setText("No row selected.");
+                    clearSelectionDetails();
                     setLoadingState(false, format("Failed to parse JSON: %s", result.error));
                     return false;
                 }
@@ -909,6 +968,18 @@ int main(string[] args) {
     btnClearFilter.addOnClicked((Button _) {
         filterEntry.setText("");
         renderRows(loadedRows);
+    });
+
+    btnCopySha1.addOnClicked((Button _) {
+        copyTextToClipboard("SHA1", selectedSha1);
+    });
+
+    btnCopyFile.addOnClicked((Button _) {
+        copyTextToClipboard("file name", selectedFileName);
+    });
+
+    btnCopyDetails.addOnClicked((Button _) {
+        copyTextToClipboard("details", selectedDetailsText);
     });
 
     pathEntry.addOnActivate((Entry _) {
