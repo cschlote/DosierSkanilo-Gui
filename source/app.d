@@ -56,7 +56,7 @@ import std.json : parseJSON, JSONType, JSONValue;
 import std.base64 : Base64;
 import std.conv : to;
 import std.getopt : getopt, config;
-import std.stdio : writeln;
+import std.stdio : writeln, File;
 import std.array : appender;
 import std.algorithm : sort;
 import std.string : join;
@@ -133,6 +133,7 @@ struct AppState {
 
 enum string CONFIG_DIR_NAME = ".config/dosierskanilo-gui";
 enum string CONFIG_FILE_NAME = "state.json";
+enum string RESTORE_LOG_FILE_NAME = "restore.log";
 
 /** Resolve the application config directory. */
 string configDirPath() {
@@ -146,6 +147,23 @@ string configDirPath() {
 /** Resolve the JSON state file path. */
 string configFilePath() {
     return buildPath(configDirPath(), CONFIG_FILE_NAME);
+}
+
+/** Resolve the diagnostic log path used for geometry restore troubleshooting. */
+string restoreLogFilePath() {
+    return buildPath(configDirPath(), RESTORE_LOG_FILE_NAME);
+}
+
+/** Append a single restore diagnostic line to the per-user log file. */
+void appendRestoreLog(string message) {
+    try {
+        mkdirRecurse(configDirPath());
+        auto file = File(restoreLogFilePath(), "a");
+        file.writeln(message);
+        file.close();
+    } catch (Exception) {
+        // Diagnostics must never break app startup.
+    }
 }
 
 /** Convert a JSON scalar into a bool with fallback semantics. */
@@ -755,6 +773,7 @@ int main(string[] args) {
     int splitPositionVertical = loadedState.splitPositionVertical;
     int lastKnownWindowWidth = loadedState.windowWidth;
     int lastKnownWindowHeight = loadedState.windowHeight;
+    int startupSizeAllocateLogCount;
     Timeout windowSizePersistTimer;
     bool isLoading;
     ulong loadRequestId;
@@ -1801,6 +1820,12 @@ int main(string[] args) {
         if (event !is null && event.width > 0 && event.height > 0) {
             lastKnownWindowWidth = event.width;
             lastKnownWindowHeight = event.height;
+            appendRestoreLog(format(
+                "configure width=%s height=%s runtimePersistence=%s",
+                event.width,
+                event.height,
+                allowRuntimeStatePersistence ? "on" : "off"
+            ));
         }
         return false;
     });
@@ -1809,6 +1834,17 @@ int main(string[] args) {
         if (allocation.width > 0 && allocation.height > 0) {
             lastKnownWindowWidth = allocation.width;
             lastKnownWindowHeight = allocation.height;
+
+            if (startupSizeAllocateLogCount < 8) {
+                ++startupSizeAllocateLogCount;
+                appendRestoreLog(format(
+                    "size-allocate[%s] width=%s height=%s runtimePersistence=%s",
+                    startupSizeAllocateLogCount,
+                    allocation.width,
+                    allocation.height,
+                    allowRuntimeStatePersistence ? "on" : "off"
+                ));
+            }
 
             // Persist size shortly after resize settles, independent of quit path.
             if (allowRuntimeStatePersistence) {
@@ -1838,6 +1874,15 @@ int main(string[] args) {
 
     window.add(root);
     window.showAll();
+    appendRestoreLog(format(
+        "startup loaded hasWindowSize=%s width=%s height=%s splitH=%s splitV=%s prefDetailsBelow=%s",
+        loadedState.hasWindowSize ? "true" : "false",
+        loadedState.windowWidth,
+        loadedState.windowHeight,
+        loadedState.splitPositionHorizontal,
+        loadedState.splitPositionVertical,
+        loadedState.prefDetailsBelow ? "true" : "false"
+    ));
 
     if (loadedState.hasWindowSize) {
         auto restoredWidth = loadedState.windowWidth;
@@ -1852,6 +1897,7 @@ int main(string[] args) {
 
         // Initial apply right after widgets are visible.
         new Idle({
+            appendRestoreLog(format("apply idle width=%s height=%s", restoredWidth, restoredHeight));
             window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
@@ -1861,6 +1907,7 @@ int main(string[] args) {
 
         // XFCE can apply its own first configure cycle after map; enforce once more.
         new Timeout(120, {
+            appendRestoreLog(format("apply t120 width=%s height=%s", restoredWidth, restoredHeight));
             window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
@@ -1870,6 +1917,7 @@ int main(string[] args) {
 
         // Second delayed pass to win late WM adjustments.
         new Timeout(320, {
+            appendRestoreLog(format("apply t320 width=%s height=%s", restoredWidth, restoredHeight));
             window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
@@ -1879,6 +1927,7 @@ int main(string[] args) {
 
         // Some WMs settle size after initial composition; enforce a final pass.
         new Timeout(700, {
+            appendRestoreLog(format("apply t700 width=%s height=%s", restoredWidth, restoredHeight));
             window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
@@ -1888,12 +1937,20 @@ int main(string[] args) {
 
         // Final late pass to override very late WM/session adjustments.
         new Timeout(1500, {
+            appendRestoreLog(format("apply t1500 width=%s height=%s", restoredWidth, restoredHeight));
             window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
             lastKnownWindowHeight = restoredHeight;
             allowRuntimeStatePersistence = true;
             persistCurrentState(clearSavedWindowGeometryOnExit);
+            appendRestoreLog(format(
+                "finalized width=%s height=%s persistedWidth=%s persistedHeight=%s",
+                window.getAllocatedWidth(),
+                window.getAllocatedHeight(),
+                lastKnownWindowWidth,
+                lastKnownWindowHeight
+            ));
             return false;
         });
     } else {
