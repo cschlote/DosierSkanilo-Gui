@@ -436,7 +436,7 @@ void populateTableRows(ListStore store, const(BlobRow)[] rows) {
         auto indexText = to!string(idx + 1);
         auto sizeText = to!string(row.fileSize);
         auto checksumsText = checksumSetStatus(row);
-        auto fileTypeText = row.fileType.length > 0 ? row.fileType : "-";
+        auto fileTypeText = row.fileType.length > 0 ? "yes" : "no";
         auto mediaInfoText = mediaInfoSummary(row);
         auto archiveText = boolStatusIcon(row.hasArchive);
         auto torrentText = boolStatusIcon(row.hasTorrent);
@@ -874,7 +874,7 @@ int main(string[] args) {
                 auto indexText = to!string(idx + 1);
                 auto sizeText = to!string(row.fileSize);
                 auto checksumsText = checksumSetStatus(row);
-                auto fileTypeText = row.fileType.length > 0 ? row.fileType : "-";
+                auto fileTypeText = row.fileType.length > 0 ? "yes" : "no";
                 auto mediaInfoText = mediaInfoSummary(row);
                 auto archiveText = boolStatusIcon(row.hasArchive);
                 auto torrentText = boolStatusIcon(row.hasTorrent);

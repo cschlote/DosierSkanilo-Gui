@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Simplified the table to focused columns (`Index#`, `Size`, `Checksums`, `File Type`, `MediaInfo`, `Archive`, `Torrent`) and reduced `File Type` display to a compact yes/no indicator.
+- Persisted window geometry, splitter positions, and key preferences under `~/.config/dosierskanilo-gui/state.json`, including an option in Preferences to clear saved window positions.
+- Improved media type filtering (`V/A/I/T`) with robust media key detection and status hit counters, and removed the obsolete duplicates-only load mode from the GUI.
+
 ## Release 0.2.1
 
 - Added GitLab release automation that publishes versioned assets to the GitLab Package Registry and creates GitLab Releases with persistent package links.
