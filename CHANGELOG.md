@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Added GitLab release automation that publishes versioned assets to the GitLab Package Registry and creates GitLab Releases with persistent package links.
+
 ## Release 0.2.0
 
 - Added a first executable unit test suite and changed the test script to run real `dub test` checks instead of only recompiling the application.
