@@ -14,6 +14,7 @@ import std.algorithm : sort;
 import std.algorithm.searching : canFind, startsWith, countUntil;
 import std.format : format;
 import std.string : join;
+import std.uni : toLower;
 import std.json : JSONType, JSONValue;
 
 import model.blobrow;
@@ -229,23 +230,22 @@ BlobRow rowFromJsonObject(JSONValue objValue) {
             }
 
             row.hasMedia = true;
-            switch (key) {
-                case "video":
-                    row.hasVideo = true;
-                    break;
-                case "audio":
-                    row.hasAudio = true;
-                    break;
-                case "image":
-                    row.hasImage = true;
-                    break;
-                case "text":
-                case "subtitle":
-                case "subtitles":
-                    row.hasText = true;
-                    break;
-                default:
-                    break;
+            auto keyLower = toLower(key);
+            if (keyLower == "video" || keyLower.canFind("video")) {
+                row.hasVideo = true;
+                continue;
+            }
+            if (keyLower == "audio" || keyLower.canFind("audio")) {
+                row.hasAudio = true;
+                continue;
+            }
+            if (keyLower == "image" || keyLower.canFind("image") || keyLower.canFind("photo") || keyLower.canFind("picture")) {
+                row.hasImage = true;
+                continue;
+            }
+            if (keyLower == "text" || keyLower.canFind("text") || keyLower.canFind("subtitle") || keyLower.canFind("caption")) {
+                row.hasText = true;
+                continue;
             }
         }
     }

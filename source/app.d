@@ -635,11 +635,6 @@ int main(string[] args) {
         prefCaseSensitiveFilter = true;
     }
 
-    if (loadedState.hasWindowGeometry) {
-        window.move(loadedState.windowX, loadedState.windowY);
-        window.resize(loadedState.windowWidth, loadedState.windowHeight);
-    }
-
     auto menuBar = new MenuBar();
 
     if (cli.jsonPath.length > 0) {
@@ -1132,16 +1127,12 @@ int main(string[] args) {
                 if (hasMediaTypeFilters) {
                     auto mediaFiltered = appender!(BlobRow[])();
                     foreach (row; result.filteredRows) {
-                        if (requireVideo && !row.hasVideo) {
-                            continue;
-                        }
-                        if (requireAudio && !row.hasAudio) {
-                            continue;
-                        }
-                        if (requireImage && !row.hasImage) {
-                            continue;
-                        }
-                        if (requireText && !row.hasText) {
+                        auto matchesMedia =
+                            (requireVideo && row.hasVideo) ||
+                            (requireAudio && row.hasAudio) ||
+                            (requireImage && row.hasImage) ||
+                            (requireText && row.hasText);
+                        if (!matchesMedia) {
                             continue;
                         }
                         mediaFiltered.put(row);
@@ -1602,6 +1593,18 @@ int main(string[] args) {
 
     window.add(root);
     window.showAll();
+
+    if (loadedState.hasWindowGeometry) {
+        auto restoredX = loadedState.windowX;
+        auto restoredY = loadedState.windowY;
+        auto restoredWidth = loadedState.windowWidth;
+        auto restoredHeight = loadedState.windowHeight;
+        new Idle({
+            window.move(restoredX, restoredY);
+            window.resize(restoredWidth, restoredHeight);
+            return false;
+        });
+    }
 
     if (cli.loadOnStart) {
         loadFromPath(cli.duplicatesOnStart || prefDefaultDuplicatesOnly);
