@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## Release 0.2.1
+
 - Added GitLab release automation that publishes versioned assets to the GitLab Package Registry and creates GitLab Releases with persistent package links.
 
 ## Release 0.2.0
