@@ -46,7 +46,7 @@ import gobject.Type : GType;
 import gtk.Clipboard;
 import gdk.Display;
 import gdk.MonitorG;
-import gdk.c.types : GdkRectangle;
+import gdk.c.types : GdkRectangle, GdkEventConfigure;
 
 import core.thread : Thread;
 import core.time : MonoTime;
@@ -738,6 +738,8 @@ int main(string[] args) {
     bool clearSavedWindowGeometryOnExit;
     int splitPositionHorizontal = loadedState.splitPositionHorizontal;
     int splitPositionVertical = loadedState.splitPositionVertical;
+    int lastKnownWindowWidth = loadedState.windowWidth;
+    int lastKnownWindowHeight = loadedState.windowHeight;
     bool isLoading;
     ulong loadRequestId;
     ulong filterRequestId;
@@ -963,9 +965,26 @@ int main(string[] args) {
         state.splitPositionHorizontal = splitPositionHorizontal;
         state.splitPositionVertical = splitPositionVertical;
 
-        int width = 960;
-        int height = 640;
-        window.getSize(width, height);
+        int width = lastKnownWindowWidth;
+        int height = lastKnownWindowHeight;
+
+        int measuredWidth = 0;
+        int measuredHeight = 0;
+        window.getSize(measuredWidth, measuredHeight);
+        if (measuredWidth > 0 && measuredHeight > 0) {
+            width = measuredWidth;
+            height = measuredHeight;
+        }
+
+        if (width <= 0) {
+            width = 960;
+        }
+        if (height <= 0) {
+            height = 640;
+        }
+
+        lastKnownWindowWidth = width;
+        lastKnownWindowHeight = height;
         state.hasWindowSize = true;
         state.windowWidth = width;
         state.windowHeight = height;
@@ -1741,6 +1760,14 @@ int main(string[] args) {
         Main.quit();
     });
 
+    window.addOnConfigure((GdkEventConfigure* event, Widget _) {
+        if (event !is null && event.width > 0 && event.height > 0) {
+            lastKnownWindowWidth = event.width;
+            lastKnownWindowHeight = event.height;
+        }
+        return false;
+    });
+
     content.packStart(separator, false, false, 0);
     content.packStart(toolbar, false, false, 0);
     content.packStart(split, true, true, 0);
@@ -1769,6 +1796,8 @@ int main(string[] args) {
         );
         new Idle({
             window.resize(restoredWidth, restoredHeight);
+            lastKnownWindowWidth = restoredWidth;
+            lastKnownWindowHeight = restoredHeight;
             return false;
         });
     }
