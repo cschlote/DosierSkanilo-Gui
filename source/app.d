@@ -39,7 +39,7 @@ import gtk.ToggleButton;
 import gtk.FileChooserDialog;
 import gtk.AboutDialog;
 import gtk.MessageDialog;
-import gtk.c.types : Orientation, DialogFlags, ResponseType, ButtonsType, MessageType, FileChooserAction;
+import gtk.c.types : Orientation, DialogFlags, ResponseType, ButtonsType, MessageType, FileChooserAction, GtkTreeViewColumnSizing;
 import glib.Idle;
 import glib.Timeout;
 import gobject.Type : GType;
@@ -48,9 +48,9 @@ import gdk.Display;
 
 import core.thread : Thread;
 import core.time : MonoTime;
-import std.file : exists, readText;
+import std.file : exists, readText, write, mkdirRecurse;
 import std.format : format;
-import std.json : parseJSON, JSONType;
+import std.json : parseJSON, JSONType, JSONValue;
 import std.base64 : Base64;
 import std.conv : to;
 import std.getopt : getopt, config;
@@ -58,6 +58,8 @@ import std.stdio : writeln;
 import std.array : appender;
 import std.algorithm : sort;
 import std.string : join;
+import std.path : buildPath;
+import std.process : environment;
 
 import io.dosierjson : extractRowsFromRoot;
 import model.blobrow : BlobRow;
@@ -67,19 +69,14 @@ enum string DEFAULT_JSON_PATH = "./.filescanner.json";
 
 enum int COL_INDEX = 0;
 enum int COL_FILE_SIZE = 1;
-enum int COL_FILE_COUNT = 2;
-enum int COL_MEDIA_VIDEO = 3;
-enum int COL_MEDIA_AUDIO = 4;
-enum int COL_MEDIA_IMAGE = 5;
-enum int COL_MEDIA_TEXT = 6;
-enum int COL_HAS_ARCHIVE = 7;
-enum int COL_HAS_TORRENT = 8;
-enum int COL_CHECKSUM_SET = 9;
-enum int COL_FILE_NAME = 10;
-enum int COL_INDEX_SORT = 11;
-enum int COL_FILE_SIZE_SORT = 12;
-enum int COL_FILE_COUNT_SORT = 13;
-enum int COL_COUNT = 14;
+enum int COL_CHECKSUM_SET = 2;
+enum int COL_FILE_TYPE = 3;
+enum int COL_MEDIA_INFO = 4;
+enum int COL_HAS_ARCHIVE = 5;
+enum int COL_HAS_TORRENT = 6;
+enum int COL_INDEX_SORT = 7;
+enum int COL_FILE_SIZE_SORT = 8;
+enum int COL_COUNT = 9;
 
 /** Parsed startup options from command-line arguments. */
 struct CliOptions {
@@ -113,6 +110,156 @@ struct AsyncFilterResult {
     bool caseSensitive;
     string error;
     long elapsedMs;
+}
+
+struct AppState {
+    bool prefDefaultDuplicatesOnly;
+    bool prefAutoApplyFilter = true;
+    bool prefCaseSensitiveFilter;
+    bool prefDetailsBelow;
+
+    int splitPositionHorizontal = 720;
+    int splitPositionVertical = 420;
+
+    bool hasWindowGeometry;
+    int windowX;
+    int windowY;
+    int windowWidth = 960;
+    int windowHeight = 640;
+}
+
+enum string CONFIG_DIR_NAME = ".config/dosierskanilo-gui";
+enum string CONFIG_FILE_NAME = "state.json";
+
+string configDirPath() {
+    auto home = environment.get("HOME", "");
+    if (home.length == 0) {
+        return "./" ~ CONFIG_DIR_NAME;
+    }
+    return buildPath(home, CONFIG_DIR_NAME);
+}
+
+string configFilePath() {
+    return buildPath(configDirPath(), CONFIG_FILE_NAME);
+}
+
+bool jsonToBool(JSONValue value, bool fallback = false) {
+    switch (value.type) {
+        case JSONType.true_:
+            return true;
+        case JSONType.false_:
+            return false;
+        case JSONType.integer:
+            return value.integer != 0;
+        case JSONType.uinteger:
+            return value.uinteger != 0;
+        default:
+            return fallback;
+    }
+}
+
+int jsonToInt(JSONValue value, int fallback = 0) {
+    switch (value.type) {
+        case JSONType.integer:
+            return cast(int) value.integer;
+        case JSONType.uinteger:
+            return cast(int) value.uinteger;
+        case JSONType.float_:
+            return cast(int) value.floating;
+        default:
+            return fallback;
+    }
+}
+
+AppState loadAppState() {
+    AppState state;
+    auto path = configFilePath();
+    if (!exists(path)) {
+        return state;
+    }
+
+    try {
+        auto parsed = parseJSON(readText(path));
+        if (parsed.type != JSONType.object) {
+            return state;
+        }
+
+        auto root = parsed.object;
+        if (auto value = "prefDefaultDuplicatesOnly" in root) {
+            state.prefDefaultDuplicatesOnly = jsonToBool(*value, state.prefDefaultDuplicatesOnly);
+        }
+        if (auto value = "prefAutoApplyFilter" in root) {
+            state.prefAutoApplyFilter = jsonToBool(*value, state.prefAutoApplyFilter);
+        }
+        if (auto value = "prefCaseSensitiveFilter" in root) {
+            state.prefCaseSensitiveFilter = jsonToBool(*value, state.prefCaseSensitiveFilter);
+        }
+        if (auto value = "prefDetailsBelow" in root) {
+            state.prefDetailsBelow = jsonToBool(*value, state.prefDetailsBelow);
+        }
+
+        if (auto value = "splitPositionHorizontal" in root) {
+            state.splitPositionHorizontal = jsonToInt(*value, state.splitPositionHorizontal);
+        }
+        if (auto value = "splitPositionVertical" in root) {
+            state.splitPositionVertical = jsonToInt(*value, state.splitPositionVertical);
+        }
+
+        if (auto value = "hasWindowGeometry" in root) {
+            state.hasWindowGeometry = jsonToBool(*value, state.hasWindowGeometry);
+        }
+        if (auto value = "windowX" in root) {
+            state.windowX = jsonToInt(*value, state.windowX);
+        }
+        if (auto value = "windowY" in root) {
+            state.windowY = jsonToInt(*value, state.windowY);
+        }
+        if (auto value = "windowWidth" in root) {
+            state.windowWidth = jsonToInt(*value, state.windowWidth);
+        }
+        if (auto value = "windowHeight" in root) {
+            state.windowHeight = jsonToInt(*value, state.windowHeight);
+        }
+    } catch (Exception) {
+        // Keep defaults on invalid state file.
+    }
+
+    return state;
+}
+
+void saveAppState(const(AppState) state) {
+    auto dirPath = configDirPath();
+    auto filePath = configFilePath();
+    mkdirRecurse(dirPath);
+
+    auto payload = format(
+        "{\n" ~
+        "  \"prefDefaultDuplicatesOnly\": %s,\n" ~
+        "  \"prefAutoApplyFilter\": %s,\n" ~
+        "  \"prefCaseSensitiveFilter\": %s,\n" ~
+        "  \"prefDetailsBelow\": %s,\n" ~
+        "  \"splitPositionHorizontal\": %s,\n" ~
+        "  \"splitPositionVertical\": %s,\n" ~
+        "  \"hasWindowGeometry\": %s,\n" ~
+        "  \"windowX\": %s,\n" ~
+        "  \"windowY\": %s,\n" ~
+        "  \"windowWidth\": %s,\n" ~
+        "  \"windowHeight\": %s\n" ~
+        "}\n",
+        state.prefDefaultDuplicatesOnly ? "true" : "false",
+        state.prefAutoApplyFilter ? "true" : "false",
+        state.prefCaseSensitiveFilter ? "true" : "false",
+        state.prefDetailsBelow ? "true" : "false",
+        state.splitPositionHorizontal,
+        state.splitPositionVertical,
+        state.hasWindowGeometry ? "true" : "false",
+        state.windowX,
+        state.windowY,
+        state.windowWidth,
+        state.windowHeight
+    );
+
+    write(filePath, payload);
 }
 
 /** Return human-readable CLI usage text. */
@@ -173,25 +320,23 @@ void configureTableColumns(TreeView treeView) {
         auto renderer = new CellRendererText();
         auto column = new TreeViewColumn();
         column.setTitle(title);
-        column.packStart(renderer, true);
+        column.packStart(renderer, false);
         column.addAttribute(renderer, "text", modelColumn);
         column.setSortColumnId(sortColumn >= 0 ? sortColumn : modelColumn);
-        column.setResizable(true);
+        column.setResizable(false);
+        column.setExpand(false);
+        column.setSizing(GtkTreeViewColumnSizing.AUTOSIZE);
         column.setClickable(true);
         treeView.appendColumn(column);
     }
 
-    addTextColumn("#", COL_INDEX, COL_INDEX_SORT);
+    addTextColumn("Index#", COL_INDEX, COL_INDEX_SORT);
     addTextColumn("Size", COL_FILE_SIZE, COL_FILE_SIZE_SORT);
-    addTextColumn("Files", COL_FILE_COUNT, COL_FILE_COUNT_SORT);
-    addTextColumn("Video", COL_MEDIA_VIDEO);
-    addTextColumn("Audio", COL_MEDIA_AUDIO);
-    addTextColumn("Image", COL_MEDIA_IMAGE);
-    addTextColumn("Text", COL_MEDIA_TEXT);
+    addTextColumn("Checksums", COL_CHECKSUM_SET);
+    addTextColumn("File Type", COL_FILE_TYPE);
+    addTextColumn("MediaInfo", COL_MEDIA_INFO);
     addTextColumn("Archive", COL_HAS_ARCHIVE);
     addTextColumn("Torrent", COL_HAS_TORRENT);
-    addTextColumn("Checksums", COL_CHECKSUM_SET);
-    addTextColumn("Primary file", COL_FILE_NAME);
 
     treeView.setHeadersClickable(true);
 }
@@ -219,6 +364,27 @@ string checksumSetStatus(const(BlobRow) row) {
 
 string boolStatusIcon(bool value) {
     return value ? "🟢✓" : "🔴✗";
+}
+
+string mediaInfoSummary(const(BlobRow) row) {
+    auto labels = appender!(string[])();
+    if (row.hasVideo) {
+        labels.put("V");
+    }
+    if (row.hasAudio) {
+        labels.put("A");
+    }
+    if (row.hasImage) {
+        labels.put("I");
+    }
+    if (row.hasText) {
+        labels.put("T");
+    }
+
+    if (labels.data.length > 0) {
+        return labels.data.join(",");
+    }
+    return row.hasMedia ? "yes" : "-";
 }
 
 string digestBase64ToHex(string digest) {
@@ -254,15 +420,11 @@ void populateTableRows(ListStore store, const(BlobRow)[] rows) {
     foreach (idx, row; rows) {
         auto indexText = to!string(idx + 1);
         auto sizeText = to!string(row.fileSize);
-        auto filesText = to!string(row.fileCount);
-        auto videoText = boolStatusIcon(row.hasVideo);
-        auto audioText = boolStatusIcon(row.hasAudio);
-        auto imageText = boolStatusIcon(row.hasImage);
-        auto textText = boolStatusIcon(row.hasText);
+        auto checksumsText = checksumSetStatus(row);
+        auto fileTypeText = row.fileType.length > 0 ? row.fileType : "-";
+        auto mediaInfoText = mediaInfoSummary(row);
         auto archiveText = boolStatusIcon(row.hasArchive);
         auto torrentText = boolStatusIcon(row.hasTorrent);
-        auto checksumsText = checksumSetStatus(row);
-        auto fileText = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
 
         TreeIter iter;
         store.append(iter);
@@ -271,34 +433,24 @@ void populateTableRows(ListStore store, const(BlobRow)[] rows) {
             [
                 COL_INDEX,
                 COL_FILE_SIZE,
-                COL_FILE_COUNT,
-                COL_MEDIA_VIDEO,
-                COL_MEDIA_AUDIO,
-                COL_MEDIA_IMAGE,
-                COL_MEDIA_TEXT,
+                COL_CHECKSUM_SET,
+                COL_FILE_TYPE,
+                COL_MEDIA_INFO,
                 COL_HAS_ARCHIVE,
                 COL_HAS_TORRENT,
-                COL_CHECKSUM_SET,
-                COL_FILE_NAME,
                 COL_INDEX_SORT,
-                COL_FILE_SIZE_SORT,
-                COL_FILE_COUNT_SORT
+                COL_FILE_SIZE_SORT
             ],
             [
                 indexText,
                 sizeText,
-                filesText,
-                videoText,
-                audioText,
-                imageText,
-                textText,
+                checksumsText,
+                fileTypeText,
+                mediaInfoText,
                 archiveText,
                 torrentText,
-                checksumsText,
-                fileText,
                 numericSortKey(to!ulong(idx + 1)),
-                numericSortKey(row.fileSize),
-                numericSortKey(to!ulong(row.fileCount))
+                numericSortKey(row.fileSize)
             ]
         );
     }
@@ -318,13 +470,12 @@ int main(string[] args) {
         return 0;
     }
 
+    auto loadedState = loadAppState();
+
     Main.init(args);
 
     auto window = new Window("DosierSkanilo GUI");
-    window.setDefaultSize(960, 640);
-    window.addOnDestroy((Widget _) {
-        Main.quit();
-    });
+    window.setDefaultSize(loadedState.windowWidth, loadedState.windowHeight);
 
     auto accelGroup = new AccelGroup();
     window.addAccelGroup(accelGroup);
@@ -395,11 +546,6 @@ int main(string[] args) {
         GType.STRING,
         GType.STRING,
         GType.STRING,
-        GType.STRING,
-        GType.STRING,
-        GType.STRING,
-        GType.STRING,
-        GType.STRING,
         GType.STRING
     ]);
     auto tableView = new TreeView(tableStore);
@@ -438,7 +584,7 @@ int main(string[] args) {
     auto split = new Paned(Orientation.HORIZONTAL);
     split.add1(scroll);
     split.add2(detailsPane);
-    split.setPosition(720);
+    split.setPosition(loadedState.splitPositionHorizontal);
 
     auto status = new Label("Ready.");
     status.setXalign(0.0f);
@@ -464,10 +610,13 @@ int main(string[] args) {
     string loadedRootShape = "-";
     string loadedRootKeysSummary = "-";
 
-    bool prefDefaultDuplicatesOnly = false;
-    bool prefAutoApplyFilter = true;
-    bool prefCaseSensitiveFilter = false;
-    bool prefDetailsBelow;
+    bool prefDefaultDuplicatesOnly = loadedState.prefDefaultDuplicatesOnly;
+    bool prefAutoApplyFilter = loadedState.prefAutoApplyFilter;
+    bool prefCaseSensitiveFilter = loadedState.prefCaseSensitiveFilter;
+    bool prefDetailsBelow = loadedState.prefDetailsBelow;
+    bool clearSavedWindowGeometryOnExit;
+    int splitPositionHorizontal = loadedState.splitPositionHorizontal;
+    int splitPositionVertical = loadedState.splitPositionVertical;
     bool isLoading;
     ulong loadRequestId;
     ulong filterRequestId;
@@ -484,6 +633,11 @@ int main(string[] args) {
     }
     if (cli.caseSensitiveFilter) {
         prefCaseSensitiveFilter = true;
+    }
+
+    if (loadedState.hasWindowGeometry) {
+        window.move(loadedState.windowX, loadedState.windowY);
+        window.resize(loadedState.windowWidth, loadedState.windowHeight);
     }
 
     auto menuBar = new MenuBar();
@@ -606,15 +760,76 @@ int main(string[] args) {
         detailsView.getBuffer().setText("No row selected.");
     }
 
-    void applyDetailsPanePreference() {
+    void applyDetailsPanePreference(bool captureCurrentPosition = true) {
+        if (captureCurrentPosition) {
+            auto currentOrientation = split.getOrientation();
+            auto currentPosition = split.getPosition();
+            if (currentOrientation == Orientation.VERTICAL) {
+                splitPositionVertical = currentPosition;
+            } else {
+                splitPositionHorizontal = currentPosition;
+            }
+        }
+
         auto orientation = prefDetailsBelow ? Orientation.VERTICAL : Orientation.HORIZONTAL;
-        auto splitPosition = prefDetailsBelow ? 420 : 720;
+        auto splitPosition = prefDetailsBelow ? splitPositionVertical : splitPositionHorizontal;
 
         // Keep the same paned instance and flip orientation in place.
         // Rebuilding/reparenting the children can invalidate GTK widget ownership.
         split.setOrientation(orientation);
         split.setPosition(splitPosition);
     }
+
+    AppState currentAppState(bool clearWindowGeometry = false) {
+        AppState state;
+        state.prefDefaultDuplicatesOnly = prefDefaultDuplicatesOnly;
+        state.prefAutoApplyFilter = prefAutoApplyFilter;
+        state.prefCaseSensitiveFilter = prefCaseSensitiveFilter;
+        state.prefDetailsBelow = prefDetailsBelow;
+
+        auto currentOrientation = split.getOrientation();
+        auto currentSplitPosition = split.getPosition();
+        if (currentOrientation == Orientation.VERTICAL) {
+            splitPositionVertical = currentSplitPosition;
+        } else {
+            splitPositionHorizontal = currentSplitPosition;
+        }
+
+        state.splitPositionHorizontal = splitPositionHorizontal;
+        state.splitPositionVertical = splitPositionVertical;
+
+        int width = 960;
+        int height = 640;
+        window.getSize(width, height);
+        state.windowWidth = width;
+        state.windowHeight = height;
+
+        if (clearWindowGeometry) {
+            state.hasWindowGeometry = false;
+            state.windowX = 0;
+            state.windowY = 0;
+            return state;
+        }
+
+        int x = 0;
+        int y = 0;
+        window.getPosition(x, y);
+        state.hasWindowGeometry = true;
+        state.windowX = x;
+        state.windowY = y;
+        return state;
+    }
+
+    void persistCurrentState(bool clearWindowGeometry = false) {
+        try {
+            saveAppState(currentAppState(clearWindowGeometry));
+        } catch (Exception ex) {
+            status.setText(format("Failed to persist app state: %s", ex.msg));
+        }
+    }
+
+    // Apply persisted splitter orientation/position once the helper is available.
+    applyDetailsPanePreference(false);
 
     void renderRows(const(BlobRow)[] rows, string filterLabel = "") {
         if (loadedFilePath.length == 0) {
@@ -654,19 +869,14 @@ int main(string[] args) {
                 auto row = rowsCopy[idx];
                 auto indexText = to!string(idx + 1);
                 auto sizeText = to!string(row.fileSize);
-                auto filesText = to!string(row.fileCount);
-                auto videoText = boolStatusIcon(row.hasVideo);
-                auto audioText = boolStatusIcon(row.hasAudio);
-                auto imageText = boolStatusIcon(row.hasImage);
-                auto textText = boolStatusIcon(row.hasText);
+                auto checksumsText = checksumSetStatus(row);
+                auto fileTypeText = row.fileType.length > 0 ? row.fileType : "-";
+                auto mediaInfoText = mediaInfoSummary(row);
                 auto archiveText = boolStatusIcon(row.hasArchive);
                 auto torrentText = boolStatusIcon(row.hasTorrent);
-                auto checksumsText = checksumSetStatus(row);
-                auto fileText = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
 
                 auto indexSortText = format("%020d", cast(ulong) idx + 1);
                 auto sizeSortText = format("%020d", row.fileSize);
-                auto filesSortText = format("%020d", cast(ulong) row.fileCount);
 
                 TreeIter iter;
                 tableStore.append(iter);
@@ -675,34 +885,24 @@ int main(string[] args) {
                     [
                         COL_INDEX,
                         COL_FILE_SIZE,
-                        COL_FILE_COUNT,
-                        COL_MEDIA_VIDEO,
-                        COL_MEDIA_AUDIO,
-                        COL_MEDIA_IMAGE,
-                        COL_MEDIA_TEXT,
+                        COL_CHECKSUM_SET,
+                        COL_FILE_TYPE,
+                        COL_MEDIA_INFO,
                         COL_HAS_ARCHIVE,
                         COL_HAS_TORRENT,
-                        COL_CHECKSUM_SET,
-                        COL_FILE_NAME,
                         COL_INDEX_SORT,
-                        COL_FILE_SIZE_SORT,
-                        COL_FILE_COUNT_SORT
+                        COL_FILE_SIZE_SORT
                     ],
                     [
                         indexText,
                         sizeText,
-                        filesText,
-                        videoText,
-                        audioText,
-                        imageText,
-                        textText,
+                        checksumsText,
+                        fileTypeText,
+                        mediaInfoText,
                         archiveText,
                         torrentText,
-                        checksumsText,
-                        fileText,
                         indexSortText,
-                        sizeSortText,
-                        filesSortText
+                        sizeSortText
                     ]
                 );
             }
@@ -769,24 +969,20 @@ int main(string[] args) {
 
         auto idx = model.getValueString(iter, COL_INDEX);
         auto size = model.getValueString(iter, COL_FILE_SIZE);
-        auto files = model.getValueString(iter, COL_FILE_COUNT);
-        auto video = model.getValueString(iter, COL_MEDIA_VIDEO);
-        auto audio = model.getValueString(iter, COL_MEDIA_AUDIO);
-        auto image = model.getValueString(iter, COL_MEDIA_IMAGE);
-        auto text = model.getValueString(iter, COL_MEDIA_TEXT);
         auto checksums = model.getValueString(iter, COL_CHECKSUM_SET);
-        auto fileName = model.getValueString(iter, COL_FILE_NAME);
+        auto fileType = model.getValueString(iter, COL_FILE_TYPE);
+        auto mediaInfo = model.getValueString(iter, COL_MEDIA_INFO);
+        auto archive = model.getValueString(iter, COL_HAS_ARCHIVE);
+        auto torrent = model.getValueString(iter, COL_HAS_TORRENT);
         rowDetails.setText(format(
-            "Selection: #%s | size=%s | files=%s | V=%s A=%s I=%s T=%s | checksums=%s | file=%s",
+            "Selection: #%s | size=%s | checksums=%s | type=%s | media=%s | archive=%s | torrent=%s",
             idx,
             size,
-            files,
-            video,
-            audio,
-            image,
-            text,
             checksums,
-            fileName
+            fileType,
+            mediaInfo,
+            archive,
+            torrent
         ));
 
         size_t rowIndex = 0;
@@ -1175,10 +1371,14 @@ int main(string[] args) {
         auto optDetailsBelow = new CheckButton("Show details below list (instead of on the right)");
         optDetailsBelow.setActive(prefDetailsBelow);
 
+        auto optClearWindowGeometry = new CheckButton("Delete saved window positions on save");
+        optClearWindowGeometry.setActive(false);
+
         prefsBox.packStart(optDefaultDupes, false, false, 0);
         prefsBox.packStart(optAutoApply, false, false, 0);
         prefsBox.packStart(optCaseSensitive, false, false, 0);
         prefsBox.packStart(optDetailsBelow, false, false, 0);
+        prefsBox.packStart(optClearWindowGeometry, false, false, 0);
         contentArea.packStart(prefsBox, true, true, 0);
 
         dialog.showAll();
@@ -1193,7 +1393,10 @@ int main(string[] args) {
             if (prefDetailsBelow != oldDetailsBelow) {
                 applyDetailsPanePreference();
             }
-            status.setText("Preferences saved.");
+            auto clearGeometry = optClearWindowGeometry.getActive();
+            clearSavedWindowGeometryOnExit = clearGeometry;
+            persistCurrentState(clearGeometry);
+            status.setText(clearGeometry ? "Preferences saved. Stored window positions were deleted." : "Preferences saved.");
         }
 
         dialog.destroy();
@@ -1379,6 +1582,11 @@ int main(string[] args) {
 
     tableView.getSelection().addOnChanged((TreeSelection _) {
         updateSelectedRowDetails();
+    });
+
+    window.addOnDestroy((Widget _) {
+        persistCurrentState(clearSavedWindowGeometryOnExit);
+        Main.quit();
     });
 
     content.packStart(separator, false, false, 0);
