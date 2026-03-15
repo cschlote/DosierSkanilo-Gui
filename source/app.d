@@ -35,6 +35,7 @@ import gtk.SeparatorMenuItem;
 import gtk.AccelGroup;
 import gtk.Dialog;
 import gtk.CheckButton;
+import gtk.ToggleButton;
 import gtk.FileChooserDialog;
 import gtk.AboutDialog;
 import gtk.MessageDialog;
@@ -351,6 +352,14 @@ int main(string[] args) {
     auto filterEntry = new Entry();
     filterEntry.setHexpand(true);
     filterEntry.setPlaceholderText("Filter by filename or SHA1...");
+    auto filterVideo = new CheckButton("V");
+    filterVideo.setTooltipText("Filter to rows with video media metadata");
+    auto filterAudio = new CheckButton("A");
+    filterAudio.setTooltipText("Filter to rows with audio media metadata");
+    auto filterImage = new CheckButton("I");
+    filterImage.setTooltipText("Filter to rows with image media metadata");
+    auto filterText = new CheckButton("T");
+    filterText.setTooltipText("Filter to rows with text/subtitle media metadata");
 
     auto btnApplyFilter = new Button("Apply Filter");
     auto btnClearFilter = new Button("Clear Filter");
@@ -369,6 +378,10 @@ int main(string[] args) {
     toolbar.packStart(btnCancelLoad, false, false, 0);
     toolbar.packStart(loadSpinner, false, false, 0);
     toolbar.packStart(filterEntry, true, true, 0);
+    toolbar.packStart(filterVideo, false, false, 0);
+    toolbar.packStart(filterAudio, false, false, 0);
+    toolbar.packStart(filterImage, false, false, 0);
+    toolbar.packStart(filterText, false, false, 0);
     toolbar.packStart(btnApplyFilter, false, false, 0);
     toolbar.packStart(btnClearFilter, false, false, 0);
     toolbar.packStart(progressBar, true, true, 0);
@@ -514,6 +527,10 @@ int main(string[] args) {
         btnReload.setSensitive(!loading);
         btnCancelLoad.setSensitive(loading);
         filterEntry.setSensitive(!loading);
+        filterVideo.setSensitive(!loading);
+        filterAudio.setSensitive(!loading);
+        filterImage.setSensitive(!loading);
+        filterText.setSensitive(!loading);
         btnApplyFilter.setSensitive(!loading);
         btnClearFilter.setSensitive(!loading);
         btnCopySha1.setSensitive(!loading && selectedSha1.length > 0);
@@ -875,8 +892,34 @@ int main(string[] args) {
         }
         auto query = filterEntry.getText();
         auto caseSensitive = prefCaseSensitiveFilter;
+        auto requireVideo = filterVideo.getActive();
+        auto requireAudio = filterAudio.getActive();
+        auto requireImage = filterImage.getActive();
+        auto requireText = filterText.getActive();
         auto sourceRows = loadedRows.dup;
         auto requestId = ++filterRequestId;
+
+        bool hasMediaTypeFilters = requireVideo || requireAudio || requireImage || requireText;
+
+        string mediaFilterSummary() {
+            if (!hasMediaTypeFilters) {
+                return "";
+            }
+            auto labels = appender!(string[])();
+            if (requireVideo) {
+                labels.put("V");
+            }
+            if (requireAudio) {
+                labels.put("A");
+            }
+            if (requireImage) {
+                labels.put("I");
+            }
+            if (requireText) {
+                labels.put("T");
+            }
+            return labels.data.join(",");
+        }
 
         setLoadingState(true, format("Filtering %s rows ...", sourceRows.length));
         progressBar.setText("Filtering rows ...");
@@ -890,6 +933,25 @@ int main(string[] args) {
 
             try {
                 result.filteredRows = filterRowsByText(sourceRows, query, caseSensitive);
+                if (hasMediaTypeFilters) {
+                    auto mediaFiltered = appender!(BlobRow[])();
+                    foreach (row; result.filteredRows) {
+                        if (requireVideo && !row.hasVideo) {
+                            continue;
+                        }
+                        if (requireAudio && !row.hasAudio) {
+                            continue;
+                        }
+                        if (requireImage && !row.hasImage) {
+                            continue;
+                        }
+                        if (requireText && !row.hasText) {
+                            continue;
+                        }
+                        mediaFiltered.put(row);
+                    }
+                    result.filteredRows = mediaFiltered.data;
+                }
             } catch (Exception ex) {
                 result.error = ex.msg;
             }
@@ -909,7 +971,14 @@ int main(string[] args) {
                 pendingStatusSuffix = format("filter time: %s ms", result.elapsedMs);
                 lastFilterElapsedMs = result.elapsedMs;
                 updatePerfStatus();
-                renderRows(result.filteredRows, result.query);
+                auto filterLabel = result.query;
+                auto mediaSummary = mediaFilterSummary();
+                if (mediaSummary.length > 0 && filterLabel.length > 0) {
+                    filterLabel = format("%s | media:%s", filterLabel, mediaSummary);
+                } else if (mediaSummary.length > 0) {
+                    filterLabel = format("media:%s", mediaSummary);
+                }
+                renderRows(result.filteredRows, filterLabel);
                 return false;
             });
         });
@@ -1017,7 +1086,13 @@ int main(string[] args) {
                 lastLoadElapsedMs = result.elapsedMs;
                 updatePerfStatus();
 
-                if (prefAutoApplyFilter && filterEntry.getText().length > 0) {
+                if (prefAutoApplyFilter && (
+                    filterEntry.getText().length > 0 ||
+                    filterVideo.getActive() ||
+                    filterAudio.getActive() ||
+                    filterImage.getActive() ||
+                    filterText.getActive()
+                )) {
                     applyFilterFromEntry();
                 } else {
                     renderRows(loadedRows);
@@ -1198,6 +1273,10 @@ int main(string[] args) {
 
     auto editClearFilter = new MenuItem((MenuItem _) {
         filterEntry.setText("");
+        filterVideo.setActive(false);
+        filterAudio.setActive(false);
+        filterImage.setActive(false);
+        filterText.setActive(false);
         renderRows(loadedRows);
     }, "C_lear Filter", "edit.clearFilter", true, accelGroup, 'l');
 
@@ -1255,6 +1334,10 @@ int main(string[] args) {
 
     btnClearFilter.addOnClicked((Button _) {
         filterEntry.setText("");
+        filterVideo.setActive(false);
+        filterAudio.setActive(false);
+        filterImage.setActive(false);
+        filterText.setActive(false);
         renderRows(loadedRows);
     });
 
@@ -1275,6 +1358,22 @@ int main(string[] args) {
     });
 
     filterEntry.addOnActivate((Entry _) {
+        applyFilterFromEntry();
+    });
+
+    filterVideo.addOnToggled((ToggleButton _) {
+        applyFilterFromEntry();
+    });
+
+    filterAudio.addOnToggled((ToggleButton _) {
+        applyFilterFromEntry();
+    });
+
+    filterImage.addOnToggled((ToggleButton _) {
+        applyFilterFromEntry();
+    });
+
+    filterText.addOnToggled((ToggleButton _) {
         applyFilterFromEntry();
     });
 
