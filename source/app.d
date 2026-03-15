@@ -108,6 +108,7 @@ struct AsyncFilterResult {
     BlobRow[] filteredRows;
     string query;
     bool caseSensitive;
+    string mediaStats;
     string error;
     long elapsedMs;
 }
@@ -385,6 +386,30 @@ string mediaInfoSummary(const(BlobRow) row) {
         return labels.data.join(",");
     }
     return row.hasMedia ? "yes" : "-";
+}
+
+string mediaHitStats(const(BlobRow)[] rows) {
+    size_t videoCount;
+    size_t audioCount;
+    size_t imageCount;
+    size_t textCount;
+
+    foreach (row; rows) {
+        if (row.hasVideo) {
+            ++videoCount;
+        }
+        if (row.hasAudio) {
+            ++audioCount;
+        }
+        if (row.hasImage) {
+            ++imageCount;
+        }
+        if (row.hasText) {
+            ++textCount;
+        }
+    }
+
+    return format("hits V:%s A:%s I:%s T:%s", videoCount, audioCount, imageCount, textCount);
 }
 
 string digestBase64ToHex(string digest) {
@@ -1139,6 +1164,7 @@ int main(string[] args) {
                     }
                     result.filteredRows = mediaFiltered.data;
                 }
+                result.mediaStats = mediaHitStats(result.filteredRows);
             } catch (Exception ex) {
                 result.error = ex.msg;
             }
@@ -1164,6 +1190,13 @@ int main(string[] args) {
                     filterLabel = format("%s | media:%s", filterLabel, mediaSummary);
                 } else if (mediaSummary.length > 0) {
                     filterLabel = format("media:%s", mediaSummary);
+                }
+                if (result.mediaStats.length > 0) {
+                    if (filterLabel.length > 0) {
+                        filterLabel = format("%s | %s", filterLabel, result.mediaStats);
+                    } else {
+                        filterLabel = result.mediaStats;
+                    }
                 }
                 renderRows(result.filteredRows, filterLabel);
                 return false;
