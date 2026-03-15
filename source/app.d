@@ -1013,12 +1013,11 @@ int main(string[] args) {
         int width = lastKnownWindowWidth;
         int height = lastKnownWindowHeight;
 
-        int measuredWidth = 0;
-        int measuredHeight = 0;
-        window.getSize(measuredWidth, measuredHeight);
-        if (measuredWidth > 0 && measuredHeight > 0) {
-            width = measuredWidth;
-            height = measuredHeight;
+        auto allocatedWidth = window.getAllocatedWidth();
+        auto allocatedHeight = window.getAllocatedHeight();
+        if (allocatedWidth > 0 && allocatedHeight > 0) {
+            width = allocatedWidth;
+            height = allocatedHeight;
         }
 
         if (width <= 0) {
@@ -1033,6 +1032,15 @@ int main(string[] args) {
         state.hasWindowSize = true;
         state.windowWidth = width;
         state.windowHeight = height;
+        appendRestoreLog(format(
+            "persist snapshot width=%s height=%s trackedWidth=%s trackedHeight=%s allocatedWidth=%s allocatedHeight=%s",
+            state.windowWidth,
+            state.windowHeight,
+            lastKnownWindowWidth,
+            lastKnownWindowHeight,
+            allocatedWidth,
+            allocatedHeight
+        ));
 
         if (clearWindowGeometry) {
             state.hasWindowGeometry = false;
