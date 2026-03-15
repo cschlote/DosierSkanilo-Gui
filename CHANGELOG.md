@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## Release 0.2.0
+
 - Added a first executable unit test suite and changed the test script to run real `dub test` checks instead of only recompiling the application.
 - Added line coverage reporting for the test stage, including a total percentage for project source files and stored coverage listing artifacts.
 - Kept `.lst` coverage files canonical under `build/coverage/lst` and added top-level symlinks for VS Code DCode coverage highlighting.
