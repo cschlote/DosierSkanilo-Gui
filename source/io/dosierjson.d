@@ -137,6 +137,114 @@ string[] allFileNamesFromSpecs(JSONValue[] specs) {
     return names.data;
 }
 
+/** Convert a scalar-ish JSON node into display text. */
+string jsonScalarText(JSONValue value) {
+    final switch (value.type) {
+        case JSONType.string:
+            return value.str;
+        case JSONType.integer:
+            return format("%s", value.integer);
+        case JSONType.uinteger:
+            return format("%s", value.uinteger);
+        case JSONType.float_:
+            return format("%s", value.floating);
+        case JSONType.true_:
+            return "true";
+        case JSONType.false_:
+            return "false";
+        case JSONType.null_:
+            return "";
+        case JSONType.object:
+        case JSONType.array:
+            return prettyJsonValue(value);
+    }
+}
+
+/** Return the first available field value from an object. */
+string firstAvailableField(JSONValue[string] obj, string[] keys) {
+    foreach (key; keys) {
+        if (auto value = key in obj) {
+            auto text = jsonScalarText(*value);
+            if (text.length > 0) {
+                return text;
+            }
+        }
+    }
+    return "";
+}
+
+/** Extract a best-effort access timestamp from one file spec object. */
+string lastAccessFromSpec(JSONValue spec) {
+    if (spec.type != JSONType.object) {
+        return "";
+    }
+
+    auto obj = spec.object;
+    auto directValue = firstAvailableField(obj, [
+        "lastAccess",
+        "lastAccessDate",
+        "lastAccessTime",
+        "lastAccessUtc",
+        "accessTime",
+        "accessDate",
+        "accessedAt",
+        "atime"
+    ]);
+    if (directValue.length > 0) {
+        return directValue;
+    }
+
+    if ("stat" in obj && (*("stat" in obj)).type == JSONType.object) {
+        auto statObj = (*("stat" in obj)).object;
+        return firstAvailableField(statObj, [
+            "lastAccess",
+            "lastAccessDate",
+            "lastAccessTime",
+            "accessTime",
+            "accessDate",
+            "accessedAt",
+            "atime"
+        ]);
+    }
+
+    return "";
+}
+
+/** Build a multiline detail list from file specs, including access timestamps when present. */
+string fileSpecDetails(JSONValue[] specs) {
+    auto lines = appender!(string[])();
+    foreach (spec; specs) {
+        if (spec.type != JSONType.object) {
+            continue;
+        }
+
+        auto obj = spec.object;
+        auto fileName = firstAvailableField(obj, ["fileName", "path", "name"]);
+        auto lastAccess = lastAccessFromSpec(spec);
+        if (fileName.length == 0 && lastAccess.length == 0) {
+            continue;
+        }
+
+        if (fileName.length == 0) {
+            fileName = "-";
+        }
+        lines.put(format("%s | last access: %s", fileName, lastAccess.length > 0 ? lastAccess : "-"));
+    }
+    return lines.data.join("\n");
+}
+
+/** Build a multiline detail list from plain filename arrays. */
+string fileNameArrayDetails(JSONValue[] names) {
+    auto lines = appender!(string[])();
+    foreach (name; names) {
+        auto value = name.str;
+        if (value.length > 0) {
+            lines.put(format("%s | last access: -", value));
+        }
+    }
+    return lines.data.join("\n");
+}
+
 /** Map a single blob JSON object into a GUI row projection.
  *
  * The mapper supports modern and legacy fields:
@@ -192,6 +300,7 @@ BlobRow rowFromJsonObject(JSONValue objValue) {
         row.fileCount = specs.length;
         row.primaryFileName = firstFileNameFromSpecs(specs);
         row.fileNamesSummary = allFileNamesFromSpecs(specs).join(", ");
+        row.fileNamesDetails = fileSpecDetails(specs);
     } else if ("fileNames" in obj && (*("fileNames" in obj)).type == JSONType.array) {
         auto names = (*("fileNames" in obj)).array;
         row.fileCount = names.length;
@@ -206,14 +315,21 @@ BlobRow rowFromJsonObject(JSONValue objValue) {
             row.primaryFileName = names[0].str;
         }
         row.fileNamesSummary = collectedNames.data.join(", ");
+        row.fileNamesDetails = fileNameArrayDetails(names);
     } else if ("fileName" in obj) {
         row.primaryFileName = (*("fileName" in obj)).str;
         row.fileCount = row.primaryFileName.length == 0 ? 0 : 1;
         row.fileNamesSummary = row.primaryFileName;
+        row.fileNamesDetails = row.primaryFileName.length > 0
+            ? format("%s | last access: -", row.primaryFileName)
+            : "";
     }
 
     if (row.fileNamesSummary.length == 0 && row.primaryFileName.length > 0) {
         row.fileNamesSummary = row.primaryFileName;
+    }
+    if (row.fileNamesDetails.length == 0 && row.fileNamesSummary.length > 0) {
+        row.fileNamesDetails = format("%s | last access: -", row.fileNamesSummary);
     }
 
     row.hasMedia = false;
@@ -253,6 +369,11 @@ BlobRow rowFromJsonObject(JSONValue objValue) {
         row.hasMedia = (*("mediaInfo" in obj)).array.length > 0;
     }
     row.hasMedia = row.hasMedia || row.hasVideo || row.hasAudio || row.hasImage || row.hasText;
+    if ("mediaInfoSig" in obj) {
+        row.mediaInfoDetails = prettyJsonValue(*("mediaInfoSig" in obj));
+    } else if ("mediaInfo" in obj) {
+        row.mediaInfoDetails = prettyJsonValue(*("mediaInfo" in obj));
+    }
 
     if ("fileType" in obj) {
         row.fileType = (*("fileType" in obj)).str;
@@ -261,11 +382,15 @@ BlobRow rowFromJsonObject(JSONValue objValue) {
     row.hasArchive = false;
     if ("archiveSpecs" in obj && (*("archiveSpecs" in obj)).type == JSONType.array) {
         row.hasArchive = (*("archiveSpecs" in obj)).array.length > 0;
+        if (row.hasArchive) {
+            row.archiveDetails = prettyJsonValue(*("archiveSpecs" in obj));
+        }
     }
 
     row.hasTorrent = false;
     if ("torrentInfo" in obj && (*("torrentInfo" in obj)).type == JSONType.object) {
         row.hasTorrent = true;
+        row.torrentDetails = prettyJsonValue(*("torrentInfo" in obj));
     }
 
     return row;
@@ -334,6 +459,7 @@ unittest {
         assert(row.primaryFileName == "alpha.mkv");
         assert(row.fileCount == 2);
         assert(row.fileNamesSummary == "alpha.mkv, beta.srt");
+        assert(row.fileNamesDetails == "alpha.mkv | last access: -\nbeta.srt | last access: -");
         assert(row.hasMedia);
         assert(row.hasVideo);
         assert(!row.hasAudio);
@@ -341,6 +467,9 @@ unittest {
         assert(!row.hasText);
         assert(row.hasArchive);
         assert(row.hasTorrent);
+        assert(row.mediaInfoDetails.canFind("video"));
+        assert(row.archiveDetails.canFind("zip"));
+        assert(row.torrentDetails.canFind("release"));
         assert(row.fileType == "video");
         assert(row.rawJson.canFind("\"archiveSpecs\""));
 }
@@ -365,6 +494,7 @@ unittest {
         assert(row.primaryFileName == "one.bin");
         assert(row.fileCount == 2);
         assert(row.fileNamesSummary == "one.bin, two.bin");
+        assert(row.fileNamesDetails == "one.bin | last access: -\ntwo.bin | last access: -");
         assert(row.hasMedia);
         assert(!row.hasVideo);
         assert(!row.hasAudio);
@@ -372,6 +502,22 @@ unittest {
         assert(!row.hasText);
         assert(!row.hasArchive);
         assert(!row.hasTorrent);
+}
+
+unittest {
+        import std.json : parseJSON;
+
+        auto parsed = parseJSON(q{
+                {
+                    "fileSpecs": [
+                        { "fileName": "alpha.mkv", "lastAccessDate": "2026-03-15T09:30:00Z" },
+                        { "fileName": "beta.srt", "stat": { "atime": 123456789 } }
+                    ]
+                }
+        });
+
+        auto row = rowFromJsonObject(parsed);
+        assert(row.fileNamesDetails == "alpha.mkv | last access: 2026-03-15T09:30:00Z\nbeta.srt | last access: 123456789");
 }
 
 unittest {

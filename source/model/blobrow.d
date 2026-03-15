@@ -22,6 +22,7 @@ struct BlobRow {
     string xxh64; /// xxHash64 digest in base64, when available.
     size_t fileCount; /// Number of known file references for this blob.
     string fileNamesSummary; /// Concatenated file reference names for detail display.
+    string fileNamesDetails; /// Multiline file reference list including optional access timestamps.
     bool hasMedia; /// True when media metadata is present.
     bool hasVideo; /// True when media metadata marks a video stream.
     bool hasAudio; /// True when media metadata marks an audio stream.
@@ -29,6 +30,9 @@ struct BlobRow {
     bool hasText; /// True when media metadata marks a text/subtitle stream.
     bool hasArchive; /// True when archive metadata is present.
     bool hasTorrent; /// True when torrent metadata is present.
+    string mediaInfoDetails; /// Pretty-printed media metadata for fold-out inspection.
+    string archiveDetails; /// Pretty-printed archive metadata for fold-out inspection.
+    string torrentDetails; /// Pretty-printed torrent metadata for fold-out inspection.
     string fileType; /// Optional file type signature from scanner metadata.
     string rawJson; /// Full source JSON object for exhaustive detail inspection.
 }
