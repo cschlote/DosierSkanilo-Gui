@@ -113,6 +113,7 @@ struct AsyncFilterResult {
     long elapsedMs;
 }
 
+/** Persisted UI state stored below the user's config directory. */
 struct AppState {
     bool prefAutoApplyFilter = true;
     bool prefCaseSensitiveFilter;
@@ -133,6 +134,7 @@ struct AppState {
 enum string CONFIG_DIR_NAME = ".config/dosierskanilo-gui";
 enum string CONFIG_FILE_NAME = "state.json";
 
+/** Resolve the application config directory. */
 string configDirPath() {
     auto home = environment.get("HOME", "");
     if (home.length == 0) {
@@ -141,10 +143,12 @@ string configDirPath() {
     return buildPath(home, CONFIG_DIR_NAME);
 }
 
+/** Resolve the JSON state file path. */
 string configFilePath() {
     return buildPath(configDirPath(), CONFIG_FILE_NAME);
 }
 
+/** Convert a JSON scalar into a bool with fallback semantics. */
 bool jsonToBool(JSONValue value, bool fallback = false) {
     switch (value.type) {
         case JSONType.true_:
@@ -160,6 +164,7 @@ bool jsonToBool(JSONValue value, bool fallback = false) {
     }
 }
 
+/** Convert a JSON scalar into an int with fallback semantics. */
 int jsonToInt(JSONValue value, int fallback = 0) {
     switch (value.type) {
         case JSONType.integer:
@@ -173,6 +178,7 @@ int jsonToInt(JSONValue value, int fallback = 0) {
     }
 }
 
+/** Load persisted preferences, splitter state, and window geometry hints. */
 AppState loadAppState() {
     AppState state;
     auto path = configFilePath();
@@ -232,6 +238,7 @@ AppState loadAppState() {
     return state;
 }
 
+/** Write the current application state to the JSON config file. */
 void saveAppState(const(AppState) state) {
     auto dirPath = configDirPath();
     auto filePath = configFilePath();
@@ -269,6 +276,7 @@ void saveAppState(const(AppState) state) {
     write(filePath, payload);
 }
 
+/** Map a screen position to the corresponding monitor index. */
 int monitorIndexForPoint(Display display, int x, int y) {
     if (display is null) {
         return -1;
@@ -289,6 +297,7 @@ int monitorIndexForPoint(Display display, int x, int y) {
     return -1;
 }
 
+/** Clamp window geometry to a visible monitor work area. */
 void clampWindowGeometryToVisibleArea(ref int x, ref int y, ref int width, ref int height, int preferredMonitorIndex = -1) {
     auto display = Display.getDefault();
     if (display is null) {
@@ -434,6 +443,7 @@ void configureTableColumns(TreeView treeView) {
     treeView.setHeadersClickable(true);
 }
 
+/** Summarize checksum availability for the list view. */
 string checksumSetStatus(const(BlobRow) row) {
     auto present = 0;
     if (row.md5.length > 0) {
@@ -455,10 +465,12 @@ string checksumSetStatus(const(BlobRow) row) {
     return format("partial (%s/3)", present);
 }
 
+/** Render a compact status icon for boolean table cells. */
 string boolStatusIcon(bool value) {
     return value ? "🟢✓" : "🔴✗";
 }
 
+/** Summarize media subtype flags for the list view. */
 string mediaInfoSummary(const(BlobRow) row) {
     auto labels = appender!(string[])();
     if (row.hasVideo) {
@@ -480,6 +492,7 @@ string mediaInfoSummary(const(BlobRow) row) {
     return row.hasMedia ? "yes" : "-";
 }
 
+/** Count media subtype hits in the currently filtered row set. */
 string mediaHitStats(const(BlobRow)[] rows) {
     size_t videoCount;
     size_t audioCount;
@@ -504,6 +517,7 @@ string mediaHitStats(const(BlobRow)[] rows) {
     return format("hits V:%s A:%s I:%s T:%s", videoCount, audioCount, imageCount, textCount);
 }
 
+/** Convert a base64-encoded digest into lowercase hexadecimal text. */
 string digestBase64ToHex(string digest) {
     if (digest.length == 0) {
         return "-";
@@ -736,6 +750,7 @@ int main(string[] args) {
     bool prefCaseSensitiveFilter = loadedState.prefCaseSensitiveFilter;
     bool prefDetailsBelow = loadedState.prefDetailsBelow;
     bool clearSavedWindowGeometryOnExit;
+    bool allowRuntimeStatePersistence = !loadedState.hasWindowSize;
     int splitPositionHorizontal = loadedState.splitPositionHorizontal;
     int splitPositionVertical = loadedState.splitPositionVertical;
     int lastKnownWindowWidth = loadedState.windowWidth;
@@ -768,10 +783,12 @@ int main(string[] args) {
         filterEntry.setText(cli.filterOnStart);
     }
 
+    /** Format internal timing values for status labels. */
     string formatTimingValue(long valueMs) {
         return valueMs >= 0 ? format("%s", valueMs) : "-";
     }
 
+    /** Refresh the performance summary label. */
     void updatePerfStatus() {
         perfStatus.setText(format(
             "Timings: load=%s ms | filter=%s ms | render=%s ms",
@@ -781,6 +798,7 @@ int main(string[] args) {
         ));
     }
 
+    /** Refresh the metadata status label for the loaded JSON file. */
     void updateFileMetaStatus() {
         auto dataVersionText = loadedDataVersion >= 0 ? to!string(loadedDataVersion) : "-";
         fileMetaStatus.setText(format(
@@ -791,6 +809,7 @@ int main(string[] args) {
         ));
     }
 
+    /** Toggle the loading UI state consistently across controls. */
     void setLoadingState(bool loading, string message = "") {
         isLoading = loading;
 
@@ -847,6 +866,7 @@ int main(string[] args) {
         }
     }
 
+    /** Publish a worker phase update back onto the GTK main loop. */
     void setLoadingPhase(ulong expectedRequestId, string phaseText) {
         new Idle({
             if (expectedRequestId != loadRequestId || !isLoading) {
@@ -859,6 +879,7 @@ int main(string[] args) {
         });
     }
 
+    /** Clear collected performance timings shown in the footer. */
     void resetPerfMetrics() {
         lastLoadElapsedMs = -1;
         lastFilterElapsedMs = -1;
@@ -867,6 +888,7 @@ int main(string[] args) {
         status.setText("Performance metrics reset.");
     }
 
+    /** Reset selection-dependent detail fields to the empty placeholder state. */
     void clearSelectionDetails() {
         selectedSha1 = "";
         selectedFileName = "";
@@ -885,6 +907,7 @@ int main(string[] args) {
         );
     }
 
+    /** Keep the splitter divider within usable visible bounds. */
     int clampSplitPositionToVisibleBounds(Orientation orientation, int requestedPosition) {
         enum int MIN_PRIMARY_EXTENT = 240;
         enum int MIN_DETAILS_EXTENT = 180;
@@ -915,6 +938,7 @@ int main(string[] args) {
         return requestedPosition;
     }
 
+    /** Apply the preferred splitter orientation and the matching saved divider position. */
     void applyDetailsPanePreference(bool captureCurrentPosition = true) {
         if (captureCurrentPosition) {
             auto currentOrientation = split.getOrientation();
@@ -949,6 +973,7 @@ int main(string[] args) {
         });
     }
 
+    /** Snapshot the current preferences, splitter state, and window size. */
     AppState currentAppState(bool clearWindowGeometry = false) {
         AppState state;
         state.prefAutoApplyFilter = prefAutoApplyFilter;
@@ -1007,6 +1032,7 @@ int main(string[] args) {
     }
 
 
+    /** Persist the current application state and surface write failures in the UI. */
     void persistCurrentState(bool clearWindowGeometry = false) {
         try {
             saveAppState(currentAppState(clearWindowGeometry));
@@ -1018,6 +1044,7 @@ int main(string[] args) {
     // Apply persisted splitter orientation/position once the helper is available.
     applyDetailsPanePreference(false);
 
+    /** Re-render the current row set into the table model in small GTK-friendly batches. */
     void renderRows(const(BlobRow)[] rows, string filterLabel = "") {
         if (loadedFilePath.length == 0) {
             tableStore.clear();
@@ -1142,6 +1169,7 @@ int main(string[] args) {
         new Idle(renderStep);
     }
 
+    /** Update the detail pane for the currently selected table row. */
     void updateSelectedRowDetails() {
         TreeModelIF model;
         TreeIter iter;
@@ -1238,6 +1266,7 @@ int main(string[] args) {
         detailsView.getBuffer().setText(detailsText);
     }
 
+    /** Copy a selected value into the system clipboard. */
     void copyTextToClipboard(string label, string value) {
         if (value.length == 0) {
             status.setText(format("No %s value available for selected row.", label));
@@ -1260,6 +1289,7 @@ int main(string[] args) {
         status.setText(format("Copied %s to clipboard.", label));
     }
 
+    /** Apply the current text and media filters in a background worker. */
     void applyFilterFromEntry() {
         if (isLoading) {
             status.setText("Background operation in progress. Please wait before filtering.");
@@ -1370,6 +1400,7 @@ int main(string[] args) {
         worker.start();
     }
 
+    /** Load and normalize the JSON file currently referenced by the path entry. */
     void loadFromPath() {
         if (isLoading) {
             status.setText("A load is already in progress.");
@@ -1486,6 +1517,7 @@ int main(string[] args) {
         worker.start();
     }
 
+    /** Open a file chooser and load the selected JSON file. */
     void chooseAndLoadPath() {
         if (isLoading) {
             status.setText("A load is already in progress.");
@@ -1517,6 +1549,7 @@ int main(string[] args) {
         chooser.destroy();
     }
 
+    /** Cancel any in-flight background load or filter request. */
     void cancelPendingLoad() {
         if (!isLoading) {
             status.setText("No load in progress.");
@@ -1532,6 +1565,7 @@ int main(string[] args) {
         setLoadingState(false, "Operation cancelled. Background result will be discarded.");
     }
 
+    /** Show and apply user preferences that affect filtering and layout. */
     void showPreferencesDialog() {
         auto dialog = new Dialog(
             "Preferences",
@@ -1583,6 +1617,7 @@ int main(string[] args) {
         dialog.destroy();
     }
 
+    /** Show the keyboard shortcut overview dialog. */
     void showShortcutsHelp() {
         auto dialog = new MessageDialog(
             window,
@@ -1602,6 +1637,7 @@ int main(string[] args) {
         dialog.destroy();
     }
 
+    /** Show the About dialog for the desktop frontend. */
     void showAbout() {
         auto dialog = new AboutDialog();
         dialog.setTransientFor(window);
@@ -1775,15 +1811,17 @@ int main(string[] args) {
             lastKnownWindowHeight = allocation.height;
 
             // Persist size shortly after resize settles, independent of quit path.
-            if (windowSizePersistTimer !is null) {
-                windowSizePersistTimer.stop();
-                windowSizePersistTimer = null;
+            if (allowRuntimeStatePersistence) {
+                if (windowSizePersistTimer !is null) {
+                    windowSizePersistTimer.stop();
+                    windowSizePersistTimer = null;
+                }
+                windowSizePersistTimer = new Timeout(350, {
+                    persistCurrentState(clearSavedWindowGeometryOnExit);
+                    windowSizePersistTimer = null;
+                    return false;
+                });
             }
-            windowSizePersistTimer = new Timeout(350, {
-                persistCurrentState(clearSavedWindowGeometryOnExit);
-                windowSizePersistTimer = null;
-                return false;
-            });
         }
     });
 
@@ -1854,8 +1892,12 @@ int main(string[] args) {
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
             lastKnownWindowHeight = restoredHeight;
+            allowRuntimeStatePersistence = true;
+            persistCurrentState(clearSavedWindowGeometryOnExit);
             return false;
         });
+    } else {
+        allowRuntimeStatePersistence = true;
     }
 
     if (cli.loadOnStart) {
