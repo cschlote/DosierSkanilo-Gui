@@ -210,6 +210,10 @@ string checksumSetStatus(const(BlobRow) row) {
     return format("partial (%s/3)", present);
 }
 
+string boolStatusIcon(bool value) {
+    return value ? "🟢✓" : "🔴✗";
+}
+
 string digestBase64ToHex(string digest) {
     if (digest.length == 0) {
         return "-";
@@ -244,9 +248,9 @@ void populateTableRows(ListStore store, const(BlobRow)[] rows) {
         auto indexText = to!string(idx + 1);
         auto sizeText = to!string(row.fileSize);
         auto filesText = to!string(row.fileCount);
-        auto mediaText = row.hasMedia ? "yes" : "no";
-        auto archiveText = row.hasArchive ? "yes" : "no";
-        auto torrentText = row.hasTorrent ? "yes" : "no";
+        auto mediaText = boolStatusIcon(row.hasMedia);
+        auto archiveText = boolStatusIcon(row.hasArchive);
+        auto torrentText = boolStatusIcon(row.hasTorrent);
         auto checksumsText = checksumSetStatus(row);
         auto fileText = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
 
@@ -616,9 +620,9 @@ int main(string[] args) {
                 auto indexText = to!string(idx + 1);
                 auto sizeText = to!string(row.fileSize);
                 auto filesText = to!string(row.fileCount);
-                auto mediaText = row.hasMedia ? "yes" : "no";
-                auto archiveText = row.hasArchive ? "yes" : "no";
-                auto torrentText = row.hasTorrent ? "yes" : "no";
+                auto mediaText = boolStatusIcon(row.hasMedia);
+                auto archiveText = boolStatusIcon(row.hasArchive);
+                auto torrentText = boolStatusIcon(row.hasTorrent);
                 auto checksumsText = checksumSetStatus(row);
                 auto fileText = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
 
