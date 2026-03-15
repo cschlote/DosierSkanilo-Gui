@@ -271,3 +271,100 @@ BlobRow[] extractRowsFromRoot(JSONValue root) {
     }
     return rowsAcc.data;
 }
+
+unittest {
+        import std.json : parseJSON;
+
+        auto parsed = parseJSON(q{
+                {
+                    "fileSize": 42,
+                    "checkSums": {
+                        "md5sum_b64": "md5-modern",
+                        "sha1sum_b64": "sha-modern",
+                        "xxh64sum_b64": "xxh-modern"
+                    },
+                    "fileSpecs": [
+                        { "fileName": "alpha.mkv" },
+                        { "fileName": "beta.srt" }
+                    ],
+                    "mediaInfoSig": { "video": true },
+                    "archiveSpecs": [ { "kind": "zip" } ],
+                    "torrentInfo": { "name": "release" },
+                    "fileType": "video"
+                }
+        });
+
+        auto row = rowFromJsonObject(parsed);
+        assert(row.fileSize == 42);
+        assert(row.md5 == "md5-modern");
+        assert(row.sha1 == "sha-modern");
+        assert(row.xxh64 == "xxh-modern");
+        assert(row.primaryFileName == "alpha.mkv");
+        assert(row.fileCount == 2);
+        assert(row.fileNamesSummary == "alpha.mkv, beta.srt");
+        assert(row.hasMedia);
+        assert(row.hasArchive);
+        assert(row.hasTorrent);
+        assert(row.fileType == "video");
+        assert(row.rawJson.canFind("\"archiveSpecs\""));
+}
+
+unittest {
+        import std.json : parseJSON;
+
+        auto parsed = parseJSON(q{
+                {
+                    "md5sum_b64": "md5-legacy",
+                    "sha1sum_b64": "sha-legacy",
+                    "xxh64sum_b64": "xxh-legacy",
+                    "fileNames": ["one.bin", "two.bin"],
+                    "mediaInfo": [ { "stream": 1 } ]
+                }
+        });
+
+        auto row = rowFromJsonObject(parsed);
+        assert(row.md5 == "md5-legacy");
+        assert(row.sha1 == "sha-legacy");
+        assert(row.xxh64 == "xxh-legacy");
+        assert(row.primaryFileName == "one.bin");
+        assert(row.fileCount == 2);
+        assert(row.fileNamesSummary == "one.bin, two.bin");
+        assert(row.hasMedia);
+        assert(!row.hasArchive);
+        assert(!row.hasTorrent);
+}
+
+unittest {
+        import std.json : parseJSON;
+
+        auto root = parseJSON(q{
+                {
+                    "dataArray": [
+                        { "fileName": "first.dat", "sha1sum_b64": "sha-a" },
+                        123,
+                        { "fileSpecs": [ { "fileName": "second.dat" } ], "checkSums": { "sha1sum_b64": "sha-b" } }
+                    ]
+                }
+        });
+
+        auto rows = extractRowsFromRoot(root);
+        assert(rows.length == 2);
+        assert(rows[0].primaryFileName == "first.dat");
+        assert(rows[0].sha1 == "sha-a");
+        assert(rows[1].primaryFileName == "second.dat");
+        assert(rows[1].sha1 == "sha-b");
+}
+
+unittest {
+        import std.json : parseJSON;
+
+        auto value = parseJSON(q{{"b":2,"a":[1,{"z":0,"y":1}]}});
+        auto pretty = prettyJsonValue(value);
+
+        assert(pretty.startsWith("{"));
+        assert(pretty.canFind("\n  \"a\": [\n"));
+        assert(pretty.canFind("\n  \"b\": 2\n"));
+        assert(pretty.canFind("\"y\": 1"));
+        assert(pretty.canFind("\"z\": 0"));
+        assert(pretty.indexOf("\"a\"") < pretty.indexOf("\"b\""));
+}

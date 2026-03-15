@@ -10,9 +10,9 @@
 module view.textreport;
 
 import std.array : appender;
+import std.algorithm.searching : canFind;
 import std.format : format;
 import std.string : join, strip;
-import std.algorithm : canFind;
 import std.uni : toLower;
 
 import model.blobrow;
@@ -135,4 +135,51 @@ BlobRow[] filterRowsByText(const(BlobRow)[] rows, string needle, bool caseSensit
     }
 
     return filtered.data;
+}
+
+unittest {
+    BlobRow[] rows = [
+        BlobRow("Alpha.mkv", 100, "", "sha-001", "", 1, "Alpha.mkv", true, false, false, "video", ""),
+        BlobRow("beta.zip", 200, "", "sha-002", "", 1, "beta.zip", false, true, false, "archive", ""),
+        BlobRow("gamma.txt", 50, "", "dup-sha", "", 1, "gamma.txt", false, false, false, "text", ""),
+        BlobRow("delta.txt", 50, "", "dup-sha", "", 1, "delta.txt", false, false, false, "text", "")
+    ];
+
+    auto filteredInsensitive = filterRowsByText(rows, "alpha");
+    assert(filteredInsensitive.length == 1);
+    assert(filteredInsensitive[0].primaryFileName == "Alpha.mkv");
+
+    auto filteredSensitiveMiss = filterRowsByText(rows, "alpha", true);
+    assert(filteredSensitiveMiss.length == 0);
+
+    auto filteredSha = filterRowsByText(rows, "dup");
+    assert(filteredSha.length == 2);
+}
+
+unittest {
+    BlobRow[] rows = [
+        BlobRow("one.bin", 1, "", "same", "", 1, "one.bin", false, false, false, "", ""),
+        BlobRow("two.bin", 2, "", "same", "", 1, "two.bin", false, false, false, "", ""),
+        BlobRow("three.bin", 3, "", "other", "", 1, "three.bin", false, false, false, "", ""),
+        BlobRow("empty.bin", 4, "", "", "", 1, "empty.bin", false, false, false, "", "")
+    ];
+
+    assert(countDuplicateDigestGroups(rows) == 1);
+
+    auto duplicates = filterDuplicateRows(rows);
+    assert(duplicates.length == 2);
+    assert(duplicates[0].sha1 == "same");
+    assert(duplicates[1].sha1 == "same");
+}
+
+unittest {
+    BlobRow[] rows = [
+        BlobRow("alpha.bin", 10, "", "sha-a", "", 1, "alpha.bin", false, false, false, "", "")
+    ];
+
+    auto report = rowsToDisplayText("sample.json", rows);
+    assert(report.canFind("Loaded file: sample.json"));
+    assert(report.canFind("Blob count: 1"));
+    assert(report.canFind("alpha.bin"));
+    assert(report.canFind("sha-a"));
 }

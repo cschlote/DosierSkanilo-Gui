@@ -4,6 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Added a first executable unit test suite and changed the test script to run real `dub test` checks instead of only recompiling the application.
 - Added archive type, torrent indicator, MD5, and xxHash64 checksum columns to the main record table.
 - Added a status line showing the format version and data structure of the currently loaded file.
 - Extended the record detail view with additional checksums (MD5, xxHash64), the full list of referenced filenames, and archive/torrent availability indicators.
