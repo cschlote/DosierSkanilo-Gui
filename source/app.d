@@ -134,6 +134,8 @@ struct AppState {
 enum string CONFIG_DIR_NAME = ".config/dosierskanilo-gui";
 enum string CONFIG_FILE_NAME = "state.json";
 enum string RESTORE_LOG_FILE_NAME = "restore.log";
+enum int MIN_VALID_WINDOW_WIDTH = 320;
+enum int MIN_VALID_WINDOW_HEIGHT = 240;
 
 /** Resolve the application config directory. */
 string configDirPath() {
@@ -1015,15 +1017,15 @@ int main(string[] args) {
 
         auto allocatedWidth = window.getAllocatedWidth();
         auto allocatedHeight = window.getAllocatedHeight();
-        if (allocatedWidth > 0 && allocatedHeight > 0) {
+        if (allocatedWidth >= MIN_VALID_WINDOW_WIDTH && allocatedHeight >= MIN_VALID_WINDOW_HEIGHT) {
             width = allocatedWidth;
             height = allocatedHeight;
         }
 
-        if (width <= 0) {
+        if (width < MIN_VALID_WINDOW_WIDTH) {
             width = 960;
         }
-        if (height <= 0) {
+        if (height < MIN_VALID_WINDOW_HEIGHT) {
             height = 640;
         }
 
@@ -1825,7 +1827,7 @@ int main(string[] args) {
     });
 
     window.addOnConfigure((GdkEventConfigure* event, Widget _) {
-        if (event !is null && event.width > 0 && event.height > 0) {
+        if (event !is null && event.width >= MIN_VALID_WINDOW_WIDTH && event.height >= MIN_VALID_WINDOW_HEIGHT) {
             lastKnownWindowWidth = event.width;
             lastKnownWindowHeight = event.height;
             appendRestoreLog(format(
@@ -1839,7 +1841,7 @@ int main(string[] args) {
     });
 
     window.addOnSizeAllocate((allocation, Widget _) {
-        if (allocation.width > 0 && allocation.height > 0) {
+        if (allocation.width >= MIN_VALID_WINDOW_WIDTH && allocation.height >= MIN_VALID_WINDOW_HEIGHT) {
             lastKnownWindowWidth = allocation.width;
             lastKnownWindowHeight = allocation.height;
 
