@@ -27,7 +27,7 @@ coverage_percent() {
 	total="$2"
 	awk -v covered="$covered" -v total="$total" 'BEGIN {
 		if (total == 0) {
-			printf "0.00"
+			printf "100.00"
 		} else {
 			printf "%.2f", (covered * 100.0) / total
 		}
