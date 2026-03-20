@@ -35,6 +35,14 @@
         "sample"
       ],
       "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Launch build/bin/dosierskanilo-gui-test-application (CodeLLDB)",
+      "program": "${workspaceFolder}/build/bin/dosierskanilo-gui-test-application",
+      "args": [],
+      "cwd": "${workspaceFolder}"
     }
   ]
 }
