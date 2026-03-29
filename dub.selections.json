@@ -1,6 +1,11 @@
 {
 	"fileVersion": 1,
 	"versions": {
-		"gtk-d": "3.11.0"
+		"dosierskanilo": {"path":"../DosierSkanilo"},
+		"gtk-d": "3.11.0",
+		"jsonizer": "0.7.7",
+		"mediainfo-d": "0.0.7",
+		"silly": "1.2.0-dev.2",
+		"xxhash3": "0.0.5"
 	}
 }
