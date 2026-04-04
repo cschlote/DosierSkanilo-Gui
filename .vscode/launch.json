@@ -4,7 +4,7 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Launch DosierSkanilo GUI (CodeLLDB)",
+      "name": "Launch DosierSkanilo GUI (no args)",
       "program": "${workspaceFolder}/build/bin/dosierskanilo-gui",
       "args": [],
       "cwd": "${workspaceFolder}"
@@ -12,7 +12,7 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Launch GUI: Auto-load Local Index",
+      "name": "Launch DosierSkanilo GUI  (load local)",
       "program": "${workspaceFolder}/build/bin/dosierskanilo-gui",
       "args": [
         "--json",
@@ -24,7 +24,7 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Launch GUI: Auto-load + Duplicates + Filter",
+      "name": "Launch DosierSkanilo GUI  (auto-load + duplicates + filter)",
       "program": "${workspaceFolder}/build/bin/dosierskanilo-gui",
       "args": [
         "--json",
@@ -39,7 +39,7 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Launch build/bin/dosierskanilo-gui-test-application (CodeLLDB)",
+      "name": "Launch DosierSkanilo GUI Test Application (CodeLLDB)",
       "program": "${workspaceFolder}/build/bin/dosierskanilo-gui-test-application",
       "args": [],
       "cwd": "${workspaceFolder}"
