@@ -79,9 +79,10 @@ import std.string : join, replace, splitLines, indexOf;
 import std.path : buildPath, baseName;
 import std.process : environment;
 
-import io.dosierjson : extractRowsFromRoot;
+import io.dosierjson : extractRowsFromBlobs;
 import model.blobrow : BlobRow;
 import view.textreport : countDuplicateDigestGroups, filterRowsByText;
+import dosierskanilo.namedbinaryblob : DATA_CLASS_VERSION2, deserializeDataClassJsonFile;
 
 enum string DEFAULT_JSON_PATH = "./.filescanner.json";
 
@@ -2127,50 +2128,14 @@ int main(string[] args)
 
             try
             {
-                setLoadingPhase(document, requestId, "Reading file from disk ...");
-                auto content = readText(document.filePath);
+                setLoadingPhase(document, requestId, "Loading scanner data via library ...");
+                auto blobs = deserializeDataClassJsonFile(document.filePath);
+                result.dataVersion = DATA_CLASS_VERSION2;
+                result.rootShape = "library";
+                result.rootKeysSummary = "NamedBinaryBlob[]";
 
-                setLoadingPhase(document, requestId, "Parsing JSON structure ...");
-                auto parsed = parseJSON(content);
-
-                if (parsed.type == JSONType.object)
-                {
-                    result.rootShape = "object";
-                    auto keysAcc = appender!(string[])();
-                    foreach (key, _; parsed.object)
-                    {
-                        keysAcc.put(key);
-                    }
-                    auto keys = keysAcc.data;
-                    keys.sort();
-                    result.rootKeysSummary = keys.length > 0 ? keys.join(",") : "-";
-
-                    if ("dataVersion" in parsed.object)
-                    {
-                        auto versionValue = parsed.object["dataVersion"];
-                        if (versionValue.type == JSONType.integer)
-                        {
-                            result.dataVersion = cast(int) versionValue.integer;
-                        }
-                        else if (versionValue.type == JSONType.uinteger)
-                        {
-                            result.dataVersion = cast(int) versionValue.uinteger;
-                        }
-                    }
-                }
-                else if (parsed.type == JSONType.array)
-                {
-                    result.rootShape = "array";
-                    result.rootKeysSummary = "-";
-                }
-                else
-                {
-                    result.rootShape = "other";
-                    result.rootKeysSummary = "-";
-                }
-
-                setLoadingPhase(document, requestId, "Normalizing rows ...");
-                result.allRows = extractRowsFromRoot(parsed);
+                setLoadingPhase(document, requestId, "Projecting rows for GUI ...");
+                result.allRows = extractRowsFromBlobs(blobs);
 
                 setLoadingPhase(document, requestId, "Computing duplicate groups ...");
                 result.duplicateGroups = countDuplicateDigestGroups(result.allRows);
