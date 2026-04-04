@@ -4,8 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Replaced the GUI's custom scanner JSON parsing path with the DosierSkanilo library loader and `NamedBinaryBlob` projection helpers.
 - Simplified the table to focused columns (`Index#`, `Size`, `Checksums`, `File Type`, `MediaInfo`, `Archive`, `Torrent`) and reduced `File Type` display to a compact yes/no indicator.
 - Persisted window geometry, splitter positions, and key preferences under `~/.config/dosierskanilo-gui/state.json`, including an option in Preferences to clear saved window positions.
+- Extended category filtering with two additional toolbar checkboxes for archive and torrent rows (`AR`/`TO`), including `NOT` inversion and hit counters.
 - Improved media type filtering (`V/A/I/T`) with robust media key detection and status hit counters, and removed the obsolete duplicates-only load mode from the GUI.
 
 ## Release 0.3.0 - 2026-03-15
