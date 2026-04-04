@@ -167,6 +167,7 @@ BlobRow[] extractRowsFromBlobs(NamedBinaryBlob[] blobs)
     return rows.data;
 }
 
+@("NamedBinaryBlob to BlobRow conversion tests")
 unittest
 {
     import std.datetime.systime : SysTime;
@@ -193,6 +194,7 @@ unittest
     assert(row.rawJson.length > 0);
 }
 
+@("BlobRow filtering tests")
 unittest
 {
     import std.datetime.systime : SysTime;

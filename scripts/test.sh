@@ -41,7 +41,7 @@ rm -rf build/coverage
 rm -f ./*.lst
 find . -maxdepth 1 -type l -name '*.lst' -delete
 
-dub test --compiler="${DUB_COMPILER}" -b=unittest-cov
+dub test --compiler="${DUB_COMPILER}" -b=unittest-cov -- -v
 
 mkdir -p "${LST_DIR}"
 
