@@ -15,9 +15,9 @@ import std.array : appender;
 import std.format : format;
 import std.string : join;
 
-import dosierskanilo.mediainfosig : MediaInfoAudio, MediaInfoSig, MediaInfoVideo;
-import dosierskanilo.namedbinaryblob : FileSpec, NamedBinaryBlob;
-import dosierskanilo.torrentinfo : BNode;
+import dosierskanilo.metadata.mediainfosig : MediaInfoAudio, MediaInfoSig, MediaInfoVideo;
+import dosierskanilo.model.namedbinaryblob : FileSpec, NamedBinaryBlob;
+import dosierskanilo.metadata.torrentinfo : BNode;
 
 import model.blobrow;
 

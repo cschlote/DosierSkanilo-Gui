@@ -60,7 +60,7 @@ import std.algorithm : sort;
 import std.string : join, replace;
 import std.path : baseName;
 
-import ui.commandline : CliOptions, parseCliOptions, cliUsageText;
+import cli.commandline : CliOptions, parseCliOptions, cliUsageText;
 import io.dosierjson : extractRowsFromBlobs;
 import model.blobrow : BlobRow;
 import ui.appstate : AppState, loadAppState, saveAppState;
@@ -72,7 +72,7 @@ import ui.detailswidgets : createDetailEntry, createDetailTextView,
     setMetadataStatusLabel, setMetadataDetails, setKnownFilesTable;
 import ui.tablecolumns : setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : countDuplicateDigestGroups, filterRowsByText;
-import dosierskanilo.namedbinaryblob : DATA_CLASS_VERSION2, deserializeDataClassJsonFile;
+import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, deserializeDataClassJsonFile;
 
 /** Worker result payload for background JSON loading. */
 struct AsyncLoadResult
