@@ -8,19 +8,6 @@
  */
 module app;
 
-/** Setzt die Resizability aller Hauptspalten der Blob-Tabelle. */
-void setTableColumnsResizable(DocumentTab document, bool resizable)
-{
-    if (document is null || document.tableView is null)
-        return;
-    foreach (i; 0 .. 7)
-    {
-        auto col = document.tableView.getColumn(i);
-        if (col !is null)
-            col.setResizable(resizable);
-    }
-}
-
 import gtk.Main;
 import gtk.Widget;
 import gtk.Window;
@@ -37,8 +24,6 @@ import gtk.Grid;
 import gtk.Expander;
 import gtk.TreeView;
 import gtk.ListStore;
-import gtk.CellRendererText;
-import gtk.TreeViewColumn;
 import gtk.TreeIter;
 import gtk.TreeSelection;
 import gtk.TreeModelIF;
@@ -55,14 +40,13 @@ import gtk.ToggleButton;
 import gtk.FileChooserDialog;
 import gtk.AboutDialog;
 import gtk.MessageDialog;
-import gtk.c.types : Orientation, DialogFlags, ResponseType, ButtonsType, MessageType, FileChooserAction, GtkTreeViewColumnSizing, GtkWrapMode;
+import gtk.c.types : Orientation, DialogFlags, ResponseType, ButtonsType, MessageType, FileChooserAction;
 import glib.Idle;
 import glib.Timeout;
 import gobject.Type : GType;
 import gtk.Clipboard;
 import gdk.Display;
 import gdk.c.types : GdkEventConfigure;
-import pango.PgFontDescription;
 
 import core.thread : Thread;
 import core.time : MonoTime;
@@ -75,27 +59,23 @@ import std.getopt : getopt, config;
 import std.stdio : writeln;
 import std.array : appender;
 import std.algorithm : sort;
-import std.string : join, replace, splitLines, indexOf;
+import std.string : join, replace;
 import std.path : buildPath, baseName;
 import std.process : environment;
 
 import io.dosierjson : extractRowsFromBlobs;
 import model.blobrow : BlobRow;
+import ui.documenttab : DocumentTab, COL_INDEX, COL_FILE_SIZE, COL_CHECKSUM_SET,
+    COL_FILE_TYPE, COL_MEDIA_INFO, COL_HAS_ARCHIVE, COL_HAS_TORRENT,
+    COL_INDEX_SORT, COL_FILE_SIZE_SORT;
+import ui.detailswidgets : createDetailEntry, createDetailTextView,
+    createDetailCaption, setDetailEntry, setEntryMonospace,
+    setMetadataStatusLabel, setMetadataDetails, setKnownFilesTable;
+import ui.tablecolumns : setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : countDuplicateDigestGroups, filterRowsByText;
 import dosierskanilo.namedbinaryblob : DATA_CLASS_VERSION2, deserializeDataClassJsonFile;
 
 enum string DEFAULT_JSON_PATH = "./.filescanner.json";
-
-enum int COL_INDEX = 0;
-enum int COL_FILE_SIZE = 1;
-enum int COL_CHECKSUM_SET = 2;
-enum int COL_FILE_TYPE = 3;
-enum int COL_MEDIA_INFO = 4;
-enum int COL_HAS_ARCHIVE = 5;
-enum int COL_HAS_TORRENT = 6;
-enum int COL_INDEX_SORT = 7;
-enum int COL_FILE_SIZE_SORT = 8;
-enum int COL_COUNT = 9;
 
 /** Parsed startup options from command-line arguments. */
 struct CliOptions
@@ -153,68 +133,6 @@ struct AppState
     int windowMonitorIndex = -1;
     string[] openFilePaths;
     int activeTabIndex;
-}
-
-/** Per-document UI and data state for one open JSON file tab. */
-class DocumentTab
-{
-    string filePath;
-    string filterQuery;
-    bool filterVideo;
-    bool filterAudio;
-    bool filterImage;
-    bool filterText;
-    bool filterMediaNegated;
-
-    Box pageRoot;
-    Paned split;
-    ListStore tableStore;
-    TreeView tableView;
-    Entry detailIndexEntry;
-    Entry detailSizeEntry;
-    Entry detailSha1HexEntry;
-    Entry detailMd5HexEntry;
-    Entry detailXxh64HexEntry;
-    Label detailChecksumStatus;
-    Label detailFileNamesLabel;
-    Label detailMediaInfoStatus;
-    Label detailArchiveStatus;
-    Label detailTorrentStatus;
-    Expander detailChecksumExpander;
-    Expander detailMediaInfoExpander;
-    Expander detailArchiveExpander;
-    Expander detailTorrentExpander;
-    TextView detailMediaInfoView;
-    TextView detailArchiveView;
-    TextView detailTorrentView;
-    ListStore detailFileNamesStore;
-    TreeView detailFileNamesView;
-    Button btnCopySha1;
-    Button btnCopyFile;
-    Button btnCopyDetails;
-    Label rowDetails;
-    Label status;
-    Label perfStatus;
-    Label fileMetaStatus;
-
-    BlobRow[] loadedRows;
-    BlobRow[] visibleRows;
-    size_t loadedDuplicateGroups;
-    string selectedSha1;
-    string selectedFileName;
-    string selectedDetailsText;
-    int loadedDataVersion = -1;
-    string loadedRootShape = "-";
-    string loadedRootKeysSummary = "-";
-
-    ulong loadRequestId;
-    ulong filterRequestId;
-    ulong renderRequestId;
-    long pendingLoadElapsedMs = -1;
-    string pendingStatusSuffix;
-    long lastLoadElapsedMs = -1;
-    long lastFilterElapsedMs = -1;
-    long lastRenderElapsedMs = -1;
 }
 
 enum string CONFIG_DIR_NAME = ".config/dosierskanilo-gui";
@@ -532,71 +450,6 @@ CliOptions parseCliOptions(ref string[] args)
     return opts;
 }
 
-/** Configure columns for the main result table.
- *
- * Params:
- *   treeView = target tree view instance
- */
-void configureTableColumns(TreeView treeView)
-{
-    void addTextColumn(string title, int modelColumn, int sortColumn = -1)
-    {
-        auto renderer = new CellRendererText();
-        auto xalign = (modelColumn == COL_INDEX || modelColumn == COL_FILE_SIZE) ? 1.0f : 0.5f;
-        renderer.setAlignment(xalign, 0.5f);
-        auto column = new TreeViewColumn();
-        column.setTitle(title);
-        column.packStart(renderer, false);
-        column.addAttribute(renderer, "text", modelColumn);
-        column.setSortColumnId(sortColumn >= 0 ? sortColumn : modelColumn);
-        column.setResizable(false);
-        column.setAlignment(xalign);
-        column.setExpand(false);
-        column.setSizing(
-            modelColumn == COL_HAS_ARCHIVE || modelColumn == COL_HAS_TORRENT
-                ? GtkTreeViewColumnSizing.FIXED : GtkTreeViewColumnSizing.AUTOSIZE
-        );
-        if (modelColumn == COL_HAS_ARCHIVE || modelColumn == COL_HAS_TORRENT)
-        {
-            column.setFixedWidth(68);
-        }
-        column.setClickable(true);
-        treeView.appendColumn(column);
-    }
-
-    addTextColumn("Index#", COL_INDEX, COL_INDEX_SORT);
-    addTextColumn("Size", COL_FILE_SIZE, COL_FILE_SIZE_SORT);
-    addTextColumn("Checksums", COL_CHECKSUM_SET);
-    addTextColumn("File Type", COL_FILE_TYPE);
-    addTextColumn("MediaInfo", COL_MEDIA_INFO);
-    addTextColumn("Archive", COL_HAS_ARCHIVE);
-    addTextColumn("Torrent", COL_HAS_TORRENT);
-
-    treeView.setHeadersClickable(true);
-}
-
-/** Configure the known-files detail table with compact fixed columns. */
-void configureKnownFilesColumns(TreeView treeView)
-{
-    void addColumn(string title, int modelColumn, bool expand)
-    {
-        auto renderer = new CellRendererText();
-        renderer.setAlignment(0.0f, 0.5f);
-        auto column = new TreeViewColumn();
-        column.setTitle(title);
-        column.packStart(renderer, true);
-        column.addAttribute(renderer, "text", modelColumn);
-        column.setResizable(false);
-        column.setExpand(expand);
-        column.setSizing(GtkTreeViewColumnSizing.AUTOSIZE);
-        treeView.appendColumn(column);
-    }
-
-    addColumn("Known file", 0, true);
-    addColumn("Last access", 1, false);
-    treeView.setHeadersClickable(false);
-}
-
 /** Summarize checksum availability for the list view. */
 string checksumSetStatus(const(BlobRow) row)
 {
@@ -845,53 +698,6 @@ int main(string[] args)
         filterEntry.setText(cli.filterOnStart);
     }
 
-    /** Return the default placeholder text for an empty details panel. */
-    string emptyDetailsText()
-    {
-        return "No known file names yet.\n\n" ~
-            "Select a table row to populate this section.";
-    }
-
-    /** Build a read-only single-line field for the details form. */
-    Entry createDetailEntry(int widthChars = 18)
-    {
-        auto entry = new Entry();
-        entry.setEditable(false);
-        entry.setWidthChars(widthChars);
-        entry.setHexpand(true);
-        return entry;
-    }
-
-    /** Build a read-only multiline viewer for expanded metadata details. */
-    TextView createDetailTextView(bool monospace = false)
-    {
-        auto view = new TextView();
-        view.setEditable(false);
-        view.setWrapMode(GtkWrapMode.WORD_CHAR);
-        view.setMonospace(monospace);
-        return view;
-    }
-
-    /** Build a left-aligned caption label for the details form. */
-    Label createDetailCaption(string text)
-    {
-        auto label = new Label(text);
-        label.setXalign(0.0f);
-        return label;
-    }
-
-    /** Normalize empty field values in the details form. */
-    void setDetailEntry(Entry entry, string value)
-    {
-        entry.setText(value.length > 0 ? value : "-");
-    }
-
-    /** Apply a monospace font to one entry widget. */
-    void setEntryMonospace(Entry entry)
-    {
-        entry.overrideFont(PgFontDescription.fromString("Monospace 10"));
-    }
-
     /** Render a compact summary for media flags in the details form. */
     string mediaInfoStatusSummary(const(BlobRow) row)
     {
@@ -925,54 +731,6 @@ int main(string[] args)
     {
         return value ? format("%s present", boolStatusIcon(true)) : format("%s none", boolStatusIcon(
                 false));
-    }
-
-    /** Write compact status text with a bold title into one metadata label. */
-    void setMetadataStatusLabel(Label label, string title, string summary)
-    {
-        label.setMarkup(format("<b>%s</b>  %s", title, summary));
-    }
-
-    /** Populate one expander-backed metadata details section. */
-    void setMetadataDetails(Expander expander, TextView view, string title, string detailsText)
-    {
-        auto hasDetails = detailsText.length > 0;
-        expander.setSensitive(hasDetails);
-        expander.setExpanded(false);
-        expander.setVisible(true);
-        view.getBuffer().setText(hasDetails ? detailsText : "No details available.");
-    }
-
-    /** Populate the known-files table from one multiline detail string. */
-    void setKnownFilesTable(DocumentTab document, string detailsText, size_t fileCount)
-    {
-        document.detailFileNamesStore.clear();
-        document.detailFileNamesLabel.setText(format("Known file names (%s)", fileCount));
-
-        enum string LAST_ACCESS_SEPARATOR = " | last access: ";
-
-        foreach (line; detailsText.splitLines())
-        {
-            if (line.length == 0)
-            {
-                continue;
-            }
-
-            auto separatorIndex = line.indexOf(LAST_ACCESS_SEPARATOR);
-            string fileName = line;
-            string lastAccess = "-";
-            if (separatorIndex >= 0)
-            {
-                fileName = line[0 .. separatorIndex];
-                lastAccess = line[separatorIndex + LAST_ACCESS_SEPARATOR.length .. $];
-            }
-
-            TreeIter iter;
-            document.detailFileNamesStore.append(iter);
-            document.detailFileNamesStore.set(iter, [0, 1], [
-                fileName, lastAccess
-            ]);
-        }
     }
 
     /** Format internal timing values for status labels. */
