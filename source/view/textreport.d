@@ -137,6 +137,7 @@ BlobRow[] filterRowsByText(const(BlobRow)[] rows, string needle, bool caseSensit
     return filtered.data;
 }
 
+@("BlowRow equality tests")
 unittest {
     BlobRow[] rows = [
         BlobRow(primaryFileName: "Alpha.mkv", fileSize: 100, sha1: "sha-001", fileCount: 1, fileNamesSummary: "Alpha.mkv", hasMedia: true, hasVideo: true, fileType: "video"),
@@ -156,6 +157,7 @@ unittest {
     assert(filteredSha.length == 2);
 }
 
+@("BlobRow duplicate grouping tests")
 unittest {
     BlobRow[] rows = [
         BlobRow(primaryFileName: "one.bin", fileSize: 1, sha1: "same", fileCount: 1, fileNamesSummary: "one.bin"),
@@ -172,6 +174,7 @@ unittest {
     assert(duplicates[1].sha1 == "same");
 }
 
+@("BlobRow display text tests")
 unittest {
     BlobRow[] rows = [
         BlobRow(primaryFileName: "alpha.bin", fileSize: 10, sha1: "sha-a", fileCount: 1, fileNamesSummary: "alpha.bin")

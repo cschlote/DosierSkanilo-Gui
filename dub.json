@@ -9,8 +9,13 @@
   "copyright": "Created 2026, Carsten Schlote",
   "license": "CC-BY-NC-SA 4.0",
   "dependencies": {
-    "gtk-d:gtkd": "~>3.11.0"
+    "silly": "~>1.2.0-dev.2",
+    "gtk-d:gtkd": "~>3.11.0",
+     "dosierskanilo": "~>26.0.0"
   },
+  "dflags": [
+    "-J.", "-J../DosierSkanilo"
+  ],
   "mainSourceFile": "source/app.d",
   "sourcePaths": [
     "source"
