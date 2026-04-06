@@ -111,6 +111,8 @@ BlobRow rowFromNamedBinaryBlob(NamedBinaryBlob blob)
     {
         return row;
     }
+    //FIXME: row.sourceBlob = blob;
+    row.sourceBlobDetails = blobDetails(blob);
 
     auto specs = blob.fileSpecs.dup;
     specs.sort!((a, b) => a.fileName < b.fileName);
@@ -143,20 +145,24 @@ BlobRow rowFromNamedBinaryBlob(NamedBinaryBlob blob)
         row.hasText = blob.mediaInfoSig.textStreams.length > 0;
         row.mediaInfoDetails = blob.mediaInfoSig.toString();
     }
+    row.hasFileType = blob.fileType.length > 0;
+    row.fileTypeDetails = row.hasFileType ? blob.fileType : "";
 
     row.hasArchive = blob.archiveSpecs.length > 0;
     row.archiveDetails = detailLines(blob.archiveSpecs);
 
-    row.hasTorrent = blob.torrentInfo !is null && !blob.torrentInfo.empty;
+    row.hasTorrent = blob.torrentInfo !is null;
     row.torrentDetails = row.hasTorrent ? blob.torrentInfo.toString() : "";
 
-    row.fileType = blob.fileType;
-    row.rawJson = blobDetails(blob);
 
     return row;
 }
 
-/** Convert a library blob array into GUI rows. */
+/** Convert a library blob array into GUI rows.
+ *
+ * Param: blobs = array of library blobs to convert
+ * Returns: array of GUI rows corresponding to the input blobs
+ */
 BlobRow[] extractRowsFromBlobs(NamedBinaryBlob[] blobs)
 {
     auto rows = appender!(BlobRow[])();
@@ -167,7 +173,7 @@ BlobRow[] extractRowsFromBlobs(NamedBinaryBlob[] blobs)
     return rows.data;
 }
 
-@("NamedBinaryBlob to BlobRow conversion tests")
+@("NamedBinaryBlob to BlobRow conversion test: MediaInfo")
 unittest
 {
     import std.datetime.systime : SysTime;
@@ -191,8 +197,71 @@ unittest
     assert(row.hasAudio);
     assert(!row.hasImage);
     assert(row.fileNamesDetails.length > 0);
-    assert(row.rawJson.length > 0);
+    assert(row.sourceBlobDetails.length > 0);
+    assert(row.hasFileType);
+    assert(!row.hasArchive);
+    assert(row.hasTorrent == false);
 }
+
+@("NamedBinaryBlob to BlobRow conversion test: Archive")
+unittest
+{
+    import std.datetime.systime : SysTime;
+    import dosierskanilo.model.namedbinaryblob : ArchiveSpec, CheckSums;
+
+    auto blob = new NamedBinaryBlob("abc.zip", 12_345, SysTime(1_234_567));
+    blob.checkSums.md5sum_b64 = "md5";
+    blob.checkSums.sha1sum_b64 = "sha1";
+    blob.checkSums.xxh64sum_b64 = "xxh64";
+    blob.fileType = "Zip archive data";
+    blob.archiveSpecs ~= new ArchiveSpec("inner.txt", 456, "2024-01-02T12:00:00Z", CheckSums("md5inner", "sha1inner", "xxh64inner"));
+
+    auto row = rowFromNamedBinaryBlob(blob);
+    assert(row.primaryFileName == "abc.zip");
+    assert(row.fileSize == 12_345);
+    assert(row.sha1 == "sha1");
+    assert(row.fileCount == 1);
+    assert(!row.hasMedia);
+    assert(!row.hasVideo);
+    assert(!row.hasAudio);
+    assert(!row.hasImage);
+    assert(row.fileNamesDetails.length > 0);
+    assert(row.sourceBlobDetails.length > 0);
+    assert(row.hasFileType);
+    assert(row.hasArchive);
+    assert(row.archiveDetails.length > 0);
+    assert(row.hasTorrent == false);
+}
+
+@("NamedBinaryBlob to BlobRow conversion test: BitTorrent")
+unittest
+{
+    import std.datetime.systime : SysTime;
+    import dosierskanilo.metadata.torrentinfo : TorrentInfo;
+
+    auto blob = new NamedBinaryBlob("abc.torrent", 12_345, SysTime(1_234_567));
+    blob.checkSums.md5sum_b64 = "md5";
+    blob.checkSums.sha1sum_b64 = "sha1";
+    blob.checkSums.xxh64sum_b64 = "xxh64";
+    blob.fileType = "BitTorrent file";
+    blob.torrentInfo = new TorrentInfo();
+    blob.torrentInfo.name = "abc.torrent";
+    blob.torrentInfo.magnetURI = "magnet:?xt=urn:btih:...";
+
+    auto row = rowFromNamedBinaryBlob(blob);
+    assert(row.primaryFileName == "abc.torrent");
+    assert(row.fileSize == 12_345);
+    assert(row.sha1 == "sha1");
+    assert(row.fileCount == 1);
+    assert(!row.hasMedia);
+    assert(!row.hasVideo);
+    assert(!row.hasAudio);
+    assert(!row.hasImage);
+    assert(row.fileNamesDetails.length > 0);
+    assert(row.sourceBlobDetails.length > 0);
+    assert(row.hasTorrent);
+}
+
 
 @("BlobRow filtering tests")
 unittest

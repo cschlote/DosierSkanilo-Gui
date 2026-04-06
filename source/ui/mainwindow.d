@@ -173,13 +173,22 @@ string mediaInfoSummary(const(BlobRow) row)
     return row.hasMedia ? "yes" : "-";
 }
 
-/** Count media subtype hits in the currently filtered row set. */
+/** Count media subtype hits in the currently filtered row set.
+ *
+ * Params:
+ *   rows = array of BlobRow to count media subtype hits
+ * Returns:
+ *   formatted string with counts of each media subtype
+ */
 string mediaHitStats(const(BlobRow)[] rows)
 {
-    size_t videoCount;
-    size_t audioCount;
-    size_t imageCount;
-    size_t textCount;
+    size_t videoCount = 0;
+    size_t audioCount = 0;
+    size_t imageCount = 0;
+    size_t textCount = 0;
+    size_t fileTypeCount = 0;
+    size_t archiveCount = 0;
+    size_t torrentCount = 0;
 
     foreach (row; rows)
     {
@@ -199,12 +208,30 @@ string mediaHitStats(const(BlobRow)[] rows)
         {
             ++textCount;
         }
+        if (row.hasFileType)
+        {
+            ++fileTypeCount;
+        }
+        if (row.hasArchive)
+        {
+            ++archiveCount;
+        }
+        if (row.hasTorrent)
+        {
+            ++torrentCount;
+        }
     }
 
-    return format("hits V:%s A:%s I:%s T:%s", videoCount, audioCount, imageCount, textCount);
+    return format("hits V:%s A:%s I:%s T:%s FT:%s AR:%s TO:%s", videoCount, audioCount, imageCount, textCount, fileTypeCount, archiveCount, torrentCount);
 }
 
-/** Convert a base64-encoded digest into lowercase hexadecimal text. */
+/** Convert a base64-encoded digest into lowercase hexadecimal text.
+ *
+ * Params:
+ *   digest = base64-encoded digest string
+ * Returns:
+ *   lowercase hexadecimal representation of the digest, or an error placeholder if the input is invalid
+ */
 string digestBase64ToHex(string digest)
 {
     if (digest.length == 0)
@@ -276,6 +303,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
     filterText.setTooltipText("Filter to rows with text/subtitle media metadata");
     auto filterMediaNot = new CheckButton("NOT");
     filterMediaNot.setTooltipText("Invert the selected media-type filters");
+    auto filterFileType = new CheckButton("FT");
+    filterFileType.setTooltipText("Filter to rows with file type signature metadata");
+    auto filterArchive = new CheckButton("AR");
+    filterArchive.setTooltipText("Filter to rows with file archives.");
+    auto filterTorrent = new CheckButton("TO");
+    filterTorrent.setTooltipText("Filter to rows with torrent files.");
 
     auto btnApplyFilter = new Button("Apply Filter");
     auto btnClearFilter = new Button("Clear Filter");
@@ -296,6 +329,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
     toolbar.packStart(filterImage, false, false, 0);
     toolbar.packStart(filterText, false, false, 0);
     toolbar.packStart(filterMediaNot, false, false, 0);
+    toolbar.packStart(filterFileType, false, false, 0);
+    toolbar.packStart(filterArchive, false, false, 0);
+    toolbar.packStart(filterTorrent, false, false, 0);
     toolbar.packStart(btnApplyFilter, false, false, 0);
     toolbar.packStart(btnClearFilter, false, false, 0);
     toolbar.packStart(progressBar, true, true, 0);
@@ -435,6 +471,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
         filterImage.setSensitive(!isLoading && hasCurrentDocument);
         filterText.setSensitive(!isLoading && hasCurrentDocument);
         filterMediaNot.setSensitive(!isLoading && hasCurrentDocument);
+        filterFileType.setSensitive(!isLoading && hasCurrentDocument);
+        filterArchive.setSensitive(!isLoading && hasCurrentDocument);
+        filterTorrent.setSensitive(!isLoading && hasCurrentDocument);
         btnApplyFilter.setSensitive(!isLoading && hasCurrentDocument);
         btnClearFilter.setSensitive(!isLoading && hasCurrentDocument);
     }
@@ -452,6 +491,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
             filterImage.setActive(false);
             filterText.setActive(false);
             filterMediaNot.setActive(false);
+            filterFileType.setActive(false);
+            filterArchive.setActive(false);
+            filterTorrent.setActive(false);
             syncToolbarSensitivity();
             isSyncingToolbarState = false;
             return;
@@ -464,6 +506,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
         filterImage.setActive(document.filterImage);
         filterText.setActive(document.filterText);
         filterMediaNot.setActive(document.filterMediaNegated);
+        filterFileType.setActive(document.filterFileType);
+        filterArchive.setActive(document.filterArchive);
+        filterTorrent.setActive(document.filterTorrent);
         syncToolbarSensitivity();
         isSyncingToolbarState = false;
     }
@@ -602,11 +647,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailChecksumExpander.setExpanded(false);
         setMetadataStatusLabel(document.detailMediaInfoStatus, "MediaInfo", format("%s unavailable", boolStatusIcon(
                 false)));
+        setMetadataStatusLabel(document.detailFileTypeStatus, "File Type", format("%s unavailable", boolStatusIcon(
+                false)));
         setMetadataStatusLabel(document.detailArchiveStatus, "Archive", format("%s unavailable", boolStatusIcon(
                 false)));
         setMetadataStatusLabel(document.detailTorrentStatus, "Torrent", format("%s unavailable", boolStatusIcon(
                 false)));
         setMetadataDetails(document.detailMediaInfoExpander, document.detailMediaInfoView, "MediaInfo", "");
+        setMetadataDetails(document.detailFileTypeExpander, document.detailFileTypeView, "File Type", "");
         setMetadataDetails(document.detailArchiveExpander, document.detailArchiveView, "Archive", "");
         setMetadataDetails(document.detailTorrentExpander, document.detailTorrentView, "Torrent", "");
         setKnownFilesTable(document, "", 0);
@@ -812,6 +860,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailChecksumStatus.setXalign(0.0f);
         document.detailMediaInfoStatus = new Label("");
         document.detailMediaInfoStatus.setXalign(0.0f);
+        document.detailFileTypeStatus = new Label("");
+        document.detailFileTypeStatus.setXalign(0.0f);
         document.detailArchiveStatus = new Label("");
         document.detailArchiveStatus.setXalign(0.0f);
         document.detailTorrentStatus = new Label("");
@@ -819,13 +869,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
         document.detailChecksumExpander = new Expander("");
         document.detailMediaInfoView = createDetailTextView(true);
+        document.detailFileTypeView = createDetailTextView(true);
         document.detailArchiveView = createDetailTextView(true);
         document.detailTorrentView = createDetailTextView(true);
         document.detailMediaInfoExpander = new Expander("");
+        document.detailFileTypeExpander = new Expander("");
         document.detailArchiveExpander = new Expander("");
         document.detailTorrentExpander = new Expander("");
         document.detailChecksumExpander.setLabelWidget(document.detailChecksumStatus);
         document.detailMediaInfoExpander.setLabelWidget(document.detailMediaInfoStatus);
+        document.detailFileTypeExpander.setLabelWidget(document.detailFileTypeStatus);
         document.detailArchiveExpander.setLabelWidget(document.detailArchiveStatus);
         document.detailTorrentExpander.setLabelWidget(document.detailTorrentStatus);
 
@@ -845,12 +898,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
         document.detailChecksumExpander.add(checksumGrid);
         document.detailMediaInfoExpander.add(document.detailMediaInfoView);
+        document.detailFileTypeExpander.add(document.detailFileTypeView);
         document.detailArchiveExpander.add(document.detailArchiveView);
         document.detailTorrentExpander.add(document.detailTorrentView);
 
         auto detailVisuals = new Box(Orientation.VERTICAL, 4);
         detailVisuals.packStart(document.detailChecksumExpander, false, false, 0);
         detailVisuals.packStart(document.detailMediaInfoExpander, false, false, 0);
+        detailVisuals.packStart(document.detailFileTypeExpander, false, false, 0);
         detailVisuals.packStart(document.detailArchiveExpander, false, false, 0);
         detailVisuals.packStart(document.detailTorrentExpander, false, false, 0);
 
@@ -1050,7 +1105,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto localRenderRequestId = ++document.renderRequestId;
         enum size_t RENDER_BATCH_SIZE = 500;
 
-        // Performance-Optimierung: TreeView während Bulk-Import abkoppeln
+        // Performance hack: un-couple TreeView for bulk-imports
         TreeModelIF oldModel = document.tableView.getModel();
         document.tableView.setModel(null);
 
@@ -1078,7 +1133,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 auto indexText = to!string(idx + 1);
                 auto sizeText = to!string(row.fileSize);
                 auto checksumsText = checksumSetStatus(row);
-                auto fileTypeText = row.fileType.length > 0 ? "yes" : "no";
+                auto fileTypeText = boolStatusIcon(row.hasFileType);
                 auto mediaInfoText = mediaInfoSummary(row);
                 auto archiveText = boolStatusIcon(row.hasArchive);
                 auto torrentText = boolStatusIcon(row.hasTorrent);
@@ -1231,12 +1286,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
         );
         setMetadataStatusLabel(document.detailMediaInfoStatus, "MediaInfo", mediaInfoStatusSummary(
                 row));
+        setMetadataStatusLabel(document.detailFileTypeStatus, "File Type", metadataPresenceSummary(
+                row.hasFileType));
         setMetadataStatusLabel(document.detailArchiveStatus, "Archive", metadataPresenceSummary(
                 row.hasArchive));
         setMetadataStatusLabel(document.detailTorrentStatus, "Torrent", metadataPresenceSummary(
                 row.hasTorrent));
         setMetadataDetails(document.detailMediaInfoExpander, document.detailMediaInfoView, "MediaInfo", row
                 .mediaInfoDetails);
+        setMetadataDetails(document.detailFileTypeExpander, document.detailFileTypeView, "File Type", row
+                .fileTypeDetails);
         setMetadataDetails(document.detailArchiveExpander, document.detailArchiveView, "Archive", row
                 .archiveDetails);
         setMetadataDetails(document.detailTorrentExpander, document.detailTorrentView, "Torrent", row
@@ -1253,6 +1312,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 "SHA1 (hex): %s\n" ~
                 "xxh64 (hex): %s\n" ~
                 "Has media metadata: %s\n" ~
+                "Has file type metadata: %s\n" ~
                 "Has archive metadata: %s\n" ~
                 "Has torrent metadata: %s\n" ~
                 "\nMediaInfo details\n%s\n" ~
@@ -1273,12 +1333,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
             digestBase64ToHex(row.sha1),
             digestBase64ToHex(row.xxh64),
             row.hasMedia ? "yes" : "no",
+            row.hasFileType ? "yes" : "no",
             row.hasArchive ? "yes" : "no",
             row.hasTorrent ? "yes" : "no",
             row.mediaInfoDetails.length > 0 ? row.mediaInfoDetails : "-",
             row.archiveDetails.length > 0 ? row.archiveDetails : "-",
             row.torrentDetails.length > 0 ? row.torrentDetails : "-",
-            row.rawJson.length > 0 ? row.rawJson : "{}"
+            row.sourceBlobDetails.length > 0 ? row.sourceBlobDetails : "{}"
         );
         document.selectedDetailsText = detailsText;
         document.btnCopySha1.setSensitive(!isLoading && document.selectedSha1.length > 0);
@@ -1379,6 +1440,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.filterImage = filterImage.getActive();
         document.filterText = filterText.getActive();
         document.filterMediaNegated = filterMediaNot.getActive();
+        document.filterFileType = filterFileType.getActive();
+        document.filterArchive = filterArchive.getActive();
+        document.filterTorrent = filterTorrent.getActive();
+
         applyFilterForDocument(document);
     }
 
@@ -1403,9 +1468,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto requireImage = document.filterImage;
         auto requireText = document.filterText;
         auto negateMediaFilter = document.filterMediaNegated;
+        auto requireFileType = document.filterFileType;
+        auto requireArchive = document.filterArchive;
+        auto requireTorrent = document.filterTorrent;
         auto sourceRows = document.loadedRows.dup;
         auto requestId = ++document.filterRequestId;
-        bool hasMediaTypeFilters = requireVideo || requireAudio || requireImage || requireText;
+        bool hasMediaTypeFilters =
+            requireVideo || requireAudio || requireImage || requireText
+            || requireFileType || requireArchive || requireTorrent;
 
         string mediaFilterSummary()
         {
@@ -1422,6 +1492,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 labels.put("I");
             if (requireText)
                 labels.put("T");
+            if (requireFileType)
+                labels.put("FT");
+            if (requireArchive)
+                labels.put("AR");
+            if (requireTorrent)
+                labels.put("TO");
             auto summary = labels.data.join(",");
             return negateMediaFilter ? format("NOT %s", summary) : summary;
         }
@@ -1437,6 +1513,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
             try
             {
+                // Get first pass filtered rows based on text query, which is the most expensive part
+                // and worth doing before media-type filtering to reduce the row count for media-type checks.
                 result.filteredRows = filterRowsByText(sourceRows, query, caseSensitive);
                 if (hasMediaTypeFilters)
                 {
@@ -1447,7 +1525,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
                             (requireVideo && row.hasVideo) ||
                             (requireAudio && row.hasAudio) ||
                             (requireImage && row.hasImage) ||
-                            (requireText && row.hasText);
+                            (requireText && row.hasText) ||
+                            (requireFileType && row.hasFileType) ||
+                            (requireArchive && row.hasArchive) ||
+                            (requireTorrent && row.hasTorrent);
+                        if (requireTorrent && row.hasTorrent)
+                        {
+                            writeln("Row %s matches torrent filter", row.fileNamesSummary);
+                        }
                         auto keepRow = negateMediaFilter ? !matchesMedia : matchesMedia;
                         if (keepRow)
                         {
@@ -1595,7 +1680,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     document.filterAudio ||
                     document.filterImage ||
                     document.filterText ||
-                    document.filterMediaNegated
+                    document.filterMediaNegated ||
+                    document.filterFileType ||
+                    document.filterArchive ||
+                    document.filterTorrent
                     ))
                 {
                     applyFilterForDocument(document);
@@ -1862,6 +1950,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.filterImage = false;
         document.filterText = false;
         document.filterMediaNegated = false;
+        document.filterFileType = false;
+        document.filterArchive = false;
+        document.filterTorrent = false;
         syncToolbarFromCurrentDocument();
         renderRows(document, document.loadedRows);
     }, "C_lear Filter", "edit.clearFilter", true, accelGroup, 'l');
@@ -1910,6 +2001,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.filterImage = false;
         document.filterText = false;
         document.filterMediaNegated = false;
+        document.filterFileType = false;
+        document.filterArchive = false;
+        document.filterTorrent = false;
         syncToolbarFromCurrentDocument();
         renderRows(document, document.loadedRows);
     });
@@ -1927,6 +2021,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
     filterText.addOnToggled((ToggleButton _) { applyFilterFromEntry(); });
 
     filterMediaNot.addOnToggled((ToggleButton _) { applyFilterFromEntry(); });
+
+    filterFileType.addOnToggled((ToggleButton _) { applyFilterFromEntry(); });
+
+    filterArchive.addOnToggled((ToggleButton _) { applyFilterFromEntry(); });
+
+    filterTorrent.addOnToggled((ToggleButton _) { applyFilterFromEntry(); });
 
     notebook.addOnSwitchPage((Widget pageWidget, uint pageNum, Notebook tabNotebook) {
         syncToolbarFromCurrentDocument();

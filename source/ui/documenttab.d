@@ -33,6 +33,9 @@ class DocumentTab
     bool filterImage;
     bool filterText;
     bool filterMediaNegated;
+    bool filterFileType;
+    bool filterArchive;
+    bool filterTorrent;
 
     Box pageRoot;
     Paned split;
@@ -46,13 +49,16 @@ class DocumentTab
     Label detailChecksumStatus;
     Label detailFileNamesLabel;
     Label detailMediaInfoStatus;
+    Label detailFileTypeStatus;
     Label detailArchiveStatus;
     Label detailTorrentStatus;
     Expander detailChecksumExpander;
     Expander detailMediaInfoExpander;
+    Expander detailFileTypeExpander;
     Expander detailArchiveExpander;
     Expander detailTorrentExpander;
     TextView detailMediaInfoView;
+    TextView detailFileTypeView;
     TextView detailArchiveView;
     TextView detailTorrentView;
     ListStore detailFileNamesStore;
