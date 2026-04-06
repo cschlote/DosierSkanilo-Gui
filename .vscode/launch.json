@@ -6,7 +6,7 @@
       "request": "launch",
       "name": "Launch DosierSkanilo GUI (no args)",
       "program": "${workspaceFolder}/build/bin/dosierskanilo-gui",
-      "args": [],
+      "args": [ "-v"],
       "cwd": "${workspaceFolder}"
     },
     {
