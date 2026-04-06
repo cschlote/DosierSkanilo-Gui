@@ -92,7 +92,7 @@ void logFVerbose(T...)(T args)
     }
     else
     {
-        import dosierskanilo.cli.commandline  : argsArray;
+        import cli.commandline  : argsArray;
 
         if (argsArray.argVerboseOutputs)
             writef(args);
@@ -112,7 +112,7 @@ void logFLineVerbose(T...)(T args)
     }
     else
     {
-        import dosierskanilo.cli.commandline  : argsArray;
+        import cli.commandline  : argsArray;
 
         if (argsArray.argVerboseOutputs)
             writefln(args);
@@ -132,7 +132,7 @@ void logLineVerbose(T...)(T args)
     }
     else
     {
-        import dosierskanilo.cli.commandline  : argsArray;
+        import cli.commandline  : argsArray;
 
         if (argsArray.argVerboseOutputs)
             writeln(args);
@@ -152,7 +152,7 @@ void logVerbose(T...)(T args)
     }
     else
     {
-        import dosierskanilo.cli.commandline  : argsArray;
+        import cli.commandline  : argsArray;
 
         if (argsArray.argVerboseOutputs)
         {

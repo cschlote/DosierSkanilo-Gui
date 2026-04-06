@@ -35,6 +35,8 @@ JSON output from the command-line scanner in an interactive way.
 
 };
 
+CliOptions argsArray;
+
 /** Parse CLI arguments into startup option flags.
  *
  * Params:
@@ -42,26 +44,22 @@ JSON output from the command-line scanner in an interactive way.
  * Returns:
  *   Parsed options with defaults applied
  */
-CliOptions parseCliOptions(ref string[] args)
+void parseCliOptions(ref string[] args)
 {
-    CliOptions opts;
-
     getopt(
         args,
         config.passThrough,
-        "j|json", &opts.jsonPath,
-        "l|load", &opts.loadOnStart,
-        "q|query", &opts.filterOnStart,
-        "case-sensitive", &opts.caseSensitiveFilter,
-        "no-auto-filter", &opts.disableAutoFilter,
-        "h|help", &opts.showHelp
+        "j|json", &argsArray.jsonPath,
+        "l|load", &argsArray.loadOnStart,
+        "q|query", &argsArray.filterOnStart,
+        "case-sensitive", &argsArray.caseSensitiveFilter,
+        "no-auto-filter", &argsArray.disableAutoFilter,
+        "h|help", &argsArray.showHelp
     );
 
-    opts.jsonPathProvided = opts.jsonPath != DEFAULT_JSON_PATH;
-    if (opts.jsonPathProvided)
+    argsArray.jsonPathProvided = argsArray.jsonPath != DEFAULT_JSON_PATH;
+    if (argsArray.jsonPathProvided)
     {
-        opts.loadOnStart = true;
+        argsArray.loadOnStart = true;
     }
-
-    return opts;
 }

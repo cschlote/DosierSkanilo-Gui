@@ -10,12 +10,12 @@ import ui.mainwindow;
 
 int main(string[] args)
 {
-    auto cli = parseCliOptions(args);
-    if (cli.showHelp)
+    parseCliOptions(args);
+    if (argsArray.showHelp)
     {
         logLine(cliUsageText);
         return 0;
     }
 
-    return runMainWindow(args, cli);
+    return runMainWindow(args, argsArray);
 }

@@ -8,71 +8,69 @@
  */
 module ui.mainwindow;
 
-import gtk.Main;
-import gtk.Widget;
-import gtk.Window;
-import gtk.Box;
-import gtk.Label;
-import gtk.Button;
-import gtk.Separator;
-import gtk.Entry;
-import gtk.Spinner;
-import gtk.ProgressBar;
-import gtk.ScrolledWindow;
-import gtk.TextView;
-import gtk.Grid;
-import gtk.Expander;
-import gtk.TreeView;
-import gtk.ListStore;
-import gtk.TreeIter;
-import gtk.TreeSelection;
-import gtk.TreeModelIF;
-import gtk.Paned;
-import gtk.Notebook;
-import gtk.MenuBar;
-import gtk.Menu;
-import gtk.MenuItem;
-import gtk.SeparatorMenuItem;
-import gtk.AccelGroup;
-import gtk.Dialog;
-import gtk.CheckButton;
-import gtk.ToggleButton;
-import gtk.FileChooserDialog;
-import gtk.AboutDialog;
-import gtk.MessageDialog;
-import gtk.c.types : Orientation, DialogFlags, ResponseType, ButtonsType, MessageType, FileChooserAction;
+import gdk.c.types : GdkEventConfigure;
+import gdk.Display;
 import glib.Idle;
 import glib.Timeout;
 import gobject.Type : GType;
+import gtk.AboutDialog;
+import gtk.AccelGroup;
+import gtk.Box;
+import gtk.Button;
+import gtk.c.types : ButtonsType, DialogFlags, FileChooserAction, MessageType, Orientation, ResponseType;
+import gtk.CheckButton;
 import gtk.Clipboard;
-import gdk.Display;
-import gdk.c.types : GdkEventConfigure;
+import gtk.Dialog;
+import gtk.Entry;
+import gtk.Expander;
+import gtk.FileChooserDialog;
+import gtk.Grid;
+import gtk.Label;
+import gtk.ListStore;
+import gtk.Main;
+import gtk.Menu;
+import gtk.MenuBar;
+import gtk.MenuItem;
+import gtk.MessageDialog;
+import gtk.Notebook;
+import gtk.Paned;
+import gtk.ProgressBar;
+import gtk.ScrolledWindow;
+import gtk.Separator;
+import gtk.SeparatorMenuItem;
+import gtk.Spinner;
+import gtk.TextView;
+import gtk.ToggleButton;
+import gtk.TreeIter;
+import gtk.TreeModelIF;
+import gtk.TreeSelection;
+import gtk.TreeView;
+import gtk.Widget;
+import gtk.Window;
 
 import core.thread : Thread;
 import core.time : MonoTime;
-import std.file : exists;
-import std.format : format;
+import std.algorithm : sort;
+import std.array : appender;
 import std.base64 : Base64;
 import std.conv : to;
-import std.stdio : writeln;
-import std.array : appender;
-import std.algorithm : sort;
-import std.string : join, replace;
+import std.file : exists;
+import std.format : format;
 import std.path : baseName;
+import std.stdio : writeln;
+import std.string : join, replace;
 
-import cli.commandline : CliOptions, parseCliOptions, cliUsageText;
-import io.dosierjson : extractRowsFromBlobs;
-import model.blobrow : BlobRow;
+import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
+import model.blobrow : BlobRow, extractRowsFromBlobs;
 import ui.appstate : AppState, loadAppState, saveAppState;
-import ui.documenttab : DocumentTab, COL_INDEX, COL_FILE_SIZE, COL_CHECKSUM_SET,
-    COL_FILE_TYPE, COL_MEDIA_INFO, COL_HAS_ARCHIVE, COL_HAS_TORRENT,
-    COL_INDEX_SORT, COL_FILE_SIZE_SORT;
+import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL_FILE_TYPE, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_INDEX, COL_INDEX_SORT, COL_MEDIA_INFO, DocumentTab;
 import ui.detailswidgets : createDetailEntry, createDetailTextView,
     createDetailCaption, setDetailEntry, setEntryMonospace,
     setMetadataStatusLabel, setMetadataDetails, setKnownFilesTable;
 import ui.tablecolumns : setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : countDuplicateDigestGroups, filterRowsByText;
 import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, deserializeDataClassJsonFile;
+import cli.logging;
 
 /** Worker result payload for background JSON loading. */
 struct AsyncLoadResult
@@ -1338,7 +1336,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             row.hasTorrent ? "yes" : "no",
             row.mediaInfoDetails.length > 0 ? row.mediaInfoDetails : "-",
             row.archiveDetails.length > 0 ? row.archiveDetails : "-",
-            row.torrentDetails.length > 0 ? row.torrentDetails : "-",
+            row.torrentDetails.length > 0 ? row.torrentDetails
+                : "-",
             row.sourceBlobDetails.length > 0 ? row.sourceBlobDetails : "{}"
         );
         document.selectedDetailsText = detailsText;
@@ -1461,25 +1460,33 @@ int runMainWindow(string[] args, ref CliOptions cli)
             return;
         }
 
+        /* Abort async filter results from previous requests, if any, by invalidating their requestId with a new one. */
+        auto requestId = ++document.filterRequestId;
+
+        /* Check the filter requirements set for this document. */
         auto query = document.filterQuery;
         auto caseSensitive = prefCaseSensitiveFilter;
+
         auto requireVideo = document.filterVideo;
         auto requireAudio = document.filterAudio;
         auto requireImage = document.filterImage;
         auto requireText = document.filterText;
         auto negateMediaFilter = document.filterMediaNegated;
+
         auto requireFileType = document.filterFileType;
         auto requireArchive = document.filterArchive;
         auto requireTorrent = document.filterTorrent;
-        auto sourceRows = document.loadedRows.dup;
-        auto requestId = ++document.filterRequestId;
-        bool hasMediaTypeFilters =
+
+        bool hasFilterRequirements =
             requireVideo || requireAudio || requireImage || requireText
             || requireFileType || requireArchive || requireTorrent;
 
+        /* Duplicate the loaded rows for filtering. */
+        auto sourceRows = document.loadedRows.dup;
+
         string mediaFilterSummary()
         {
-            if (!hasMediaTypeFilters)
+            if (!hasFilterRequirements)
             {
                 return "";
             }
@@ -1516,24 +1523,21 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 // Get first pass filtered rows based on text query, which is the most expensive part
                 // and worth doing before media-type filtering to reduce the row count for media-type checks.
                 result.filteredRows = filterRowsByText(sourceRows, query, caseSensitive);
-                if (hasMediaTypeFilters)
+                if (hasFilterRequirements)
                 {
                     auto mediaFiltered = appender!(BlobRow[])();
                     foreach (row; result.filteredRows)
                     {
-                        auto matchesMedia =
+                        auto matchesFileType = (requireFileType && row.hasFileType);
+                        auto matchesMediaInfo =
                             (requireVideo && row.hasVideo) ||
                             (requireAudio && row.hasAudio) ||
                             (requireImage && row.hasImage) ||
-                            (requireText && row.hasText) ||
-                            (requireFileType && row.hasFileType) ||
-                            (requireArchive && row.hasArchive) ||
-                            (requireTorrent && row.hasTorrent);
-                        if (requireTorrent && row.hasTorrent)
-                        {
-                            writeln("Row %s matches torrent filter", row.fileNamesSummary);
-                        }
-                        auto keepRow = negateMediaFilter ? !matchesMedia : matchesMedia;
+                            (requireText && row.hasText);
+                        matchesMediaInfo = negateMediaFilter ? !matchesMediaInfo : matchesMediaInfo;
+                        auto matchesArchive = (requireArchive && row.hasArchive);
+                        auto matchesTorrent = (requireTorrent && row.hasTorrent);
+                        auto keepRow = matchesFileType || matchesMediaInfo || matchesArchive || matchesTorrent;
                         if (keepRow)
                         {
                             mediaFiltered.put(row);
@@ -1588,7 +1592,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
         worker.start();
     };
 
-    /** Load and normalize the JSON file for one open document tab. */
+    /** Load and normalize the JSON file for one open document tab.
+     *
+     * Params:
+     *   document = the document tab to load
+     */
     loadDocument = (DocumentTab document) {
         if (isLoading)
         {
