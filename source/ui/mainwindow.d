@@ -235,19 +235,13 @@ string digestBase64ToHex(string digest)
  * Returns:
  *   exit code
  */
-int runMainWindow(string[] args)
+int runMainWindow(string[] args, ref CliOptions cli)
 {
-    auto cli = parseCliOptions(args);
-    if (cli.showHelp)
-    {
-        writeln(cliUsageText());
-        return 0;
-    }
-
     auto loadedState = loadAppState();
 
     Main.init(args);
 
+    // Construct the main window and shared toolbar widgets, which will be manipulated and re-parented by document tabs.
 
     auto window = new Window("DosierSkanilo GUI");
     window.setDefaultSize(loadedState.windowWidth, loadedState.windowHeight);

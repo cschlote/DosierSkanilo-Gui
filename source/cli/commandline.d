@@ -1,9 +1,18 @@
-/** Command line options and parsing helpers for DosierSkanilo GUI. */
+/** Command line options and parsing helpers for DosierSkanilo GUI.
+ *
+ * This module contains code to parse command-line arguments into a structured `CliOptions` type, as well
+ * as a function to generate usage text for the user. The GUI entry point in `app.d` calls `parseCliOptions`
+ * to determine startup behavior based on the provided arguments.
+ *
+ * Authors: Carsten Schlote, schlote@vahanus.net
+ * Copyright: Carsten Schlote, Released under CC-BY-NC-SA 4.0 license, 2018
+ * License: CC-BY-NC-SA 4.0
+ */
 module cli.commandline;
 
 import std.getopt : getopt, config;
 
-enum string DEFAULT_JSON_PATH = "./.filescanner.json";
+enum string DEFAULT_JSON_PATH = "./.dosierskanilo.json";
 
 /** Parsed startup options from command-line arguments. */
 struct CliOptions
@@ -18,21 +27,13 @@ struct CliOptions
 }
 
 /** Return human-readable CLI usage text. */
-string cliUsageText()
-{
-    return "DosierSkanilo GUI\n" ~
-        "\n" ~
-        "Usage:\n" ~
-        "  dosierskanilo-gui [options]\n" ~
-        "\n" ~
-        "Options:\n" ~
-        "  -j, --json <file>         JSON file to open\n" ~
-        "  -l, --load                Load on startup\n" ~
-        "  -q, --query <text>        Apply initial text filter\n" ~
-        "      --case-sensitive      Use case-sensitive text filtering\n" ~
-        "      --no-auto-filter      Disable auto filter after load\n" ~
-        "  -h, --help                Show this help text\n";
-}
+immutable string cliUsageText = q{
+DosierSkanilo GUI
+
+This is a graphical user interface for the DosierSkanilo file scanner. It allows you to load and explore
+JSON output from the command-line scanner in an interactive way.
+
+};
 
 /** Parse CLI arguments into startup option flags.
  *
