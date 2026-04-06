@@ -6,7 +6,9 @@ All notable changes to this project are documented in this file.
 
 - Refactored GUI code by moving tab state, table column setup, and detail-widget helpers from `source/app.d` into dedicated UI modules under `source/ui/`.
 - Extracted all persisted application state types and JSON load/save helpers into a dedicated module `source/ui/appstate.d`.
+- Added dedicated CLI modules for startup argument parsing and stdout logging, including verbose debug output support.
 - Replaced the GUI's custom scanner JSON parsing path with the DosierSkanilo library loader and `NamedBinaryBlob` projection helpers.
+- Added shared text-report and row-filter helpers so GUI and non-GUI output paths can reuse the same projection logic.
 - Simplified the table to focused columns (`Index#`, `Size`, `Checksums`, `File Type`, `MediaInfo`, `Archive`, `Torrent`) and reduced `File Type` display to a compact yes/no indicator.
 - Persisted window geometry, splitter positions, and key preferences under `~/.config/dosierskanilo-gui/state.json`, including an option in Preferences to clear saved window positions.
 - Extended category filtering with two additional toolbar checkboxes for archive and torrent rows (`AR`/`TO`), including `NOT` inversion and hit counters.
