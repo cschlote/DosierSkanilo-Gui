@@ -7,7 +7,7 @@
  * Authors: DosierSkanilo contributors
  * License: CC-BY-NC-SA 4.0
  */
-module io.dosierjson;
+module misc.bnode_static_constructor;
 
 import core.internal.array.equality : __equals;
 import dosierskanilo.metadata.torrentinfo : BNode;
