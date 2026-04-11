@@ -963,7 +963,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailChecksumExpander.add(checksumGrid);
         document.detailMediaInfoExpander.add(document.detailMediaInfoView);
         document.detailFileTypeExpander.add(document.detailFileTypeView);
-        document.detailArchiveExpander.add(document.detailArchiveView);
+        auto archiveScroll = new ScrolledWindow(null, null);
+        archiveScroll.setPolicy(GtkPolicyType.AUTOMATIC, GtkPolicyType.AUTOMATIC);
+        archiveScroll.setMinContentHeight(180);
+        archiveScroll.setPropagateNaturalHeight(false);
+        archiveScroll.setVexpand(true);
+        archiveScroll.setHexpand(true);
+        archiveScroll.add(document.detailArchiveView);
+        document.detailArchiveExpander.add(archiveScroll);
         document.detailTorrentExpander.add(document.detailTorrentView);
 
         auto detailVisuals = new Box(Orientation.VERTICAL, 4);

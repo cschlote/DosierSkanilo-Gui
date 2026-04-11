@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+- Added a scroll container around the Archive metadata expander so its long text no longer forces the details pane to grow vertically.
+- Reorganized internal code into distinct model, IO, and view modules. No user-visible changes.
+- Added a mode to view only records that appear more than once in the loaded dataset.
+- Added the ability to open a scanner data file and browse all records in the main window.
+- The project was started with a basic GTK window, debugger support, and version control configuration.
+
 ## Release 0.5.0 - 2026-04-11
 
 - Removed the last cached blob detail string from `BlobRow`; the detail view now derives the raw text directly from the original `NamedBinaryBlob`.
@@ -58,12 +66,6 @@ All notable changes to this project are documented in this file.
 - Added a menu bar with File, Edit, Preferences, and Help entries, keyboard accelerators, and an About dialog.
 - Added a Reload button and keyboard shortcuts for faster access to common actions.
 - Added a text search box to filter records by filename or checksum value.
-
-## Unreleased
-- Reorganized internal code into distinct model, IO, and view modules. No user-visible changes.
-- Added a mode to view only records that appear more than once in the loaded dataset.
-- Added the ability to open a scanner data file and browse all records in the main window.
-- The project was started with a basic GTK window, debugger support, and version control configuration.
 
 ## Release 0.1.0
 
