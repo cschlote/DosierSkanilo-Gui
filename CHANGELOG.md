@@ -5,6 +5,7 @@ All notable changes to this project are documented in this file.
 ## Unreleased
 
 - Added a scroll container around the Archive metadata expander so its long text no longer forces the details pane to grow vertically.
+- Aligned the detail panel content to the top so the visible fields stay anchored when the archive section is expanded.
 - Reorganized internal code into distinct model, IO, and view modules. No user-visible changes.
 - Added a mode to view only records that appear more than once in the loaded dataset.
 - Added the ability to open a scanner data file and browse all records in the main window.

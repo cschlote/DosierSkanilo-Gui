@@ -49,7 +49,7 @@ import gtk.TreeSelection;
 import gtk.TreeView;
 import gtk.Widget;
 import gtk.Window;
-import gtk.c.types : GtkTreeViewColumnSizing;
+import gtk.c.types : GtkAlign, GtkTreeViewColumnSizing;
 
 import core.thread : Thread;
 import core.time : MonoTime;
@@ -1015,12 +1015,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
         auto detailsBody = new Box(Orientation.VERTICAL, 10);
         detailsBody.setBorderWidth(6);
+        detailsBody.setValign(GtkAlign.START);
         detailsBody.packStart(detailVisuals, false, false, 0);
         detailsBody.packStart(detailGrid, false, false, 0);
         detailsBody.packStart(document.detailFileNamesLabel, false, false, 0);
         detailsBody.packStart(detailsScroll, true, true, 0);
 
         auto detailsPane = new Box(Orientation.VERTICAL, 6);
+        detailsPane.setValign(GtkAlign.START);
         detailsPane.packStart(detailsActions, false, false, 0);
         detailsPane.packStart(detailsBody, true, true, 0);
 
