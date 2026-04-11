@@ -77,6 +77,7 @@ class DocumentTab
     int tableNaturalWidth = -1;
     int tableMinimumWidth = -1;
     bool fitHorizontalSplitAfterLoad;
+    bool pendingColumnMeasurement;
     string selectedSha1;
     string selectedFileName;
     string selectedDetailsText;
