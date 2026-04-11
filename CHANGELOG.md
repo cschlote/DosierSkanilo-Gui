@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Aligned the GUI documentation and task list with the overhauled DosierSkanilo backend, clarifying that the desktop app is a read-only browser for precomputed JSON and does not yet expose the scanner-side workflow.
+
 - Refactored GUI code by moving tab state, table column setup, and detail-widget helpers from `source/app.d` into dedicated UI modules under `source/ui/`.
 - Extracted all persisted application state types and JSON load/save helpers into a dedicated module `source/ui/appstate.d`.
 - Added dedicated CLI modules for startup argument parsing and stdout logging, including verbose debug output support.

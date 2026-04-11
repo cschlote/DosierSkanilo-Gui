@@ -369,10 +369,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     auto menuBar = new MenuBar();
 
-    if (cli.jsonPath.length > 0)
-    {
-        // pathEntry entfernt
-    }
     if (cli.filterOnStart.length > 0)
     {
         filterEntry.setText(cli.filterOnStart);
@@ -1774,12 +1770,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         setLoadingState(busyDocument, false, "Operation cancelled. Background result will be discarded.");
     }
 
-    /** Open the path from the toolbar as a new or existing tab and load if needed. */
-    void loadFromPath()
-    {
-        // pathEntry entfernt
-    }
-
     /** Reload the currently selected document tab from disk. */
     void reloadCurrentDocument()
     {
@@ -2156,11 +2146,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     syncToolbarFromCurrentDocument();
 
-    if (cli.loadOnStart)
-    {
-        loadFromPath();
-    }
-    else if (prefRestoreOpenFiles && loadedState.openFilePaths.length > 0)
+    if (prefRestoreOpenFiles && loadedState.openFilePaths.length > 0)
     {
         pendingStartupPaths = loadedState.openFilePaths.dup;
         pendingStartupSelectIndex = loadedState.activeTabIndex;

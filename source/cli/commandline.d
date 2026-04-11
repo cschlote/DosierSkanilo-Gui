@@ -12,14 +12,9 @@ module cli.commandline;
 
 import std.getopt : getopt, config;
 
-enum string DEFAULT_JSON_PATH = "./.dosierskanilo.json";
-
 /** Parsed startup options from command-line arguments. */
 struct CliOptions
 {
-    string jsonPath = DEFAULT_JSON_PATH;
-    bool jsonPathProvided;
-    bool loadOnStart;
     string filterOnStart;
     bool caseSensitiveFilter;
     bool disableAutoFilter;
@@ -27,13 +22,20 @@ struct CliOptions
 }
 
 /** Return human-readable CLI usage text. */
-immutable string cliUsageText = q{
+immutable string cliUsageText = q"EOF
 DosierSkanilo GUI
 
-This is a graphical user interface for the DosierSkanilo file scanner. It allows you to load and explore
-JSON output from the command-line scanner in an interactive way.
+This is a graphical user interface for browsing precomputed DosierSkanilo JSON
+output. Open files from the GUI File menu.
 
-};
+Startup options:
+
+    -q, --query <text>      Prefill the text filter
+            --case-sensitive    Use case-sensitive text matching
+            --no-auto-filter    Disable auto-apply after load/reload
+    -h, --help              Print this help and exit
+
+EOF";
 
 CliOptions argsArray;
 
@@ -49,17 +51,9 @@ void parseCliOptions(ref string[] args)
     getopt(
         args,
         config.passThrough,
-        "j|json", &argsArray.jsonPath,
-        "l|load", &argsArray.loadOnStart,
         "q|query", &argsArray.filterOnStart,
         "case-sensitive", &argsArray.caseSensitiveFilter,
         "no-auto-filter", &argsArray.disableAutoFilter,
         "h|help", &argsArray.showHelp
     );
-
-    argsArray.jsonPathProvided = argsArray.jsonPath != DEFAULT_JSON_PATH;
-    if (argsArray.jsonPathProvided)
-    {
-        argsArray.loadOnStart = true;
-    }
 }

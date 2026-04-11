@@ -2,13 +2,11 @@
 
 ## Next
 
-- Add split-view details pane for selected row
-- Add column-specific filters (media, file count, digest present)
-- Add persistent preferences storage
-- Add basic unit tests for JSON normalization and filtering
+- Add export actions (CSV/JSON subset)
+- Add row activation action (copy path, open in file manager)
+- Add unit tests for CLI help text and startup filter parsing
 
 ## Later
 
-- Add export actions (CSV/JSON subset)
-- Add row activation action (copy path, open in file manager)
+- Revisit whether any scanner/analysis actions should be embedded or kept in the CLI
 - Add release packaging and tagging workflow

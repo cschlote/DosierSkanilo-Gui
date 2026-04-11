@@ -28,8 +28,6 @@ Or run stages individually:
 
 ## Debugging With Startup Arguments
 
-Example debug launch from terminal:
-
-```bash
-./build/bin/dosierskanilo-gui --json ./.filescanner.json --load --duplicates
-```
+Launch the GUI and open a JSON file from `File` > `Open JSON`.
+The startup parser is currently used for filter and preference state, not for
+the full scanner workflow.
