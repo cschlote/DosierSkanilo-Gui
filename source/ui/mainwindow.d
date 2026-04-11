@@ -370,6 +370,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
     auto filterEntry = new Entry();
     filterEntry.setHexpand(true);
     filterEntry.setPlaceholderText("Filter by filename or SHA1...");
+    auto filterMediaNot = new CheckButton("NOT");
+    filterMediaNot.setTooltipText("Invert the selected media-type filters");
     auto filterVideo = new CheckButton("V");
     filterVideo.setTooltipText("Filter to rows with video media metadata");
     auto filterAudio = new CheckButton("A");
@@ -378,8 +380,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
     filterImage.setTooltipText("Filter to rows with image media metadata");
     auto filterText = new CheckButton("T");
     filterText.setTooltipText("Filter to rows with text/subtitle media metadata");
-    auto filterMediaNot = new CheckButton("NOT");
-    filterMediaNot.setTooltipText("Invert the selected media-type filters");
     auto filterFileType = new CheckButton("FT");
     filterFileType.setTooltipText("Filter to rows with file type signature metadata");
     auto filterArchive = new CheckButton("AR");
@@ -845,14 +845,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
         auto orientation = prefDetailsBelow ? Orientation.VERTICAL : Orientation.HORIZONTAL;
         auto splitPosition = prefDetailsBelow ? splitPositionVertical : splitPositionHorizontal;
-        if (orientation == Orientation.HORIZONTAL)
-        {
-            auto preferredPosition = preferredListSplitPosition(document);
-            if (splitPosition < preferredPosition)
-            {
-                splitPosition = preferredPosition;
-            }
-        }
         document.split.setOrientation(orientation);
 
         auto clampedPosition = clampSplitPositionToVisibleBounds(document, document.split, orientation, splitPosition);
@@ -886,7 +878,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     void delegate(string, string, DocumentTab) copyTextToClipboard;
     DocumentTab delegate(string, bool) openDocumentFromPath;
     void delegate(DocumentTab) applyFilterForDocument;
-    void delegate(DocumentTab) loadDocument;
+    void delegate(DocumentTab, bool) loadDocument;
 
     /** Build and wire a new document tab widget hierarchy. */
     DocumentTab createDocumentTab(string filePath)
@@ -1304,7 +1296,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
             // Nach dem Laden: Spaltenbreiten einmal festziehen, danach bleiben sie stabil.
             setTableColumnsResizable(document, true);
-            new Idle({ applyDetailsPanePreference(document, false); return false; });
+            if (document.fitHorizontalSplitAfterLoad && rowsCopyData.length == document.loadedRows.length)
+            {
+                document.fitHorizontalSplitAfterLoad = false;
+                new Idle({ schedulePreferredHorizontalSplit(document); return false; });
+            }
+            else
+            {
+                document.fitHorizontalSplitAfterLoad = false;
+                new Idle({ applyDetailsPanePreference(document, false); return false; });
+            }
             document.status.setText(baseStatus);
 
             // Nach dem Befüllen TreeView wieder verbinden
@@ -1491,7 +1492,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
 
             auto document = openDocumentFromPath(nextPath, false);
-            loadDocument(document);
+            loadDocument(document, true);
             return;
         }
 
@@ -1707,7 +1708,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
      * Params:
      *   document = the document tab to load
      */
-    loadDocument = (DocumentTab document) {
+    loadDocument = (DocumentTab document, bool fitHorizontalSplitAfterLoad = true) {
         if (isLoading)
         {
             auto current = currentDocument();
@@ -1724,12 +1725,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.tableStore.clear();
             document.tableNaturalWidth = -1;
             document.tableMinimumWidth = -1;
+            document.fitHorizontalSplitAfterLoad = false;
             return;
         }
 
         auto requestId = ++document.loadRequestId;
         document.tableNaturalWidth = -1;
         document.tableMinimumWidth = -1;
+        document.fitHorizontalSplitAfterLoad = fitHorizontalSplitAfterLoad;
         setLoadingState(document, true, format("Loading %s ...", document.filePath));
 
         auto worker = new Thread({
@@ -1859,7 +1862,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 auto document = openDocumentFromPath(selectedPath, true);
                 if (document.loadedRows.length == 0)
                 {
-                    loadDocument(document);
+                    loadDocument(document, true);
                 }
             }
         }
@@ -1896,7 +1899,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         {
             return;
         }
-        loadDocument(document);
+        loadDocument(document, false);
     }
 
     /** Close the currently selected document tab and persist the remaining open set. */

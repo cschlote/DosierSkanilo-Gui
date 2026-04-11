@@ -76,6 +76,7 @@ class DocumentTab
     size_t loadedDuplicateGroups;
     int tableNaturalWidth = -1;
     int tableMinimumWidth = -1;
+    bool fitHorizontalSplitAfterLoad;
     string selectedSha1;
     string selectedFileName;
     string selectedDetailsText;
