@@ -12,7 +12,7 @@ module model.blobrow;
 import std.algorithm : sort;
 import std.array : appender;
 import std.format : format;
-import std.string : join;
+import std.string : join, empty;
 
 import dosierskanilo.metadata.mediainfosig;
 import dosierskanilo.model.namedbinaryblob;
@@ -44,19 +44,21 @@ struct BlobRow
     size_t fileCount; /// Number of known file references for this blob.
 
     /* metadata presence flags and details for fold-out sections in the UI. */
-    bool hasMedia; /// True when media metadata is present.
-    bool hasVideo; /// True when media metadata marks a video stream.
-    bool hasAudio; /// True when media metadata marks an audio stream.
-    bool hasImage; /// True when media metadata marks an image stream.
-    bool hasText; /// True when media metadata marks a text/subtitle stream.
-    bool hasFileType; /// True when file type signature metadata is present.
-    bool hasArchive; /// True when archive metadata is present.
-    bool hasTorrent; /// True when torrent metadata is present.
-    string mediaInfoDetails; /// Pretty-printed media metadata for fold-out inspection.
-    string fileTypeDetails; /// Pretty-printed file type metadata for fold-out inspection.
-    string archiveDetails; /// Pretty-printed archive metadata for fold-out inspection.
-    string torrentDetails; /// Pretty-printed torrent metadata for fold-out inspection.
-    string fileType; /// Optional file type signature from scanner metadata.
+    @property bool hasMedia() const { return sourceBlob.mediaInfoSig !is null && !sourceBlob.mediaInfoSig.empty; } /// True when media metadata is present.
+    @property bool hasVideo() const { return hasMedia && sourceBlob.mediaInfoSig.hasVideo; } /// True when media metadata marks a video stream.
+    @property bool hasAudio() const { return hasMedia && sourceBlob.mediaInfoSig.hasAudio; } /// True when media metadata marks an audio stream.
+    @property bool hasImage() const { return hasMedia && sourceBlob.mediaInfoSig.hasImage; } /// True when media metadata marks an image stream.
+    @property bool hasText() const { return hasMedia && sourceBlob.mediaInfoSig.hasText; } /// True when media metadata marks a text/subtitle stream.
+    @property bool hasFileType() const { return sourceBlob.fileType !is null && !sourceBlob.fileType.empty; } /// True when file type signature metadata is present.
+    @property bool hasArchive() const { return sourceBlob.archiveSpecs.length > 0; } /// True when archive metadata is present.
+    @property bool hasTorrent() const { return sourceBlob.torrentInfo !is null && !sourceBlob.torrentInfo.empty; } /// True when torrent metadata is present.
+
+    /* Fold-out details text for metadata sections, rendered from the source blob. */
+    @property string mediaInfoDetails() const { return hasMedia ? sourceBlob.mediaInfoSig.toString() : ""; } /// Pretty-printed media metadata for fold-out inspection.
+    @property string fileTypeDetails() const { return hasFileType ? sourceBlob.fileType : ""; } /// Pretty-printed file type metadata for fold-out inspection.
+    @property string archiveDetails() const { return hasArchive ? detailLines(sourceBlob.archiveSpecs) : ""; } /// Pretty-printed archive metadata for fold-out inspection.
+    @property string torrentDetails() const { return hasTorrent ? sourceBlob.torrentInfo.toString() : ""; } /// Pretty-printed torrent metadata for fold-out inspection.
+    @property string fileType() const { return hasFileType ? sourceBlob.fileType : ""; } /// Optional file type signature from scanner metadata.
 
     /** Render the full source object details directly from the backing blob. */
     @property string sourceBlobDetails()
@@ -193,21 +195,21 @@ private BlobRow rowFromNamedBinaryBlob(NamedBinaryBlob blob)
 
     if (blob.mediaInfoSig !is null)
     {
-        row.hasMedia = !blob.mediaInfoSig.empty;
-        row.hasImage = blob.mediaInfoSig.imageStreams.length > 0;
-        row.hasVideo = blob.mediaInfoSig.videoStreams.length > 0;
-        row.hasAudio = blob.mediaInfoSig.audioStreams.length > 0;
-        row.hasText = blob.mediaInfoSig.textStreams.length > 0;
-        row.mediaInfoDetails = blob.mediaInfoSig.toString();
+        // row.hasMedia = !blob.mediaInfoSig.empty;
+        // row.hasImage = blob.mediaInfoSig.imageStreams.length > 0;
+        // row.hasVideo = blob.mediaInfoSig.videoStreams.length > 0;
+        // row.hasAudio = blob.mediaInfoSig.audioStreams.length > 0;
+        // row.hasText = blob.mediaInfoSig.textStreams.length > 0;
+        // row.mediaInfoDetails = blob.mediaInfoSig.toString();
     }
-    row.hasFileType = blob.fileType.length > 0;
-    row.fileTypeDetails = row.hasFileType ? blob.fileType : "";
+    // row.hasFileType = blob.fileType.length > 0;
+    // row.fileTypeDetails = row.hasFileType ? blob.fileType : "";
 
-    row.hasArchive = blob.archiveSpecs.length > 0;
-    row.archiveDetails = detailLines(blob.archiveSpecs);
+    // row.hasArchive = blob.archiveSpecs.length > 0;
+    // row.archiveDetails = detailLines(blob.archiveSpecs);
 
-    row.hasTorrent = blob.torrentInfo !is null;
-    row.torrentDetails = row.hasTorrent ? blob.torrentInfo.toString() : "";
+    // row.hasTorrent = blob.torrentInfo !is null;
+    // row.torrentDetails = row.hasTorrent ? blob.torrentInfo.toString() : "";
 
     return row;
 }
