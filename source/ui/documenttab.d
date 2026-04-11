@@ -74,6 +74,8 @@ class DocumentTab
     BlobRow[] loadedRows;
     BlobRow[] visibleRows;
     size_t loadedDuplicateGroups;
+    int tableNaturalWidth = -1;
+    int tableMinimumWidth = -1;
     string selectedSha1;
     string selectedFileName;
     string selectedDetailsText;

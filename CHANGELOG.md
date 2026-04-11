@@ -7,6 +7,7 @@ All notable changes to this project are documented in this file.
 - Removed the last cached blob detail string from `BlobRow`; the detail view now derives the raw text directly from the original `NamedBinaryBlob`.
 - Removed the cached known-file name strings from `BlobRow` and now render file names and last-modified timestamps directly from the original `FileSpec` data.
 - Corrected the Known file names table so the last modified timestamp now appears in its own column instead of being appended to the filename.
+- Tightened the horizontal splitter minimum so it now follows the measured width of the first two table columns instead of a generic fallback.
 - Added positional JSON arguments on GUI startup so command-line files open alongside any restored tabs, with duplicate paths ignored.
 - Added a `-v/--verbose` startup flag for the GUI logging helpers.
 - Aligned the GUI documentation and task list with the overhauled DosierSkanilo backend, clarifying that the desktop app is a read-only browser for precomputed JSON and does not yet expose the scanner-side workflow.

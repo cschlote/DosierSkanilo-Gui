@@ -13,6 +13,8 @@ import gdk.Display;
 import glib.Idle;
 import glib.Timeout;
 import gobject.Type : GType;
+import gobject.ObjectG : ObjectG;
+import gobject.ParamSpec : ParamSpec;
 import gtk.AboutDialog;
 import gtk.AccelGroup;
 import gtk.Box;
@@ -47,6 +49,7 @@ import gtk.TreeSelection;
 import gtk.TreeView;
 import gtk.Widget;
 import gtk.Window;
+import gtk.c.types : GtkTreeViewColumnSizing;
 
 import core.thread : Thread;
 import core.time : MonoTime;
@@ -159,6 +162,92 @@ string mediaInfoSummary(const(BlobRow) row)
         return labels.data.join(",");
     }
     return row.hasMedia ? "yes" : "-";
+}
+
+/** Estimate the natural width required for the blob table columns. */
+int measureTableColumnsWidth(DocumentTab document, int columnLimit = -1)
+{
+    auto columnCount = cast(int) document.tableView.getNColumns();
+    if (columnCount <= 0)
+    {
+        return 0;
+    }
+
+    if (columnLimit >= 0 && columnLimit < columnCount)
+    {
+        columnCount = columnLimit;
+    }
+
+    int totalWidth = 0;
+    foreach (columnIndex; 0 .. columnCount)
+    {
+        auto column = document.tableView.getColumn(columnIndex);
+        if (column is null || !column.getVisible())
+        {
+            continue;
+        }
+        auto columnWidth = column.getWidth();
+        auto minWidth = column.getMinWidth();
+        totalWidth += columnWidth > minWidth ? columnWidth : minWidth;
+    }
+
+    return totalWidth;
+}
+
+/** Estimate or return the cached natural width of the blob table. */
+int naturalListWidth(DocumentTab document)
+{
+    return document.tableNaturalWidth > 0 ? document.tableNaturalWidth : measureTableColumnsWidth(document);
+}
+
+/** Estimate or return the cached minimum width that keeps the first two columns visible. */
+int minimumListWidth(DocumentTab document)
+{
+    return document.tableMinimumWidth > 0 ? document.tableMinimumWidth : measureTableColumnsWidth(document, 2);
+}
+
+/** Measure the table columns once and freeze them at their natural widths. */
+void lockMainTableColumnWidths(DocumentTab document)
+{
+    if (document is null || document.tableView is null || document.tableNaturalWidth > 0)
+    {
+        return;
+    }
+
+    document.tableView.columnsAutosize();
+
+    auto columnCount = cast(int) document.tableView.getNColumns();
+    int totalWidth = 0;
+    int minimumWidth = 0;
+    foreach (columnIndex; 0 .. columnCount)
+    {
+        auto column = document.tableView.getColumn(columnIndex);
+        if (column is null || !column.getVisible())
+        {
+            continue;
+        }
+
+        auto measuredWidth = column.getWidth();
+        if (measuredWidth <= 0)
+        {
+            measuredWidth = column.getMinWidth();
+        }
+        if (measuredWidth <= 0)
+        {
+            continue;
+        }
+
+        column.setSizing(GtkTreeViewColumnSizing.FIXED);
+        column.setFixedWidth(measuredWidth);
+        totalWidth += measuredWidth;
+        if (columnIndex < 2)
+        {
+            minimumWidth += measuredWidth;
+        }
+    }
+
+    document.tableNaturalWidth = totalWidth;
+    document.tableMinimumWidth = minimumWidth;
 }
 
 /** Count media subtype hits in the currently filtered row set.
@@ -660,7 +749,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     }
 
     /** Keep a document splitter divider within usable visible bounds. */
-    int clampSplitPositionToVisibleBounds(Paned splitWidget, Orientation orientation, int requestedPosition)
+    int clampSplitPositionToVisibleBounds(DocumentTab document, Paned splitWidget, Orientation orientation, int requestedPosition)
     {
         enum int MIN_PRIMARY_EXTENT = 240;
         enum int MIN_DETAILS_EXTENT = 180;
@@ -679,6 +768,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
         auto minPosition = MIN_PRIMARY_EXTENT;
         auto maxPosition = totalExtent - MIN_DETAILS_EXTENT;
+        if (orientation == Orientation.HORIZONTAL)
+        {
+            auto naturalTableWidth = naturalListWidth(document);
+            if (naturalTableWidth > 0 && naturalTableWidth < maxPosition)
+            {
+                maxPosition = naturalTableWidth;
+            }
+
+            minPosition = minimumListWidth(document);
+        }
         if (requestedPosition < minPosition)
         {
             return minPosition;
@@ -693,37 +792,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     /** Estimate the natural width required to show the blob list columns without truncating the split too early. */
     int preferredListSplitPosition(DocumentTab document)
     {
-        enum int LIST_PADDING = 112;
-        enum int MIN_LIST_WIDTH = 420;
-
-        foreach (columnIndex; 0 .. 7)
-        {
-            auto column = document.tableView.getColumn(columnIndex);
-            if (column !is null)
-            {
-                column.queueResize();
-            }
-        }
-        document.tableView.columnsAutosize();
-
-        int totalWidth = 0;
-        foreach (columnIndex; 0 .. 7)
-        {
-            auto column = document.tableView.getColumn(columnIndex);
-            if (column is null || !column.getVisible())
-            {
-                continue;
-            }
-            totalWidth += column.getWidth();
-        }
-
-        if (totalWidth <= 0)
-        {
-            return splitPositionHorizontal;
-        }
-
-        totalWidth += LIST_PADDING;
-        return totalWidth < MIN_LIST_WIDTH ? MIN_LIST_WIDTH : totalWidth;
+        return naturalListWidth(document);
     }
 
     /** Re-fit the horizontal splitter after GTK has real column widths available. */
@@ -742,7 +811,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             auto currentPosition = document.split.getPosition();
             auto targetPosition = preferredPosition > currentPosition ? preferredPosition
                 : currentPosition;
-            auto clampedPosition = clampSplitPositionToVisibleBounds(document.split, Orientation.HORIZONTAL, targetPosition);
+            auto clampedPosition = clampSplitPositionToVisibleBounds(document, document.split, Orientation.HORIZONTAL, targetPosition);
             document.split.setPosition(clampedPosition);
             splitPositionHorizontal = clampedPosition;
 
@@ -786,10 +855,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
         document.split.setOrientation(orientation);
 
-        auto clampedPosition = clampSplitPositionToVisibleBounds(document.split, orientation, splitPosition);
+        auto clampedPosition = clampSplitPositionToVisibleBounds(document, document.split, orientation, splitPosition);
         document.split.setPosition(clampedPosition);
         new Idle({
-            auto realizedClamped = clampSplitPositionToVisibleBounds(document.split, orientation, splitPosition);
+            auto realizedClamped = clampSplitPositionToVisibleBounds(document, document.split, orientation, splitPosition);
             document.split.setPosition(realizedClamped);
             if (orientation == Orientation.VERTICAL)
             {
@@ -952,6 +1021,21 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.split.pack1(scroll, false, true);
         document.split.pack2(detailsPane, true, false);
         document.split.setPosition(splitPositionHorizontal);
+        document.split.addOnNotify((ParamSpec _, ObjectG __) {
+            auto currentOrientation = document.split.getOrientation();
+            if (currentOrientation != Orientation.HORIZONTAL)
+            {
+                return;
+            }
+
+            auto currentPosition = document.split.getPosition();
+            auto clampedPosition = clampSplitPositionToVisibleBounds(document, document.split, Orientation.HORIZONTAL, currentPosition);
+            if (clampedPosition != currentPosition)
+            {
+                document.split.setPosition(clampedPosition);
+                splitPositionHorizontal = clampedPosition;
+            }
+        }, "position");
 
         document.rowDetails = new Label("Selection: none");
         document.rowDetails.setXalign(0.0f);
@@ -1209,14 +1293,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 setLoadingState(document, false);
             }
-            // Nach dem Laden: Spalten-Resizing aktivieren und Autosizing
+            // Nach dem Laden: Spaltenbreiten einmal festziehen, danach bleiben sie stabil.
             setTableColumnsResizable(document, true);
-            document.tableView.columnsAutosize();
             new Idle({ applyDetailsPanePreference(document, false); return false; });
             document.status.setText(baseStatus);
 
             // Nach dem Befüllen TreeView wieder verbinden
             document.tableView.setModel(document.tableStore);
+
+            if (document.tableNaturalWidth <= 0 && rowsCopyData.length == document.loadedRows.length)
+            {
+                lockMainTableColumnWidths(document);
+            }
 
             return false;
         };
@@ -1625,10 +1713,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
         {
             document.status.setText(format("File not found: %s", document.filePath));
             document.tableStore.clear();
+            document.tableNaturalWidth = -1;
+            document.tableMinimumWidth = -1;
             return;
         }
 
         auto requestId = ++document.loadRequestId;
+        document.tableNaturalWidth = -1;
+        document.tableMinimumWidth = -1;
         setLoadingState(document, true, format("Loading %s ...", document.filePath));
 
         auto worker = new Thread({
@@ -2182,7 +2274,5 @@ int runMainWindow(string[] args, ref CliOptions cli)
     }
 
     Main.run();
-    // Fallback persistence for quit paths that may bypass window destroy.
-    persistCurrentState(clearSavedWindowGeometryOnExit);
     return 0;
 }

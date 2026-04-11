@@ -68,3 +68,18 @@ void parseCliOptions(ref string[] args)
         argsArray.jsonPaths = args[1 .. $].dup;
     }
 }
+
+@("CLI options parsing")
+unittest
+{
+    string[] testArgs = [
+        "appname", "-q", "test query", "--case-sensitive", "file1.json",
+        "file2.json"
+    ];
+    parseCliOptions(testArgs);
+    assert(argsArray.filterOnStart == "test query");
+    assert(argsArray.caseSensitiveFilter == true);
+    assert(argsArray.jsonPaths.length == 2);
+    assert(argsArray.jsonPaths[0] == "file1.json");
+    assert(argsArray.jsonPaths[1] == "file2.json");
+}
