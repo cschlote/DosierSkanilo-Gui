@@ -9,8 +9,8 @@ import gtk.c.types : GtkWrapMode;
 import pango.PgFontDescription;
 
 import std.format : format;
-import std.string : indexOf, splitLines;
 
+import model.blobrow : BlobRow;
 import ui.documenttab : DocumentTab;
 
 /** Build a read-only single-line field for the details form. */
@@ -69,34 +69,30 @@ void setMetadataDetails(Expander expander, TextView view, string title, string d
     view.getBuffer().setText(hasDetails ? detailsText : "No details available.");
 }
 
-/** Populate the known-files table from one multiline detail string. */
-void setKnownFilesTable(DocumentTab document, string detailsText, size_t fileCount)
+/** Populate the known-files table from the current row, preferring original file specs. */
+void setKnownFilesTable(DocumentTab document, const(BlobRow) row)
 {
     document.detailFileNamesStore.clear();
-    document.detailFileNamesLabel.setText(format("Known file names (%s)", fileCount));
+    document.detailFileNamesLabel.setText(format("Known file names (%s)", row.fileCount));
 
-    enum string LAST_ACCESS_SEPARATOR = " | last access: ";
-
-    foreach (line; detailsText.splitLines())
+    if (row.sourceBlob is null || row.sourceBlob.fileSpecs.length == 0)
     {
-        if (line.length == 0)
+        return;
+    }
+
+    foreach (spec; row.sourceBlob.fileSpecs)
+    {
+        if (spec is null || spec.fileName.length == 0)
         {
             continue;
         }
 
-        auto separatorIndex = line.indexOf(LAST_ACCESS_SEPARATOR);
-        string fileName = line;
-        string lastAccess = "-";
-        if (separatorIndex >= 0)
-        {
-            fileName = line[0 .. separatorIndex];
-            lastAccess = line[separatorIndex + LAST_ACCESS_SEPARATOR.length .. $];
-        }
+        auto lastModified = spec.timeLastModified.length > 0 ? spec.timeLastModified : "-";
 
         TreeIter iter;
         document.detailFileNamesStore.append(iter);
         document.detailFileNamesStore.set(iter, [0, 1], [
-            fileName, lastAccess
+            spec.fileName, lastModified
         ]);
     }
 }

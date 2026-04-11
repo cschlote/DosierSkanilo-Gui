@@ -84,6 +84,6 @@ void configureKnownFilesColumns(TreeView treeView)
     }
 
     addColumn("Known file", 0, true);
-    addColumn("Last access", 1, false);
+    addColumn("Last modified", 1, false);
     treeView.setHeadersClickable(false);
 }

@@ -56,9 +56,9 @@ import std.base64 : Base64;
 import std.conv : to;
 import std.file : exists;
 import std.format : format;
-import std.path : baseName;
+import std.path : absolutePath, baseName;
 import std.stdio : writeln;
-import std.string : join, replace;
+import std.string : join;
 
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
@@ -131,16 +131,6 @@ string checksumSetStatus(const(BlobRow) row)
 string boolStatusIcon(bool value)
 {
     return value ? "✓" : "○";
-}
-
-/** Expand the stored filename summary into one line per known file name. */
-string stackedFileNames(string fileNamesSummary)
-{
-    if (fileNamesSummary.length == 0)
-    {
-        return "-";
-    }
-    return fileNamesSummary.replace(", ", "\n");
 }
 
 /** Summarize media subtype flags for the list view. */
@@ -439,12 +429,23 @@ int runMainWindow(string[] args, ref CliOptions cli)
         return -1;
     }
 
+    /** Normalize a path so duplicate startup entries map to the same document tab. */
+    string normalizeDocumentPath(string filePath)
+    {
+        if (filePath.length == 0)
+        {
+            return filePath;
+        }
+        return absolutePath(filePath);
+    }
+
     /** Find an already open document tab by JSON file path. */
     DocumentTab findDocumentByPath(string filePath)
     {
+        auto normalizedPath = normalizeDocumentPath(filePath);
         foreach (document; documents)
         {
-            if (document.filePath == filePath)
+            if (document.filePath == normalizedPath)
             {
                 return document;
             }
@@ -651,7 +652,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         setMetadataDetails(document.detailFileTypeExpander, document.detailFileTypeView, "File Type", "");
         setMetadataDetails(document.detailArchiveExpander, document.detailArchiveView, "Archive", "");
         setMetadataDetails(document.detailTorrentExpander, document.detailTorrentView, "Torrent", "");
-        setKnownFilesTable(document, "", 0);
+        setKnownFilesTable(document, BlobRow.init);
         document.btnCopySha1.setSensitive(false);
         document.btnCopyFile.setSensitive(false);
         document.btnCopyDetails.setSensitive(false);
@@ -1094,7 +1095,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
             return;
         }
 
-        auto rowsCopy = rows.dup;
+        auto rowsCopy = appender!(BlobRow[])();
+        rowsCopy.reserve(rows.length);
+        foreach (row; rows)
+        {
+            rowsCopy.put(row);
+        }
+        auto rowsCopyData = rowsCopy.data;
         MonoTime renderStarted = MonoTime.currTime;
         auto localRenderRequestId = ++document.renderRequestId;
         enum size_t RENDER_BATCH_SIZE = 500;
@@ -1116,14 +1123,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
 
             auto endIndex = nextIndex + RENDER_BATCH_SIZE;
-            if (endIndex > rowsCopy.length)
+            if (endIndex > rowsCopyData.length)
             {
-                endIndex = rowsCopy.length;
+                endIndex = rowsCopyData.length;
             }
 
             foreach (idx; nextIndex .. endIndex)
             {
-                auto row = rowsCopy[idx];
+                auto row = rowsCopyData[idx];
                 auto indexText = to!string(idx + 1);
                 auto sizeText = to!string(row.fileSize);
                 auto checksumsText = checksumSetStatus(row);
@@ -1153,14 +1160,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
 
             nextIndex = endIndex;
-            if (nextIndex < rowsCopy.length)
+            if (nextIndex < rowsCopyData.length)
             {
-                document.status.setText(format("Rendering rows: %s/%s ...", nextIndex, rowsCopy
-                        .length));
+                document.status.setText(format("Rendering rows: %s/%s ...", nextIndex, rowsCopyData.length));
                 return true;
             }
 
-            document.visibleRows = rowsCopy.dup;
+            document.visibleRows = rowsCopyData.dup;
             document.lastRenderElapsedMs = cast(long)(MonoTime.currTime - renderStarted)
                 .total!"msecs";
             updatePerfStatus(document);
@@ -1170,7 +1176,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 baseStatus = format(
                     "Showing %s/%s rows (duplicate digest groups: %s, filter: %s, case-sensitive: %s)",
-                    rowsCopy.length,
+                    rowsCopyData.length,
                     document.loadedRows.length,
                     document.loadedDuplicateGroups,
                     filterLabel,
@@ -1181,7 +1187,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 baseStatus = format(
                     "Showing %s/%s rows (duplicate digest groups: %s)",
-                    rowsCopy.length,
+                    rowsCopyData.length,
                     document.loadedRows.length,
                     document.loadedDuplicateGroups
                 );
@@ -1315,7 +1321,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 "\nRaw JSON Object\n\n" ~
                 "%s\n",
             idx,
-            row.fileNamesDetails.length > 0 ? row.fileNamesDetails : stackedFileNames(row.fileNamesSummary),
+            row.knownFileNamesText,
             row.fileSize,
             row.fileCount,
             row.hasVideo ? "yes" : "no",
@@ -1340,12 +1346,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.btnCopySha1.setSensitive(!isLoading && document.selectedSha1.length > 0);
         document.btnCopyFile.setSensitive(!isLoading && document.selectedFileName.length > 0);
         document.btnCopyDetails.setSensitive(!isLoading && document.selectedDetailsText.length > 0);
-        setKnownFilesTable(
-            document,
-            row.fileNamesDetails.length > 0 ? row.fileNamesDetails
-                : stackedFileNames(row.fileNamesSummary),
-            row.fileCount
-        );
+        setKnownFilesTable(document, row);
     };
 
     /** Copy a selected value into the system clipboard. */
@@ -1377,7 +1378,27 @@ int runMainWindow(string[] args, ref CliOptions cli)
     /** Continue automatic startup restoration of saved tabs one file at a time. */
     void loadNextPendingStartupPath()
     {
-        if (isLoading || pendingStartupPaths.length == 0)
+        if (isLoading)
+        {
+            return;
+        }
+
+        while (pendingStartupPaths.length > 0)
+        {
+            auto nextPath = pendingStartupPaths[0];
+            pendingStartupPaths = pendingStartupPaths[1 .. $];
+
+            if (findDocumentByPath(nextPath) !is null)
+            {
+                continue;
+            }
+
+            auto document = openDocumentFromPath(nextPath, false);
+            loadDocument(document);
+            return;
+        }
+
+        if (pendingStartupPaths.length == 0)
         {
             if (!isLoading && pendingStartupSelectIndex >= 0 && pendingStartupSelectIndex < notebook.getNPages())
             {
@@ -1385,21 +1406,17 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
             return;
         }
-
-        auto nextPath = pendingStartupPaths[0];
-        pendingStartupPaths = pendingStartupPaths[1 .. $];
-        auto document = openDocumentFromPath(nextPath, false);
-        loadDocument(document);
     }
 
     /** Open a document in a tab, selecting it optionally, without forcing a reload. */
     openDocumentFromPath = (string filePath, bool selectTab) {
-        auto document = findDocumentByPath(filePath);
+        auto normalizedPath = normalizeDocumentPath(filePath);
+        auto document = findDocumentByPath(normalizedPath);
         if (document is null)
         {
-            document = createDocumentTab(filePath);
+            document = createDocumentTab(normalizedPath);
             documents ~= document;
-            auto pageIndex = notebook.appendPage(document.pageRoot, baseName(filePath));
+            auto pageIndex = notebook.appendPage(document.pageRoot, baseName(normalizedPath));
             notebook.setTabReorderable(document.pageRoot, true);
             if (selectTab)
             {
@@ -2146,10 +2163,21 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     syncToolbarFromCurrentDocument();
 
-    if (prefRestoreOpenFiles && loadedState.openFilePaths.length > 0)
+    foreach (savedPath; loadedState.openFilePaths)
     {
-        pendingStartupPaths = loadedState.openFilePaths.dup;
-        pendingStartupSelectIndex = loadedState.activeTabIndex;
+        pendingStartupPaths ~= savedPath;
+    }
+    foreach (startupPath; cli.jsonPaths)
+    {
+        pendingStartupPaths ~= startupPath;
+    }
+
+    if (pendingStartupPaths.length > 0)
+    {
+        if (prefRestoreOpenFiles && loadedState.openFilePaths.length > 0)
+        {
+            pendingStartupSelectIndex = loadedState.activeTabIndex;
+        }
         loadNextPendingStartupPath();
     }
 

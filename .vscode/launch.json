@@ -15,9 +15,7 @@
       "name": "Launch DosierSkanilo GUI  (load local)",
       "program": "${workspaceFolder}/build/bin/dosierskanilo-gui",
       "args": [
-        "--json",
         "./.filescanner.json",
-        "--load"
       ],
       "cwd": "${workspaceFolder}"
     },
@@ -27,12 +25,7 @@
       "name": "Launch DosierSkanilo GUI  (auto-load + duplicates + filter)",
       "program": "${workspaceFolder}/build/bin/dosierskanilo-gui",
       "args": [
-        "--json",
-        "./.filescanner.json",
-        "--load",
-        "--duplicates",
-        "--query",
-        "sample"
+        "./.filescanner.json"
       ],
       "cwd": "${workspaceFolder}"
     },

@@ -140,10 +140,10 @@ BlobRow[] filterRowsByText(const(BlobRow)[] rows, string needle, bool caseSensit
 @("BlowRow equality tests")
 unittest {
     BlobRow[] rows = [
-        BlobRow(primaryFileName: "Alpha.mkv", fileSize: 100, sha1: "sha-001", fileCount: 1, fileNamesSummary: "Alpha.mkv", hasMedia: true, hasVideo: true, fileType: "video"),
-        BlobRow(primaryFileName: "beta.zip", fileSize: 200, sha1: "sha-002", fileCount: 1, fileNamesSummary: "beta.zip", hasArchive: true, fileType: "archive"),
-        BlobRow(primaryFileName: "gamma.txt", fileSize: 50, sha1: "dup-sha", fileCount: 1, fileNamesSummary: "gamma.txt", fileType: "text"),
-        BlobRow(primaryFileName: "delta.txt", fileSize: 50, sha1: "dup-sha", fileCount: 1, fileNamesSummary: "delta.txt", fileType: "text")
+        BlobRow(primaryFileName: "Alpha.mkv", fileSize: 100, sha1: "sha-001", fileCount: 1, hasMedia: true, hasVideo: true, fileType: "video"),
+        BlobRow(primaryFileName: "beta.zip", fileSize: 200, sha1: "sha-002", fileCount: 1, hasArchive: true, fileType: "archive"),
+        BlobRow(primaryFileName: "gamma.txt", fileSize: 50, sha1: "dup-sha", fileCount: 1, fileType: "text"),
+        BlobRow(primaryFileName: "delta.txt", fileSize: 50, sha1: "dup-sha", fileCount: 1, fileType: "text")
     ];
 
     auto filteredInsensitive = filterRowsByText(rows, "alpha");
@@ -160,10 +160,10 @@ unittest {
 @("BlobRow duplicate grouping tests")
 unittest {
     BlobRow[] rows = [
-        BlobRow(primaryFileName: "one.bin", fileSize: 1, sha1: "same", fileCount: 1, fileNamesSummary: "one.bin"),
-        BlobRow(primaryFileName: "two.bin", fileSize: 2, sha1: "same", fileCount: 1, fileNamesSummary: "two.bin"),
-        BlobRow(primaryFileName: "three.bin", fileSize: 3, sha1: "other", fileCount: 1, fileNamesSummary: "three.bin"),
-        BlobRow(primaryFileName: "empty.bin", fileSize: 4, fileCount: 1, fileNamesSummary: "empty.bin")
+        BlobRow(primaryFileName: "one.bin", fileSize: 1, sha1: "same", fileCount: 1),
+        BlobRow(primaryFileName: "two.bin", fileSize: 2, sha1: "same", fileCount: 1),
+        BlobRow(primaryFileName: "three.bin", fileSize: 3, sha1: "other", fileCount: 1),
+        BlobRow(primaryFileName: "empty.bin", fileSize: 4, fileCount: 1)
     ];
 
     assert(countDuplicateDigestGroups(rows) == 1);
@@ -177,7 +177,7 @@ unittest {
 @("BlobRow display text tests")
 unittest {
     BlobRow[] rows = [
-        BlobRow(primaryFileName: "alpha.bin", fileSize: 10, sha1: "sha-a", fileCount: 1, fileNamesSummary: "alpha.bin")
+        BlobRow(primaryFileName: "alpha.bin", fileSize: 10, sha1: "sha-a", fileCount: 1)
     ];
 
     auto report = rowsToDisplayText("sample.json", rows);

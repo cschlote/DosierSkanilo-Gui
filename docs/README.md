@@ -28,6 +28,11 @@ Or run stages individually:
 
 ## Debugging With Startup Arguments
 
-Launch the GUI and open a JSON file from `File` > `Open JSON`.
-The startup parser is currently used for filter and preference state, not for
-the full scanner workflow.
+Launch the GUI with positional JSON files to open them on startup, for example:
+
+```bash
+./build/bin/dosierskanilo-gui ./scan-a.json ./scan-b.json -v
+```
+
+The startup parser also accepts filter state and verbose logging, but the GUI
+still remains a read-only browser for precomputed scanner output.

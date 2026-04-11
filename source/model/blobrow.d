@@ -33,8 +33,7 @@ import cli.logging;
 struct BlobRow
 {
     /* Backlink to the NamedBinaryBlob source for this row, for fold-out details and metadata sections. */
-    //FIXME: NamedBinaryBlob sourceBlob; /// Original blob data for this row, for fold-out details
-    string sourceBlobDetails; /// Full source JSON object for exhaustive detail inspection.
+    NamedBinaryBlob sourceBlob; /// Original blob data for this row, for direct access to FileSpec and metadata fields.
 
     /* Basic blob properties. */
     string primaryFileName; /// Preferred display filename for a blob row.
@@ -43,8 +42,6 @@ struct BlobRow
     string sha1; /// SHA1 digest in base64, when available.
     string xxh64; /// xxHash64 digest in base64, when available.
     size_t fileCount; /// Number of known file references for this blob.
-    string fileNamesSummary; /// Concatenated file reference names for detail display.
-    string fileNamesDetails; /// Multiline file reference list including optional access timestamps.
 
     /* metadata presence flags and details for fold-out sections in the UI. */
     bool hasMedia; /// True when media metadata is present.
@@ -60,6 +57,18 @@ struct BlobRow
     string archiveDetails; /// Pretty-printed archive metadata for fold-out inspection.
     string torrentDetails; /// Pretty-printed torrent metadata for fold-out inspection.
     string fileType; /// Optional file type signature from scanner metadata.
+
+    /** Render the full source object details directly from the backing blob. */
+    @property string sourceBlobDetails()
+    {
+        return sourceBlob is null ? "" : blobDetails(sourceBlob);
+    }
+
+    /** Render the known file references as a multiline block directly from the backing blob. */
+    @property string knownFileNamesText()
+    {
+        return sourceBlob is null ? "" : fileSpecDetails(sourceBlob.fileSpecs);
+    }
 }
 
 /** Build a readable raw details block from the canonical library object.
@@ -114,7 +123,7 @@ private string blobDetails(NamedBinaryBlob blob)
  * Returns:
  *   Multiline string with one line per file reference, including timestamps when available
  */
-private string fileSpecDetails(FileSpec[] specs)
+private string fileSpecDetails(const(FileSpec)[] specs)
 {
     auto lines = appender!(string[])();
     foreach (spec; specs)
@@ -173,30 +182,14 @@ private BlobRow rowFromNamedBinaryBlob(NamedBinaryBlob blob)
     {
         return row;
     }
-    //FIXME: row.sourceBlob = blob;
-    row.sourceBlobDetails = blobDetails(blob);
-
-    auto specs = blob.fileSpecs.dup;
-    specs.sort!((a, b) => a.fileName < b.fileName);
-
-    auto names = appender!(string[])();
-    foreach (spec; specs)
-    {
-        if (spec is null || spec.fileName.length == 0)
-        {
-            continue;
-        }
-        names.put(spec.fileName);
-    }
+    row.sourceBlob = blob;
 
     row.primaryFileName = blob.getFirstFileName;
     row.fileSize = cast(ulong) blob.fileSize;
     row.md5 = blob.checkSums.md5sum_b64;
     row.sha1 = blob.checkSums.sha1sum_b64;
     row.xxh64 = blob.checkSums.xxh64sum_b64;
-    row.fileCount = names.data.length;
-    row.fileNamesSummary = names.data.join(", ");
-    row.fileNamesDetails = fileSpecDetails(specs);
+    row.fileCount = blob.fileSpecs.length;
 
     if (blob.mediaInfoSig !is null)
     {
@@ -260,7 +253,7 @@ unittest
     assert(row.hasVideo);
     assert(row.hasAudio);
     assert(!row.hasImage);
-    assert(row.fileNamesDetails.length > 0);
+    assert(row.sourceBlob !is null);
     assert(row.sourceBlobDetails.length > 0);
     assert(row.hasFileType);
     assert(!row.hasArchive);
@@ -289,7 +282,7 @@ unittest
     assert(!row.hasVideo);
     assert(!row.hasAudio);
     assert(!row.hasImage);
-    assert(row.fileNamesDetails.length > 0);
+    assert(row.sourceBlob !is null);
     assert(row.sourceBlobDetails.length > 0);
     assert(row.hasFileType);
     assert(row.hasArchive);
@@ -322,7 +315,7 @@ unittest
     assert(!row.hasVideo);
     assert(!row.hasAudio);
     assert(!row.hasImage);
-    assert(row.fileNamesDetails.length > 0);
+    assert(row.sourceBlob !is null);
     assert(row.sourceBlobDetails.length > 0);
     assert(row.hasTorrent);
     assert(row.torrentDetails.length > 0);

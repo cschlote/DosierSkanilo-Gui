@@ -15,9 +15,11 @@ import std.getopt : getopt, config;
 /** Parsed startup options from command-line arguments. */
 struct CliOptions
 {
+    string[] jsonPaths;
     string filterOnStart;
     bool caseSensitiveFilter;
     bool disableAutoFilter;
+    bool argVerboseOutputs;
     bool showHelp;
 }
 
@@ -30,7 +32,9 @@ output. Open files from the GUI File menu.
 
 Startup options:
 
+    <file.json>             Open JSON files on startup
     -q, --query <text>      Prefill the text filter
+    -v, --verbose           Enable verbose logging
             --case-sensitive    Use case-sensitive text matching
             --no-auto-filter    Disable auto-apply after load/reload
     -h, --help              Print this help and exit
@@ -52,8 +56,15 @@ void parseCliOptions(ref string[] args)
         args,
         config.passThrough,
         "q|query", &argsArray.filterOnStart,
+        "v|verbose", &argsArray.argVerboseOutputs,
         "case-sensitive", &argsArray.caseSensitiveFilter,
         "no-auto-filter", &argsArray.disableAutoFilter,
         "h|help", &argsArray.showHelp
     );
+
+    argsArray.jsonPaths.length = 0;
+    if (args.length > 1)
+    {
+        argsArray.jsonPaths = args[1 .. $].dup;
+    }
 }

@@ -49,13 +49,16 @@ Open JSON files from `File` > `Open JSON`.
 
 ## Startup Controls
 
+- positional `*.json` arguments: open JSON files on startup
 - `-q`, `--query <text>`: prefill the text filter
+- `-v`, `--verbose`: enable verbose logging
 - `--case-sensitive`: case-sensitive filter matching
 - `--no-auto-filter`: disable auto-apply filter after load
 - `-h`, `--help`: print CLI help and exit
 
 ## Current Features
 
+- open JSON files from the command line or the file chooser
 - load JSON index files for browsing and inspection
 - compatibility with wrapper and legacy JSON shapes
 - text filter by file name and SHA1
