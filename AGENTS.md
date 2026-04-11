@@ -6,5 +6,6 @@ Minimal guidelines for coding AI working in this repository:
 - Do not revert or reformat unrelated user changes.
 - Follow the existing D style and module structure unless the task requires a different approach.
 - Update `CHANGELOG.md` for user-visible behavior changes.
+- Release tags use a `v` prefix, for example `v0.5.0`; the version string follows the prefix.
 - Run the smallest relevant verification step after editing and report if verification could not be completed.
 - Flag assumptions, risks, or follow-up work clearly when they affect correctness.

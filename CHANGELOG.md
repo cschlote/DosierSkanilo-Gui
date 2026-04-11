@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## Release 0.5.0 - 2026-04-11
 
 - Removed the last cached blob detail string from `BlobRow`; the detail view now derives the raw text directly from the original `NamedBinaryBlob`.
 - Removed the cached known-file name strings from `BlobRow` and now render file names and last-modified timestamps directly from the original `FileSpec` data.
@@ -58,6 +58,8 @@ All notable changes to this project are documented in this file.
 - Added a menu bar with File, Edit, Preferences, and Help entries, keyboard accelerators, and an About dialog.
 - Added a Reload button and keyboard shortcuts for faster access to common actions.
 - Added a text search box to filter records by filename or checksum value.
+
+## Unreleased
 - Reorganized internal code into distinct model, IO, and view modules. No user-visible changes.
 - Added a mode to view only records that appear more than once in the loaded dataset.
 - Added the ability to open a scanner data file and browse all records in the main window.
