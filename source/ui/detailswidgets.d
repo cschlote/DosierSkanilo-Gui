@@ -2,13 +2,18 @@ module ui.detailswidgets;
 
 import gtk.Entry;
 import gtk.Expander;
+import gtk.Image;
 import gtk.Label;
 import gtk.TextView;
 import gtk.TreeIter;
 import gtk.c.types : GtkWrapMode;
+import gdkpixbuf.Pixbuf;
 import pango.PgFontDescription;
 
+import std.file : exists;
 import std.format : format;
+import std.path : buildNormalizedPath, dirName, extension, isAbsolute;
+import std.string : toLower;
 
 import model.blobrow : BlobRow;
 import ui.documenttab : DocumentTab;
@@ -94,5 +99,157 @@ void setKnownFilesTable(DocumentTab document, const(BlobRow) row)
         document.detailFileNamesStore.set(iter, [0, 1], [
             spec.fileName, lastModified
         ]);
+    }
+}
+
+/** Return the most likely filesystem path for preview loading. */
+private string resolvePreviewPath(DocumentTab document, const(BlobRow) row)
+{
+    if (row.sourceBlob is null)
+    {
+        return "";
+    }
+
+    string candidatePath;
+    foreach (spec; row.sourceBlob.fileSpecs)
+    {
+        if (spec is null || spec.fileName.length == 0)
+        {
+            continue;
+        }
+
+        candidatePath = spec.fileName;
+        break;
+    }
+
+    if (candidatePath.length == 0)
+    {
+        candidatePath = row.primaryFileName;
+    }
+
+    if (candidatePath.length == 0)
+    {
+        return "";
+    }
+
+    if (isAbsolute(candidatePath))
+    {
+        return candidatePath;
+    }
+
+    auto baseDirectory = dirName(document.filePath);
+    if (baseDirectory.length == 0)
+    {
+        return candidatePath;
+    }
+
+    return buildNormalizedPath(baseDirectory, candidatePath);
+}
+
+/** Decide whether the selected row is likely to represent an image file. */
+private bool isImagePreviewCandidate(const(BlobRow) row)
+{
+    if (row.hasImage)
+    {
+        return true;
+    }
+
+    auto name = row.primaryFileName.toLower;
+    if (name.length == 0)
+    {
+        return false;
+    }
+
+    auto ext = extension(name);
+    return ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif"
+        || ext == ".webp" || ext == ".bmp" || ext == ".tif" || ext == ".tiff"
+        || ext == ".svg";
+}
+
+private void updatePreviewImage(DocumentTab document)
+{
+    if (document.detailPreviewImage is null)
+    {
+        return;
+    }
+
+    if (document.selectedPreviewPath.length == 0 || !document.selectedPreviewIsImage)
+    {
+        document.detailPreviewImage.clear();
+        return;
+    }
+
+    auto previewHeight = 0;
+    if (document.detailPreviewScroll !is null)
+    {
+        previewHeight = document.detailPreviewScroll.getAllocatedHeight();
+    }
+
+    if (previewHeight <= 1)
+    {
+        previewHeight = 120;
+    }
+
+    try
+    {
+        auto pixbuf = new Pixbuf(document.selectedPreviewPath, -1, previewHeight, true);
+        document.detailPreviewImage.setFromPixbuf(pixbuf);
+    }
+    catch (Exception)
+    {
+        document.detailPreviewImage.clear();
+    }
+}
+
+/** Refresh the current preview image after a resize or layout change. */
+void refreshMediaPreview(DocumentTab document)
+{
+    updatePreviewImage(document);
+}
+
+void setMediaPreview(DocumentTab document, const(BlobRow) row)
+{
+    document.detailPreviewTitle.setText("Preview");
+
+    auto fileName = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
+    auto mediaSummary = row.mediaInfoDetails.length > 0 ? row.mediaInfoDetails : "No media metadata available.";
+    auto previewPath = resolvePreviewPath(document, row);
+    auto imagePreviewPath = previewPath.length > 0 && exists(previewPath) ? previewPath : "";
+
+    document.selectedPreviewPath = imagePreviewPath;
+    document.selectedPreviewIsImage = isImagePreviewCandidate(row) && imagePreviewPath.length > 0;
+
+    if (document.selectedPreviewIsImage)
+    {
+        document.detailPreviewSummary.setText(format("Image preview\n%s", fileName));
+        updatePreviewImage(document);
+        return;
+    }
+
+    document.detailPreviewImage.clear();
+
+    if (row.hasVideo)
+    {
+        document.detailPreviewSummary.setText(format("Video preview\n%s", mediaSummary));
+    }
+    else if (row.hasAudio)
+    {
+        document.detailPreviewSummary.setText(format("Audio preview\n%s", mediaSummary));
+    }
+    else if (row.hasImage)
+    {
+        document.detailPreviewSummary.setText(format("Image preview\n%s", mediaSummary));
+    }
+    else if (row.hasText)
+    {
+        document.detailPreviewSummary.setText(format("Text preview\n%s", mediaSummary));
+    }
+    else if (fileName != "-")
+    {
+        document.detailPreviewSummary.setText(format("No direct preview\n%s", fileName));
+    }
+    else
+    {
+        document.detailPreviewSummary.setText("No preview available.");
     }
 }

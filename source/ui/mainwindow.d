@@ -25,6 +25,7 @@ import gtk.Clipboard;
 import gtk.Dialog;
 import gtk.Entry;
 import gtk.Expander;
+import gtk.Image;
 import gtk.FileChooserDialog;
 import gtk.Grid;
 import gtk.Label;
@@ -69,7 +70,8 @@ import ui.appstate : AppState, loadAppState, saveAppState;
 import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL_FILE_TYPE, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_INDEX, COL_INDEX_SORT, COL_MEDIA_INFO, DocumentTab;
 import ui.detailswidgets : createDetailEntry, createDetailTextView,
     createDetailCaption, setDetailEntry, setEntryMonospace,
-    setMetadataStatusLabel, setMetadataDetails, setKnownFilesTable;
+    setMetadataStatusLabel, setMetadataDetails, setKnownFilesTable, setMediaPreview,
+    refreshMediaPreview;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : countDuplicateDigestGroups, filterRowsByText;
 import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, deserializeDataClassJsonFile;
@@ -794,6 +796,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.selectedSha1 = "";
         document.selectedFileName = "";
         document.selectedDetailsText = "";
+        document.selectedPreviewPath = "";
+        document.selectedPreviewIsImage = false;
         setDetailEntry(document.detailSha1HexEntry, "");
         setDetailEntry(document.detailMd5HexEntry, "");
         setDetailEntry(document.detailXxh64HexEntry, "");
@@ -816,6 +820,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
         setMetadataDetails(document.detailArchiveExpander, document.detailArchiveView, "Archive", "");
         setMetadataDetails(document.detailTorrentExpander, document.detailTorrentView, "Torrent", "");
         setKnownFilesTable(document, BlobRow.init);
+        if (document.detailPreviewImage !is null)
+        {
+            document.detailPreviewImage.clear();
+        }
+        if (document.detailPreviewSummary !is null)
+        {
+            document.detailPreviewSummary.setText("No preview available.");
+        }
         document.btnCopySha1.setSensitive(false);
         document.btnCopyFile.setSensitive(false);
         document.btnCopyDetails.setSensitive(false);
@@ -1061,6 +1073,39 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailArchiveExpander.setLabelWidget(document.detailArchiveStatus);
         document.detailTorrentExpander.setLabelWidget(document.detailTorrentStatus);
 
+        document.detailPreviewTitle = new Label("Preview");
+        document.detailPreviewTitle.setXalign(0.0f);
+        document.detailPreviewSummary = new Label("No preview available.");
+        document.detailPreviewSummary.setXalign(0.0f);
+        document.detailPreviewImage = new Image();
+        document.detailPreviewImage.setHexpand(true);
+        document.detailPreviewImage.setVexpand(true);
+
+        document.detailPreviewScroll = new ScrolledWindow(null, null);
+        document.detailPreviewScroll.setPolicy(GtkPolicyType.AUTOMATIC, GtkPolicyType.AUTOMATIC);
+        document.detailPreviewScroll.setMinContentWidth(120);
+        document.detailPreviewScroll.setMinContentHeight(120);
+        document.detailPreviewScroll.setPropagateNaturalWidth(false);
+        document.detailPreviewScroll.setPropagateNaturalHeight(false);
+        document.detailPreviewScroll.setHexpand(true);
+        document.detailPreviewScroll.setVexpand(true);
+        document.detailPreviewScroll.add(document.detailPreviewImage);
+
+        document.detailPreviewScroll.addOnSizeAllocate((allocation, Widget _) {
+            if (document.selectedPreviewPath.length == 0 || !document.selectedPreviewIsImage)
+            {
+                return;
+            }
+            refreshMediaPreview(document);
+        });
+
+        auto previewPane = new Box(Orientation.VERTICAL, 4);
+        previewPane.setHexpand(true);
+        previewPane.setVexpand(true);
+        previewPane.packStart(document.detailPreviewTitle, false, false, 0);
+        previewPane.packStart(document.detailPreviewScroll, true, true, 0);
+        previewPane.packStart(document.detailPreviewSummary, false, false, 0);
+
         auto checksumGrid = new Grid();
         checksumGrid.setColumnSpacing(10);
         checksumGrid.setRowSpacing(6);
@@ -1136,10 +1181,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
         detailsBody.packStart(document.detailFileNamesLabel, false, false, 0);
         detailsBody.packStart(detailsScroll, true, true, 0);
 
+        auto detailsContent = new Paned(Orientation.HORIZONTAL);
+        detailsContent.pack1(detailsBody, true, false);
+        detailsContent.pack2(previewPane, true, false);
+
         auto detailsPane = new Box(Orientation.VERTICAL, 6);
         detailsPane.setValign(GtkAlign.START);
         detailsPane.packStart(detailsActions, false, false, 0);
-        detailsPane.packStart(detailsBody, true, true, 0);
+        detailsPane.packStart(detailsContent, true, true, 0);
 
         document.split = new Paned(Orientation.HORIZONTAL);
         document.split.pack1(scroll, false, true);
@@ -1536,6 +1585,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 .archiveDetails);
         setMetadataDetails(document.detailTorrentExpander, document.detailTorrentView, "Torrent", row
                 .torrentDetails);
+        setMediaPreview(document, row);
         auto detailsText = format(
             "Selected Row Details\n\n" ~
                 "Index: %s\n" ~

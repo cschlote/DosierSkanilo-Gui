@@ -4,10 +4,12 @@ import gtk.Box;
 import gtk.Button;
 import gtk.Entry;
 import gtk.Expander;
+import gtk.Image;
 import gtk.Label;
 import gtk.ListStore;
 import gtk.Paned;
 import gtk.TextView;
+import gtk.ScrolledWindow;
 import gtk.TreeView;
 
 import model.blobrow : BlobRow;
@@ -48,6 +50,8 @@ class DocumentTab
     Entry detailXxh64HexEntry;
     Label detailChecksumStatus;
     Label detailFileNamesLabel;
+    Label detailPreviewTitle;
+    Label detailPreviewSummary;
     Label detailMediaInfoStatus;
     Label detailFileTypeStatus;
     Label detailArchiveStatus;
@@ -57,6 +61,8 @@ class DocumentTab
     Expander detailFileTypeExpander;
     Expander detailArchiveExpander;
     Expander detailTorrentExpander;
+    Image detailPreviewImage;
+    ScrolledWindow detailPreviewScroll;
     TextView detailMediaInfoView;
     TextView detailFileTypeView;
     TextView detailArchiveView;
@@ -70,6 +76,8 @@ class DocumentTab
     Label status;
     Label perfStatus;
     Label fileMetaStatus;
+    string selectedPreviewPath;
+    bool selectedPreviewIsImage;
 
     BlobRow[] loadedRows;
     BlobRow[] visibleRows;
