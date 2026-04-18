@@ -19,6 +19,7 @@ struct AppState
     int splitPositionVertical = 420;
     int splitPositionPreview = 320;
     int previewScaleMode;
+    string externalOpenProgram = "xdg-open";
 
     bool hasWindowGeometry;
     int windowX;
@@ -200,6 +201,13 @@ AppState loadAppState()
         {
             state.previewScaleMode = jsonToInt(*value, state.previewScaleMode);
         }
+        if (auto value = "externalOpenProgram" in root)
+        {
+            if (value.type == JSONType.string)
+            {
+                state.externalOpenProgram = value.str;
+            }
+        }
 
         if (auto value = "hasWindowGeometry" in root)
         {
@@ -276,6 +284,7 @@ void saveAppState(const(AppState) state)
             "  \"splitPositionVertical\": %s,\n" ~
             "  \"splitPositionPreview\": %s,\n" ~
             "  \"previewScaleMode\": %s,\n" ~
+            "  \"externalOpenProgram\": \"%s\",\n" ~
             "  \"hasWindowGeometry\": %s,\n" ~
             "  \"windowX\": %s,\n" ~
             "  \"windowY\": %s,\n" ~
@@ -294,6 +303,7 @@ void saveAppState(const(AppState) state)
         state.splitPositionVertical,
         state.splitPositionPreview,
         state.previewScaleMode,
+        jsonEscapeString(state.externalOpenProgram),
         state.hasWindowGeometry ? "true" : "false",
         state.windowX,
         state.windowY,

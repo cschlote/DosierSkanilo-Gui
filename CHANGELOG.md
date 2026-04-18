@@ -4,6 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Added a Preferences field for the external opener program and wired known-file double-clicks to open the selected file with that program.
 - Added icon-based preview scaling modes above the image preview, with Contain as the default and the selected mode persisted across exits.
 - Kept the preview caption below the image area so the available space is controlled by the chosen scaling mode instead of a manual splitter.
 - Added a right-hand preview pane next to the metadata expanders so the selected row can show image previews or media summaries with a fixed-width preview area.

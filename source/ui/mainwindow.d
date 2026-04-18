@@ -47,7 +47,9 @@ import gtk.ToggleButton;
 import gtk.TreeIter;
 import gtk.TreeModelIF;
 import gtk.TreeSelection;
+import gtk.TreePath;
 import gtk.TreeView;
+import gtk.TreeViewColumn;
 import gtk.Widget;
 import gtk.Window;
 import gtk.c.types : GtkAlign, GtkIconSize, GtkReliefStyle, GtkTreeViewColumnSizing;
@@ -60,7 +62,8 @@ import std.base64 : Base64;
 import std.conv : to;
 import std.file : exists;
 import std.format : format;
-import std.path : absolutePath, baseName;
+import std.path : absolutePath, baseName, buildNormalizedPath, dirName, isAbsolute;
+import std.process : Config, ProcessException, spawnProcess;
 import std.stdio : writeln;
 import std.string : join;
 
@@ -495,6 +498,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     bool prefCaseSensitiveFilter = loadedState.prefCaseSensitiveFilter;
     bool prefDetailsBelow = loadedState.prefDetailsBelow;
     bool prefRestoreOpenFiles = loadedState.prefRestoreOpenFiles;
+    string externalOpenProgram = loadedState.externalOpenProgram.length > 0 ? loadedState.externalOpenProgram : "xdg-open";
     bool clearSavedWindowGeometryOnExit;
     bool allowRuntimeStatePersistence = !loadedState.hasWindowSize;
     bool isSyncingToolbarState;
@@ -618,6 +622,54 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
         }
         return null;
+    }
+
+    /** Resolve a known-file entry path relative to the owning JSON file. */
+    string resolveKnownFilePath(DocumentTab document, string knownFileName)
+    {
+        if (knownFileName.length == 0)
+        {
+            return "";
+        }
+
+        if (isAbsolute(knownFileName))
+        {
+            return knownFileName;
+        }
+
+        auto baseDirectory = dirName(document.filePath);
+        if (baseDirectory.length == 0)
+        {
+            return knownFileName;
+        }
+
+        return buildNormalizedPath(baseDirectory, knownFileName);
+    }
+
+    /** Launch one known file in the user-configured external program. */
+    void openKnownFileExternally(DocumentTab document, string knownFileName)
+    {
+        auto resolvedPath = resolveKnownFilePath(document, knownFileName);
+        if (resolvedPath.length == 0)
+        {
+            return;
+        }
+
+        if (!exists(resolvedPath))
+        {
+            document.status.setText(format("Known file not found: %s", resolvedPath));
+            return;
+        }
+
+        auto program = externalOpenProgram.length > 0 ? externalOpenProgram : "xdg-open";
+        try
+        {
+            spawnProcess([program, resolvedPath], null, Config.detached);
+        }
+        catch (ProcessException ex)
+        {
+            document.status.setText(format("Failed to launch %s: %s", program, ex.msg));
+        }
     }
 
     /** Refresh toolbar sensitivity from the global busy state and active tab presence. */
@@ -1287,6 +1339,23 @@ int runMainWindow(string[] args, ref CliOptions cli)
         ]);
         document.detailFileNamesView = new TreeView(document.detailFileNamesStore);
         configureKnownFilesColumns(document.detailFileNamesView);
+        document.detailFileNamesView.addOnRowActivated((TreePath path, TreeViewColumn column, TreeView treeView) {
+            TreeModelIF model;
+            TreeIter iter;
+            auto selection = document.detailFileNamesView.getSelection();
+            if (!selection.getSelected(model, iter))
+            {
+                return;
+            }
+
+            auto knownFileName = model.getValueString(iter, 0);
+            if (knownFileName.length == 0)
+            {
+                return;
+            }
+
+            openKnownFileExternally(document, knownFileName);
+        });
 
         document.detailFileNamesLabel = createDetailCaption("Known file names (0)");
 
@@ -1402,6 +1471,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         state.prefCaseSensitiveFilter = prefCaseSensitiveFilter;
         state.prefDetailsBelow = prefDetailsBelow;
         state.prefRestoreOpenFiles = prefRestoreOpenFiles;
+        state.externalOpenProgram = externalOpenProgram;
         state.previewScaleMode = cast(int) previewScaleMode;
         state.splitPositionPreview = splitPositionPreview;
 
@@ -2299,6 +2369,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto optRestoreOpenFiles = new CheckButton("Reopen previously open data files on startup");
         optRestoreOpenFiles.setActive(prefRestoreOpenFiles);
 
+        auto lblExternalOpenProgram = new Label("External opener program");
+        lblExternalOpenProgram.setXalign(0.0f);
+        auto entryExternalOpenProgram = new Entry();
+        entryExternalOpenProgram.setText(externalOpenProgram);
+        entryExternalOpenProgram.setPlaceholderText("xdg-open");
+
         auto optClearWindowGeometry = new CheckButton("Delete saved window positions on save");
         optClearWindowGeometry.setActive(false);
 
@@ -2306,6 +2382,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         prefsBox.packStart(optCaseSensitive, false, false, 0);
         prefsBox.packStart(optDetailsBelow, false, false, 0);
         prefsBox.packStart(optRestoreOpenFiles, false, false, 0);
+        prefsBox.packStart(lblExternalOpenProgram, false, false, 0);
+        prefsBox.packStart(entryExternalOpenProgram, false, false, 0);
         prefsBox.packStart(optClearWindowGeometry, false, false, 0);
         contentArea.packStart(prefsBox, true, true, 0);
 
@@ -2323,6 +2401,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 applyDetailsPanePreferenceToAll();
             }
+            auto newExternalOpenProgram = entryExternalOpenProgram.getText();
+            externalOpenProgram = newExternalOpenProgram.length > 0 ? newExternalOpenProgram : "xdg-open";
             auto clearGeometry = optClearWindowGeometry.getActive();
             clearSavedWindowGeometryOnExit = clearGeometry;
             persistCurrentState(clearGeometry);
@@ -2365,6 +2445,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto dialog = new AboutDialog();
         dialog.setTransientFor(window);
         dialog.setModal(true);
+        dialog.setLogoIconName("help-about");
         dialog.setProgramName("DosierSkanilo GUI");
         dialog.setVersion("0.1.0");
         dialog.setComments("Desktop frontend for DosierSkanilo.");
