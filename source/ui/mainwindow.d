@@ -19,10 +19,12 @@ import gtk.AboutDialog;
 import gtk.AccelGroup;
 import gtk.Box;
 import gtk.Button;
+import gtk.AspectFrame;
 import gtk.c.types : ButtonsType, DialogFlags, FileChooserAction, MessageType, Orientation, ResponseType;
 import gtk.CheckButton;
 import gtk.Clipboard;
 import gtk.Dialog;
+import gtk.DrawingArea;
 import gtk.Entry;
 import gtk.Expander;
 import gtk.Image;
@@ -52,7 +54,7 @@ import gtk.TreeView;
 import gtk.TreeViewColumn;
 import gtk.Widget;
 import gtk.Window;
-import gtk.c.types : GtkAlign, GtkIconSize, GtkReliefStyle, GtkTreeViewColumnSizing;
+import gtk.c.types : GtkAlign, GtkIconSize, GtkReliefStyle, GtkShadowType, GtkTreeViewColumnSizing;
 
 import core.thread : Thread;
 import core.time : MonoTime;
@@ -66,6 +68,7 @@ import std.path : absolutePath, baseName, buildNormalizedPath, dirName, isAbsolu
 import std.process : Config, ProcessException, spawnProcess;
 import std.stdio : writeln;
 import std.string : join;
+import gstreamer.GStreamer : GStreamer;
 
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
@@ -74,7 +77,7 @@ import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL
 import ui.detailswidgets : createDetailEntry, createDetailTextView,
     createDetailCaption, setDetailEntry, setEntryMonospace,
     setMetadataStatusLabel, setMetadataDetails, setKnownFilesTable, setMediaPreview,
-    refreshMediaPreview;
+    refreshMediaPreview, syncVideoPreviewWindow;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : countDuplicateDigestGroups, filterRowsByText;
 import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, deserializeDataClassJsonFile;
@@ -414,6 +417,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 {
     auto loadedState = loadAppState();
 
+    GStreamer.init(args);
     Main.init(args);
 
     // Construct the main window and shared toolbar widgets, which will be manipulated and re-parented by document tabs.
@@ -905,6 +909,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.selectedDetailsText = "";
         document.selectedPreviewPath = "";
         document.selectedPreviewIsImage = false;
+        document.selectedPreviewIsVideo = false;
         setDetailEntry(document.detailSha1HexEntry, "");
         setDetailEntry(document.detailMd5HexEntry, "");
         setDetailEntry(document.detailXxh64HexEntry, "");
@@ -1191,6 +1196,22 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailPreviewImage.setHalign(GtkAlign.CENTER);
         document.detailPreviewImage.setValign(GtkAlign.CENTER);
 
+        document.detailPreviewVideoArea = new DrawingArea();
+        document.detailPreviewVideoArea.setDoubleBuffered(false);
+        document.detailPreviewVideoArea.setSizeRequest(640, 360);
+        document.detailPreviewVideoArea.setHexpand(true);
+        document.detailPreviewVideoArea.setVexpand(true);
+        document.detailPreviewVideoArea.setHalign(GtkAlign.CENTER);
+        document.detailPreviewVideoArea.setValign(GtkAlign.CENTER);
+
+        document.detailPreviewVideoFrame = new AspectFrame("", 0.5f, 0.5f, 16.0 / 9.0, false);
+        document.detailPreviewVideoFrame.setShadowType(GtkShadowType.NONE);
+        document.detailPreviewVideoFrame.setSizeRequest(640, 360);
+        document.detailPreviewVideoFrame.setHexpand(true);
+        document.detailPreviewVideoFrame.setVexpand(true);
+        document.detailPreviewVideoFrame.add(document.detailPreviewVideoArea);
+        document.detailPreviewVideoFrame.setVisible(false);
+
         document.detailPreviewScroll = new ScrolledWindow(null, null);
         document.detailPreviewScroll.setPolicy(GtkPolicyType.AUTOMATIC, GtkPolicyType.AUTOMATIC);
         document.detailPreviewScroll.setMinContentWidth(120);
@@ -1207,6 +1228,21 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 return;
             }
             refreshMediaPreview(document);
+        });
+
+        document.detailPreviewVideoArea.addOnRealize((Widget _) {
+            syncVideoPreviewWindow(document);
+            if (document.selectedPreviewIsVideo)
+            {
+                refreshMediaPreview(document);
+            }
+        });
+
+        document.detailPreviewVideoArea.addOnSizeAllocate((allocation, Widget _) {
+            if (document.selectedPreviewIsVideo)
+            {
+                syncVideoPreviewWindow(document, allocation.width, allocation.height);
+            }
         });
 
         auto previewPane = new Box(Orientation.VERTICAL, 4);
@@ -1287,7 +1323,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
         previewControls.packStart(document.detailPreviewCenterButton, false, false, 0);
         previewControls.packStart(document.detailPreviewCoverButton, false, false, 0);
         previewPane.packStart(previewControls, false, false, 0);
-        previewPane.packStart(document.detailPreviewScroll, true, true, 0);
+        auto previewContent = new Box(Orientation.VERTICAL, 0);
+        previewContent.setHexpand(true);
+        previewContent.setVexpand(true);
+        previewContent.packStart(document.detailPreviewScroll, true, true, 0);
+        previewContent.packStart(document.detailPreviewVideoFrame, true, true, 0);
+        previewPane.packStart(previewContent, true, true, 0);
         previewPane.packStart(document.detailPreviewSummary, false, false, 0);
         syncPreviewToolbarFromDocument(document);
 

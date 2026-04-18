@@ -2,6 +2,7 @@ module ui.detailswidgets;
 
 import gtk.Entry;
 import gtk.Expander;
+import gtk.DrawingArea;
 import gtk.Image;
 import gtk.Label;
 import gtk.TextView;
@@ -9,12 +10,23 @@ import gtk.TreeIter;
 import gtk.c.types : GtkWrapMode;
 import gdkpixbuf.Pixbuf;
 import gdkpixbuf.c.types : GdkInterpType;
+import gdk.X11 : getXid;
+import gobject.Value;
+import gstreamer.Bus;
+import gstreamer.Element;
+import gstreamer.ElementFactory;
+import gstreamer.GStreamer;
+import gstreamer.Message;
+import gstreamer.Structure;
+import gstreamer.c.types : GstBusSyncReply, GstMessageType, GstState;
+import gstinterfaces.VideoOverlay;
 import pango.PgFontDescription;
 
 import std.file : exists;
 import std.format : format;
-import std.path : buildNormalizedPath, dirName, extension, isAbsolute;
-import std.string : toLower;
+import std.path : absolutePath, buildNormalizedPath, dirName, extension, isAbsolute;
+import std.string : startsWith, toLower;
+import std.uri : encode;
 
 import model.blobrow : BlobRow;
 import ui.documenttab : DocumentTab, PreviewScaleMode;
@@ -167,6 +179,173 @@ private bool isImagePreviewCandidate(const(BlobRow) row)
         || ext == ".svg";
 }
 
+/** Decide whether the selected row should use the embedded video preview. */
+private bool isVideoPreviewCandidate(const(BlobRow) row)
+{
+    if (row.hasVideo)
+    {
+        return true;
+    }
+
+    auto name = row.primaryFileName.toLower;
+    if (name.length == 0)
+    {
+        return false;
+    }
+
+    auto ext = extension(name);
+    return ext == ".mp4" || ext == ".m4v" || ext == ".mkv" || ext == ".mov"
+        || ext == ".avi" || ext == ".webm" || ext == ".ogv" || ext == ".mpg"
+        || ext == ".mpeg" || ext == ".ts" || ext == ".3gp" || ext == ".wmv"
+        || ext == ".flv";
+}
+
+/** Convert a local filesystem path into a file URI. */
+private string toFileUri(string path)
+{
+    if (path.length == 0)
+    {
+        return "";
+    }
+
+    if (path.startsWith("file://") || path.startsWith("http://") || path.startsWith("https://"))
+    {
+        return path;
+    }
+
+    return "file://" ~ encode(absolutePath(path));
+}
+
+/** Stop the embedded video player. */
+private void stopVideoPreview(DocumentTab document)
+{
+    if (document.previewVideoPlayer !is null)
+    {
+        document.previewVideoPlayer.setState(GstState.NULL);
+    }
+}
+
+/** Attach the embedded video sink to the realized preview widget. */
+bool syncVideoPreviewWindow(DocumentTab document, int renderWidth = -1, int renderHeight = -1)
+{
+    if (document is null || document.detailPreviewVideoArea is null || document.previewVideoSink is null)
+    {
+        return false;
+    }
+
+    auto window = document.detailPreviewVideoArea.getWindow();
+    if (window is null || !window.ensureNative())
+    {
+        return false;
+    }
+
+    if (document.previewVideoOverlay is null)
+    {
+        document.previewVideoOverlay = new VideoOverlay(document.previewVideoSink);
+        document.previewVideoOverlay.handleEvents(false);
+    }
+
+    document.previewVideoOverlay.setWindowHandle(getXid(window));
+    if (renderWidth <= 1)
+    {
+        renderWidth = 640;
+    }
+    if (renderHeight <= 1)
+    {
+        renderHeight = 360;
+    }
+
+    document.previewVideoOverlay.setRenderRectangle(0, 0, renderWidth, renderHeight);
+    document.previewVideoOverlay.expose();
+    return true;
+}
+
+/** Create the playbin-backed preview player on demand. */
+private bool ensureVideoPreviewPlayer(DocumentTab document)
+{
+    if (document.previewVideoPlayer !is null && document.previewVideoSink !is null)
+    {
+        return true;
+    }
+
+    auto player = ElementFactory.make("playbin", "preview-playbin");
+    auto sink = ElementFactory.make("ximagesink", "preview-videosink");
+    if (player is null || sink is null)
+    {
+        return false;
+    }
+
+    player.setProperty("video-sink", new Value(sink));
+    auto bus = player.getBus();
+    bus.setSyncHandler((Message msg) {
+        if (msg.type() != GstMessageType.ELEMENT)
+        {
+            return GstBusSyncReply.PASS;
+        }
+
+        auto structure = msg.getStructure();
+        if (structure is null || !structure.hasName("prepare-window-handle"))
+        {
+            return GstBusSyncReply.PASS;
+        }
+
+        if (syncVideoPreviewWindow(document))
+        {
+            return GstBusSyncReply.DROP;
+        }
+
+        return GstBusSyncReply.PASS;
+    });
+
+    document.previewVideoPlayer = player;
+    document.previewVideoSink = sink;
+    document.previewVideoOverlay = new VideoOverlay(sink);
+    document.previewVideoOverlay.handleEvents(false);
+    return true;
+}
+
+/** Start or restart the embedded video preview for the current selection. */
+private void updatePreviewVideo(DocumentTab document)
+{
+    if (document.detailPreviewVideoFrame is null || document.detailPreviewVideoArea is null)
+    {
+        return;
+    }
+
+    if (document.selectedPreviewPath.length == 0 || !document.selectedPreviewIsVideo)
+    {
+        stopVideoPreview(document);
+        document.detailPreviewVideoFrame.setVisible(false);
+        return;
+    }
+
+    if (!ensureVideoPreviewPlayer(document))
+    {
+        document.detailPreviewSummary.setText(format("Video preview\n%s", document.selectedFileName.length > 0 ? document.selectedFileName : document.selectedPreviewPath));
+        document.detailPreviewVideoFrame.setVisible(false);
+        return;
+    }
+
+    auto uri = toFileUri(document.selectedPreviewPath);
+    if (uri.length == 0)
+    {
+        stopVideoPreview(document);
+        document.detailPreviewVideoFrame.setVisible(false);
+        return;
+    }
+
+    document.detailPreviewVideoFrame.setVisible(true);
+    document.previewVideoPlayer.setState(GstState.NULL);
+    document.previewVideoPlayer.setProperty("uri", new Value(uri));
+    if (!syncVideoPreviewWindow(document))
+    {
+        document.previewVideoPlayer.setState(GstState.READY);
+        return;
+    }
+
+    document.previewVideoPlayer.setState(GstState.PLAYING);
+}
+
 private void updatePreviewImage(DocumentTab document)
 {
     if (document.detailPreviewImage is null)
@@ -267,7 +446,38 @@ private void updatePreviewImage(DocumentTab document)
 /** Refresh the current preview image after a resize or layout change. */
 void refreshMediaPreview(DocumentTab document)
 {
-    updatePreviewImage(document);
+    if (document.selectedPreviewIsVideo)
+    {
+        if (document.detailPreviewScroll !is null)
+        {
+            document.detailPreviewScroll.setVisible(false);
+        }
+        updatePreviewVideo(document);
+        document.detailPreviewImage.clear();
+        return;
+    }
+
+    stopVideoPreview(document);
+    if (document.detailPreviewVideoFrame !is null)
+    {
+        document.detailPreviewVideoFrame.setVisible(false);
+    }
+
+    if (document.selectedPreviewIsImage)
+    {
+        if (document.detailPreviewScroll !is null)
+        {
+            document.detailPreviewScroll.setVisible(true);
+        }
+        updatePreviewImage(document);
+        return;
+    }
+
+    if (document.detailPreviewScroll !is null)
+    {
+        document.detailPreviewScroll.setVisible(false);
+    }
+    document.detailPreviewImage.clear();
 }
 
 void setMediaPreview(DocumentTab document, const(BlobRow) row)
@@ -281,38 +491,45 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
 
     document.selectedPreviewPath = imagePreviewPath;
     document.selectedPreviewIsImage = isImagePreviewCandidate(row) && imagePreviewPath.length > 0;
+    document.selectedPreviewIsVideo = !document.selectedPreviewIsImage && isVideoPreviewCandidate(row) && imagePreviewPath.length > 0;
 
     if (document.selectedPreviewIsImage)
     {
         document.detailPreviewSummary.setText(format("Image preview\n%s", fileName));
-        updatePreviewImage(document);
-        return;
     }
-
-    document.detailPreviewImage.clear();
-
-    if (row.hasVideo)
+    else if (document.selectedPreviewIsVideo)
     {
         document.detailPreviewSummary.setText(format("Video preview\n%s", mediaSummary));
     }
-    else if (row.hasAudio)
-    {
-        document.detailPreviewSummary.setText(format("Audio preview\n%s", mediaSummary));
-    }
-    else if (row.hasImage)
-    {
-        document.detailPreviewSummary.setText(format("Image preview\n%s", mediaSummary));
-    }
-    else if (row.hasText)
-    {
-        document.detailPreviewSummary.setText(format("Text preview\n%s", mediaSummary));
-    }
-    else if (fileName != "-")
-    {
-        document.detailPreviewSummary.setText(format("No direct preview\n%s", fileName));
-    }
     else
     {
-        document.detailPreviewSummary.setText("No preview available.");
+        document.detailPreviewImage.clear();
+
+        if (row.hasVideo)
+        {
+            document.detailPreviewSummary.setText(format("Video preview\n%s", mediaSummary));
+        }
+        else if (row.hasAudio)
+        {
+            document.detailPreviewSummary.setText(format("Audio preview\n%s", mediaSummary));
+        }
+        else if (row.hasImage)
+        {
+            document.detailPreviewSummary.setText(format("Image preview\n%s", mediaSummary));
+        }
+        else if (row.hasText)
+        {
+            document.detailPreviewSummary.setText(format("Text preview\n%s", mediaSummary));
+        }
+        else if (fileName != "-")
+        {
+            document.detailPreviewSummary.setText(format("No direct preview\n%s", fileName));
+        }
+        else
+        {
+            document.detailPreviewSummary.setText("No preview available.");
+        }
     }
+
+    refreshMediaPreview(document);
 }

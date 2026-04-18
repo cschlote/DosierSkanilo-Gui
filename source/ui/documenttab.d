@@ -1,7 +1,9 @@
 module ui.documenttab;
 
+import gtk.AspectFrame;
 import gtk.Box;
 import gtk.Button;
+import gtk.DrawingArea;
 import gtk.Entry;
 import gtk.Expander;
 import gtk.Image;
@@ -13,6 +15,8 @@ import gtk.ScrolledWindow;
 import gtk.TreeView;
 import gtk.ToggleButton;
 
+import gstreamer.Element;
+import gstinterfaces.VideoOverlay;
 import model.blobrow : BlobRow;
 
 enum int COL_INDEX = 0;
@@ -88,6 +92,8 @@ class DocumentTab
     ToggleButton detailPreviewCenterButton;
     ToggleButton detailPreviewCoverButton;
     Image detailPreviewImage;
+    AspectFrame detailPreviewVideoFrame;
+    DrawingArea detailPreviewVideoArea;
     ScrolledWindow detailPreviewScroll;
     TextView detailMediaInfoView;
     TextView detailFileTypeView;
@@ -95,6 +101,9 @@ class DocumentTab
     TextView detailTorrentView;
     ListStore detailFileNamesStore;
     TreeView detailFileNamesView;
+    Element previewVideoPlayer;
+    Element previewVideoSink;
+    VideoOverlay previewVideoOverlay;
     Button btnCopySha1;
     Button btnCopyFile;
     Button btnCopyDetails;
@@ -119,6 +128,7 @@ class DocumentTab
     int loadedDataVersion = -1;
     string loadedRootShape = "-";
     string loadedRootKeysSummary = "-";
+    bool selectedPreviewIsVideo;
 
     ulong loadRequestId;
     ulong filterRequestId;
