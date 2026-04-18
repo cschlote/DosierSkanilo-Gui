@@ -20,6 +20,8 @@ struct AppState
     int splitPositionPreview = 320;
     int previewScaleMode;
     string externalOpenProgram = "xdg-open";
+    bool previewVideoAutostart;
+    double previewVideoVolume = 0.5;
 
     bool hasWindowGeometry;
     int windowX;
@@ -208,6 +210,17 @@ AppState loadAppState()
                 state.externalOpenProgram = value.str;
             }
         }
+        if (auto value = "previewVideoAutostart" in root)
+        {
+            state.previewVideoAutostart = jsonToBool(*value, state.previewVideoAutostart);
+        }
+        if (auto value = "previewVideoVolume" in root)
+        {
+            if (value.type == JSONType.float_ || value.type == JSONType.integer || value.type == JSONType.uinteger)
+            {
+                state.previewVideoVolume = value.type == JSONType.float_ ? value.floating : cast(double) jsonToInt(*value, cast(int) (state.previewVideoVolume * 1000)) / 1000.0;
+            }
+        }
 
         if (auto value = "hasWindowGeometry" in root)
         {
@@ -285,6 +298,8 @@ void saveAppState(const(AppState) state)
             "  \"splitPositionPreview\": %s,\n" ~
             "  \"previewScaleMode\": %s,\n" ~
             "  \"externalOpenProgram\": \"%s\",\n" ~
+            "  \"previewVideoAutostart\": %s,\n" ~
+            "  \"previewVideoVolume\": %s,\n" ~
             "  \"hasWindowGeometry\": %s,\n" ~
             "  \"windowX\": %s,\n" ~
             "  \"windowY\": %s,\n" ~
@@ -304,6 +319,8 @@ void saveAppState(const(AppState) state)
         state.splitPositionPreview,
         state.previewScaleMode,
         jsonEscapeString(state.externalOpenProgram),
+        state.previewVideoAutostart ? "true" : "false",
+        state.previewVideoVolume,
         state.hasWindowGeometry ? "true" : "false",
         state.windowX,
         state.windowY,

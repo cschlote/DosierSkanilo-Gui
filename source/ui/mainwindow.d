@@ -40,6 +40,8 @@ import gtk.MessageDialog;
 import gtk.Notebook;
 import gtk.Paned;
 import gtk.ProgressBar;
+import gtk.Range;
+import gtk.Scale;
 import gtk.ScrolledWindow;
 import gtk.Separator;
 import gtk.SeparatorMenuItem;
@@ -69,6 +71,7 @@ import std.process : Config, ProcessException, spawnProcess;
 import std.stdio : writeln;
 import std.string : join;
 import gstreamer.GStreamer : GStreamer;
+import gstreamer.c.types : GstState, GstStateChangeReturn;
 
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
@@ -77,7 +80,9 @@ import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL
 import ui.detailswidgets : createDetailEntry, createDetailTextView,
     createDetailCaption, setDetailEntry, setEntryMonospace,
     setMetadataStatusLabel, setMetadataDetails, setKnownFilesTable, setMediaPreview,
-    refreshMediaPreview, syncVideoPreviewWindow;
+    refreshMediaPreview, syncVideoPreviewWindow, setVideoPreviewVolume, playVideoPreview,
+    pauseVideoPreview, jumpVideoPreview, stopVideoPreview, syncVideoPreviewPosition,
+    seekVideoPreview, syncVideoPlaybackButton;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : countDuplicateDigestGroups, filterRowsByText;
 import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, deserializeDataClassJsonFile;
@@ -503,6 +508,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
     bool prefDetailsBelow = loadedState.prefDetailsBelow;
     bool prefRestoreOpenFiles = loadedState.prefRestoreOpenFiles;
     string externalOpenProgram = loadedState.externalOpenProgram.length > 0 ? loadedState.externalOpenProgram : "xdg-open";
+    bool previewVideoAutostart = loadedState.previewVideoAutostart;
+    double previewVideoVolume = loadedState.previewVideoVolume < 0.0 ? 0.5
+        : loadedState.previewVideoVolume > 1.0 ? 1.0 : loadedState.previewVideoVolume;
     bool clearSavedWindowGeometryOnExit;
     bool allowRuntimeStatePersistence = !loadedState.hasWindowSize;
     bool isSyncingToolbarState;
@@ -516,6 +524,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     bool isLoading;
     DocumentTab busyDocument;
     Timeout progressPulseTimer;
+    Timeout previewVideoProgressTimer;
 
     if (cli.disableAutoFilter)
     {
@@ -936,6 +945,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
         {
             document.detailPreviewImage.clear();
         }
+        stopVideoPreview(document);
+        if (document.detailPreviewVideoFrame !is null)
+        {
+            document.detailPreviewVideoFrame.setVisible(false);
+        }
+        if (document.detailPreviewVideoControls !is null)
+        {
+            document.detailPreviewVideoControls.setVisible(false);
+        }
         if (document.detailPreviewSummary !is null)
         {
             document.detailPreviewSummary.setText("No preview available.");
@@ -1113,6 +1131,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto document = new DocumentTab();
         document.filePath = filePath;
         document.previewScaleMode = previewScaleMode;
+        document.previewVideoAutostart = previewVideoAutostart;
+        document.previewVideoVolume = previewVideoVolume;
 
         void attachField(Grid grid, int row, int column, string caption, Entry entry, int entryWidth = 1)
         {
@@ -1211,6 +1231,143 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailPreviewVideoFrame.setVexpand(true);
         document.detailPreviewVideoFrame.add(document.detailPreviewVideoArea);
         document.detailPreviewVideoFrame.setVisible(false);
+
+        document.detailPreviewVideoControls = new Box(Orientation.VERTICAL, 6);
+        document.detailPreviewVideoControls.setHexpand(true);
+        document.detailPreviewVideoControls.setVisible(false);
+
+        auto previewButtonRow = new Box(Orientation.HORIZONTAL, 6);
+        previewButtonRow.setHalign(GtkAlign.START);
+        previewButtonRow.setHexpand(true);
+
+        auto previewPositionRow = new Box(Orientation.HORIZONTAL, 6);
+        previewPositionRow.setHexpand(true);
+
+        auto previewVolumeRow = new Box(Orientation.HORIZONTAL, 6);
+        previewVolumeRow.setHexpand(true);
+
+        document.detailPreviewAutostartButton = new CheckButton("Autostart");
+        document.detailPreviewAutostartButton.setFocusOnClick(false);
+        document.detailPreviewAutostartButton.setActive(document.previewVideoAutostart);
+        document.detailPreviewAutostartButton.setTooltipText("Video beim Laden automatisch starten");
+        document.detailPreviewAutostartButton.addOnToggled((ToggleButton button) {
+            if (isSyncingToolbarState)
+            {
+                return;
+            }
+
+            document.previewVideoAutostart = button.getActive();
+            previewVideoAutostart = document.previewVideoAutostart;
+
+            if (!document.selectedPreviewIsVideo)
+            {
+                return;
+            }
+
+            if (document.previewVideoAutostart)
+            {
+                playVideoPreview(document);
+            }
+            else
+            {
+                pauseVideoPreview(document);
+            }
+        });
+
+        document.detailPreviewJumpBackButton = new Button("-10s");
+        document.detailPreviewJumpBackButton.setFocusOnClick(false);
+        document.detailPreviewJumpBackButton.setTooltipText("10 Sekunden zurück springen");
+        document.detailPreviewJumpBackButton.addOnClicked((Button _) {
+            jumpVideoPreview(document, -10);
+        });
+
+        document.detailPreviewPlayButton = new Button("Play");
+        document.detailPreviewPlayButton.setFocusOnClick(false);
+        document.detailPreviewPlayButton.setTooltipText("Video starten oder pausieren");
+        document.detailPreviewPlayButton.addOnClicked((Button _) {
+            if (document.previewVideoPlayer is null)
+            {
+                playVideoPreview(document);
+                return;
+            }
+
+            GstState state;
+            GstState pending;
+            auto stateResult = document.previewVideoPlayer.getState(state, pending, 0);
+            if (stateResult == GstStateChangeReturn.FAILURE || state == GstState.NULL)
+            {
+                playVideoPreview(document);
+                return;
+            }
+
+            if (state == GstState.PLAYING)
+            {
+                pauseVideoPreview(document);
+            }
+            else
+            {
+                playVideoPreview(document);
+            }
+        });
+
+        document.detailPreviewJumpForwardButton = new Button("+10s");
+        document.detailPreviewJumpForwardButton.setFocusOnClick(false);
+        document.detailPreviewJumpForwardButton.setTooltipText("10 Sekunden vor springen");
+        document.detailPreviewJumpForwardButton.addOnClicked((Button _) {
+            jumpVideoPreview(document, 10);
+        });
+
+        document.detailPreviewPositionLabel = createDetailCaption("Position 00:00 / --:--");
+        document.detailPreviewPositionScale = new Scale(Orientation.HORIZONTAL, 0.0, 1.0, 0.1);
+        document.detailPreviewPositionScale.setDigits(1);
+        document.detailPreviewPositionScale.setDrawValue(false);
+        document.detailPreviewPositionScale.setHexpand(true);
+        document.detailPreviewPositionScale.setTooltipText("Wiedergabeposition");
+        document.detailPreviewPositionScale.addOnValueChanged((Range range) {
+            if (isSyncingToolbarState || document.previewVideoPositionSyncing)
+            {
+                return;
+            }
+
+            if (!seekVideoPreview(document, range.getValue()))
+            {
+                return;
+            }
+
+            syncVideoPreviewPosition(document);
+        });
+
+        auto volumeLabel = createDetailCaption("Volume");
+        document.detailPreviewVolumeScale = new Scale(Orientation.HORIZONTAL, 0.0, 1.0, 0.01);
+        document.detailPreviewVolumeScale.setDigits(2);
+        document.detailPreviewVolumeScale.setDrawValue(true);
+        document.detailPreviewVolumeScale.setHexpand(true);
+        document.detailPreviewVolumeScale.setValue(document.previewVideoVolume);
+        document.detailPreviewVolumeScale.setTooltipText("Wiedergabe-Lautstärke");
+        document.detailPreviewVolumeScale.addOnValueChanged((Range range) {
+            if (isSyncingToolbarState)
+            {
+                return;
+            }
+
+            setVideoPreviewVolume(document, range.getValue());
+            previewVideoVolume = document.previewVideoVolume;
+        });
+
+        previewButtonRow.packStart(document.detailPreviewAutostartButton, false, false, 0);
+        previewButtonRow.packStart(document.detailPreviewJumpBackButton, false, false, 0);
+        previewButtonRow.packStart(document.detailPreviewPlayButton, false, false, 0);
+        previewButtonRow.packStart(document.detailPreviewJumpForwardButton, false, false, 0);
+
+        previewPositionRow.packStart(document.detailPreviewPositionLabel, false, false, 0);
+        previewPositionRow.packStart(document.detailPreviewPositionScale, true, true, 0);
+
+        previewVolumeRow.packStart(volumeLabel, false, false, 0);
+        previewVolumeRow.packStart(document.detailPreviewVolumeScale, true, true, 0);
+
+        document.detailPreviewVideoControls.packStart(previewButtonRow, false, false, 0);
+        document.detailPreviewVideoControls.packStart(previewPositionRow, false, false, 0);
+        document.detailPreviewVideoControls.packStart(previewVolumeRow, false, false, 0);
 
         document.detailPreviewScroll = new ScrolledWindow(null, null);
         document.detailPreviewScroll.setPolicy(GtkPolicyType.AUTOMATIC, GtkPolicyType.AUTOMATIC);
@@ -1328,6 +1485,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         previewContent.setVexpand(true);
         previewContent.packStart(document.detailPreviewScroll, true, true, 0);
         previewContent.packStart(document.detailPreviewVideoFrame, true, true, 0);
+        previewContent.packStart(document.detailPreviewVideoControls, false, false, 0);
         previewPane.packStart(previewContent, true, true, 0);
         previewPane.packStart(document.detailPreviewSummary, false, false, 0);
         syncPreviewToolbarFromDocument(document);
@@ -1514,6 +1672,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         state.prefRestoreOpenFiles = prefRestoreOpenFiles;
         state.externalOpenProgram = externalOpenProgram;
         state.previewScaleMode = cast(int) previewScaleMode;
+        state.previewVideoAutostart = previewVideoAutostart;
+        state.previewVideoVolume = previewVideoVolume;
         state.splitPositionPreview = splitPositionPreview;
 
         auto document = currentDocument();
@@ -2748,6 +2908,22 @@ int runMainWindow(string[] args, ref CliOptions cli)
     }
 
     syncToolbarFromCurrentDocument();
+
+    previewVideoProgressTimer = new Timeout(250, {
+        auto document = currentDocument();
+        if (document !is null && document.selectedPreviewIsVideo && document.previewVideoPlayer !is null)
+        {
+            syncVideoPreviewPosition(document);
+
+            GstState state;
+            GstState pending;
+            if (document.previewVideoPlayer.getState(state, pending, 0) != GstStateChangeReturn.FAILURE)
+            {
+                syncVideoPlaybackButton(document, state == GstState.PLAYING);
+            }
+        }
+        return true;
+    });
 
     foreach (savedPath; loadedState.openFilePaths)
     {

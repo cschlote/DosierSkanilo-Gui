@@ -14,6 +14,8 @@ import gtk.TextView;
 import gtk.ScrolledWindow;
 import gtk.TreeView;
 import gtk.ToggleButton;
+import gtk.Scale;
+import gtk.CheckButton;
 
 import gstreamer.Element;
 import gstinterfaces.VideoOverlay;
@@ -91,9 +93,17 @@ class DocumentTab
     ToggleButton detailPreviewFitHeightButton;
     ToggleButton detailPreviewCenterButton;
     ToggleButton detailPreviewCoverButton;
+    CheckButton detailPreviewAutostartButton;
+    Button detailPreviewPlayButton;
+    Button detailPreviewJumpBackButton;
+    Button detailPreviewJumpForwardButton;
+    Label detailPreviewPositionLabel;
+    Scale detailPreviewPositionScale;
+    Scale detailPreviewVolumeScale;
     Image detailPreviewImage;
     AspectFrame detailPreviewVideoFrame;
     DrawingArea detailPreviewVideoArea;
+    Box detailPreviewVideoControls;
     ScrolledWindow detailPreviewScroll;
     TextView detailMediaInfoView;
     TextView detailFileTypeView;
@@ -114,6 +124,9 @@ class DocumentTab
     string selectedPreviewPath;
     bool selectedPreviewIsImage;
     PreviewScaleMode previewScaleMode = PreviewScaleMode.contain;
+    bool previewVideoAutostart;
+    double previewVideoVolume = 0.5;
+    bool previewVideoPositionSyncing;
 
     BlobRow[] loadedRows;
     BlobRow[] visibleRows;

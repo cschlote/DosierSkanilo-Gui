@@ -18,7 +18,7 @@ import gstreamer.ElementFactory;
 import gstreamer.GStreamer;
 import gstreamer.Message;
 import gstreamer.Structure;
-import gstreamer.c.types : GstBusSyncReply, GstMessageType, GstState;
+import gstreamer.c.types : GstBusSyncReply, GstFormat, GstMessageType, GstSeekFlags, GstState;
 import gstinterfaces.VideoOverlay;
 import pango.PgFontDescription;
 
@@ -217,7 +217,7 @@ private string toFileUri(string path)
 }
 
 /** Stop the embedded video player. */
-private void stopVideoPreview(DocumentTab document)
+void stopVideoPreview(DocumentTab document)
 {
     if (document.previewVideoPlayer !is null)
     {
@@ -304,6 +304,169 @@ private bool ensureVideoPreviewPlayer(DocumentTab document)
     return true;
 }
 
+/** Clamp the stream volume to a sane range. */
+private double clampVideoPreviewVolume(double volume)
+{
+    if (volume < 0.0)
+    {
+        return 0.0;
+    }
+    if (volume > 1.0)
+    {
+        return 1.0;
+    }
+    return volume;
+}
+
+/** Format a video position in a compact time string. */
+private string formatVideoPreviewTime(long nanoseconds)
+{
+    if (nanoseconds < 0)
+    {
+        nanoseconds = 0;
+    }
+
+    auto totalSeconds = nanoseconds / 1_000_000_000L;
+    auto seconds = totalSeconds % 60;
+    auto minutes = (totalSeconds / 60) % 60;
+    auto hours = totalSeconds / 3600;
+
+    if (hours > 0)
+    {
+        return format("%02d:%02d:%02d", hours, minutes, seconds);
+    }
+
+    return format("%02d:%02d", minutes, seconds);
+}
+
+/** Apply the current UI volume to the underlying player. */
+void setVideoPreviewVolume(DocumentTab document, double volume)
+{
+    document.previewVideoVolume = clampVideoPreviewVolume(volume);
+    if (document.previewVideoPlayer !is null)
+    {
+        document.previewVideoPlayer.setProperty("volume", new Value(document.previewVideoVolume));
+    }
+}
+
+/** Seek the preview to an absolute position in seconds. */
+bool seekVideoPreview(DocumentTab document, double positionSeconds)
+{
+    if (document.previewVideoPlayer is null)
+    {
+        return false;
+    }
+
+    if (positionSeconds < 0.0)
+    {
+        positionSeconds = 0.0;
+    }
+
+    auto targetPosition = cast(long) (positionSeconds * 1_000_000_000.0);
+    return document.previewVideoPlayer.seekSimple(GstFormat.TIME, GstSeekFlags.FLUSH | GstSeekFlags.KEY_UNIT, targetPosition);
+}
+
+/** Synchronize the playback slider and duration label with the player state. */
+bool syncVideoPreviewPosition(DocumentTab document)
+{
+    if (document.detailPreviewPositionScale is null || document.previewVideoPlayer is null)
+    {
+        return false;
+    }
+
+    long currentPosition;
+    if (!document.previewVideoPlayer.queryPosition(GstFormat.TIME, currentPosition))
+    {
+        return false;
+    }
+
+    long duration;
+    auto hasDuration = document.previewVideoPlayer.queryDuration(GstFormat.TIME, duration) && duration > 0;
+    auto currentSeconds = cast(double) currentPosition / 1_000_000_000.0;
+    auto durationSeconds = hasDuration ? cast(double) duration / 1_000_000_000.0 : currentSeconds;
+    if (durationSeconds < 1.0)
+    {
+        durationSeconds = 1.0;
+    }
+
+    document.previewVideoPositionSyncing = true;
+    document.detailPreviewPositionScale.setRange(0.0, durationSeconds);
+    document.detailPreviewPositionScale.setValue(currentSeconds > durationSeconds ? durationSeconds : currentSeconds);
+
+    if (document.detailPreviewPositionLabel !is null)
+    {
+        auto durationText = hasDuration ? formatVideoPreviewTime(duration) : "--:--";
+        document.detailPreviewPositionLabel.setText("Position " ~ formatVideoPreviewTime(currentPosition) ~ " / " ~ durationText);
+    }
+
+    document.previewVideoPositionSyncing = false;
+    return true;
+}
+
+/** Update the play button label to reflect the current player state. */
+void syncVideoPlaybackButton(DocumentTab document, bool playing)
+{
+    if (document.detailPreviewPlayButton is null)
+    {
+        return;
+    }
+
+    document.detailPreviewPlayButton.setLabel(playing ? "Pause" : "Play");
+}
+
+/** Start video playback for the active preview. */
+void playVideoPreview(DocumentTab document)
+{
+    if (!ensureVideoPreviewPlayer(document))
+    {
+        return;
+    }
+
+    document.previewVideoPlayer.setState(GstState.PLAYING);
+    syncVideoPlaybackButton(document, true);
+}
+
+/** Pause video playback for the active preview. */
+void pauseVideoPreview(DocumentTab document)
+{
+    if (document.previewVideoPlayer is null)
+    {
+        return;
+    }
+
+    document.previewVideoPlayer.setState(GstState.PAUSED);
+    syncVideoPlaybackButton(document, false);
+}
+
+/** Seek the current preview relative to its current play position. */
+bool jumpVideoPreview(DocumentTab document, long deltaSeconds)
+{
+    if (document.previewVideoPlayer is null)
+    {
+        return false;
+    }
+
+    long currentPosition;
+    if (!document.previewVideoPlayer.queryPosition(GstFormat.TIME, currentPosition))
+    {
+        return false;
+    }
+
+    long targetPosition = currentPosition + deltaSeconds * 1_000_000_000L;
+    if (targetPosition < 0)
+    {
+        targetPosition = 0;
+    }
+
+    long duration;
+    if (document.previewVideoPlayer.queryDuration(GstFormat.TIME, duration) && duration > 0 && targetPosition >= duration)
+    {
+        targetPosition = duration - 1;
+    }
+
+    return document.previewVideoPlayer.seekSimple(GstFormat.TIME, GstSeekFlags.FLUSH | GstSeekFlags.KEY_UNIT, targetPosition);
+}
+
 /** Start or restart the embedded video preview for the current selection. */
 private void updatePreviewVideo(DocumentTab document)
 {
@@ -336,6 +499,7 @@ private void updatePreviewVideo(DocumentTab document)
 
     document.detailPreviewVideoFrame.setVisible(true);
     document.previewVideoPlayer.setState(GstState.NULL);
+    setVideoPreviewVolume(document, document.previewVideoVolume);
     document.previewVideoPlayer.setProperty("uri", new Value(uri));
     if (!syncVideoPreviewWindow(document))
     {
@@ -343,7 +507,18 @@ private void updatePreviewVideo(DocumentTab document)
         return;
     }
 
-    document.previewVideoPlayer.setState(GstState.PLAYING);
+    if (document.previewVideoAutostart)
+    {
+        document.previewVideoPlayer.setState(GstState.PLAYING);
+        syncVideoPlaybackButton(document, true);
+    }
+    else
+    {
+        document.previewVideoPlayer.setState(GstState.PAUSED);
+        syncVideoPlaybackButton(document, false);
+    }
+
+    cast(void) syncVideoPreviewPosition(document);
 }
 
 private void updatePreviewImage(DocumentTab document)
@@ -452,6 +627,10 @@ void refreshMediaPreview(DocumentTab document)
         {
             document.detailPreviewScroll.setVisible(false);
         }
+        if (document.detailPreviewVideoControls !is null)
+        {
+            document.detailPreviewVideoControls.setVisible(true);
+        }
         updatePreviewVideo(document);
         document.detailPreviewImage.clear();
         return;
@@ -461,6 +640,10 @@ void refreshMediaPreview(DocumentTab document)
     if (document.detailPreviewVideoFrame !is null)
     {
         document.detailPreviewVideoFrame.setVisible(false);
+    }
+    if (document.detailPreviewVideoControls !is null)
+    {
+        document.detailPreviewVideoControls.setVisible(false);
     }
 
     if (document.selectedPreviewIsImage)
