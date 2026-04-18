@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Added icon-based preview scaling modes above the image preview, with Contain as the default and the selected mode persisted across exits.
+- Kept the preview caption below the image area so the available space is controlled by the chosen scaling mode instead of a manual splitter.
 - Added a right-hand preview pane next to the metadata expanders so the selected row can show image previews or media summaries with a fixed-width preview area.
 - Added a scroll container around the Archive metadata expander so its long text no longer forces the details pane to grow vertically.
 - Aligned the detail panel content to the top so the visible fields stay anchored when the archive section is expanded.

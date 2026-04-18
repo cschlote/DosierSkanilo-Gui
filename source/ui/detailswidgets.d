@@ -8,6 +8,7 @@ import gtk.TextView;
 import gtk.TreeIter;
 import gtk.c.types : GtkWrapMode;
 import gdkpixbuf.Pixbuf;
+import gdkpixbuf.c.types : GdkInterpType;
 import pango.PgFontDescription;
 
 import std.file : exists;
@@ -16,7 +17,7 @@ import std.path : buildNormalizedPath, dirName, extension, isAbsolute;
 import std.string : toLower;
 
 import model.blobrow : BlobRow;
-import ui.documenttab : DocumentTab;
+import ui.documenttab : DocumentTab, PreviewScaleMode;
 
 /** Build a read-only single-line field for the details form. */
 Entry createDetailEntry(int widthChars = 18)
@@ -179,20 +180,82 @@ private void updatePreviewImage(DocumentTab document)
         return;
     }
 
-    auto previewHeight = 0;
-    if (document.detailPreviewScroll !is null)
-    {
-        previewHeight = document.detailPreviewScroll.getAllocatedHeight();
-    }
-
-    if (previewHeight <= 1)
-    {
-        previewHeight = 120;
-    }
-
     try
     {
-        auto pixbuf = new Pixbuf(document.selectedPreviewPath, -1, previewHeight, true);
+        Pixbuf pixbuf;
+        auto previewWidth = document.detailPreviewScroll !is null
+            ? document.detailPreviewScroll.getAllocatedWidth() : 0;
+        auto previewHeight = document.detailPreviewScroll !is null
+            ? document.detailPreviewScroll.getAllocatedHeight() : 0;
+
+        if (previewWidth <= 1)
+        {
+            previewWidth = 240;
+        }
+        if (previewHeight <= 1)
+        {
+            previewHeight = 180;
+        }
+
+        final switch (document.previewScaleMode)
+        {
+        case PreviewScaleMode.contain:
+        {
+            auto source = new Pixbuf(document.selectedPreviewPath);
+            auto sourceWidth = source.getWidth();
+            auto sourceHeight = source.getHeight();
+            auto widthScale = cast(double) previewWidth / sourceWidth;
+            auto heightScale = cast(double) previewHeight / sourceHeight;
+            auto scale = widthScale < heightScale ? widthScale : heightScale;
+            auto destWidth = cast(int) (sourceWidth * scale);
+            auto destHeight = cast(int) (sourceHeight * scale);
+            if (destWidth < 1)
+            {
+                destWidth = 1;
+            }
+            if (destHeight < 1)
+            {
+                destHeight = 1;
+            }
+            pixbuf = destWidth == sourceWidth && destHeight == sourceHeight
+                ? source
+                : source.scaleSimple(destWidth, destHeight, GdkInterpType.BILINEAR);
+            break;
+        }
+        case PreviewScaleMode.fitWidth:
+            pixbuf = new Pixbuf(document.selectedPreviewPath, previewWidth, -1, true);
+            break;
+        case PreviewScaleMode.fitHeight:
+            pixbuf = new Pixbuf(document.selectedPreviewPath, -1, previewHeight, true);
+            break;
+        case PreviewScaleMode.center:
+            pixbuf = new Pixbuf(document.selectedPreviewPath);
+            break;
+        case PreviewScaleMode.cover:
+        {
+            auto source = new Pixbuf(document.selectedPreviewPath);
+            auto sourceWidth = source.getWidth();
+            auto sourceHeight = source.getHeight();
+            auto widthScale = cast(double) previewWidth / sourceWidth;
+            auto heightScale = cast(double) previewHeight / sourceHeight;
+            auto scale = widthScale > heightScale ? widthScale : heightScale;
+            auto destWidth = cast(int) (sourceWidth * scale);
+            auto destHeight = cast(int) (sourceHeight * scale);
+            if (destWidth < 1)
+            {
+                destWidth = 1;
+            }
+            if (destHeight < 1)
+            {
+                destHeight = 1;
+            }
+            pixbuf = destWidth == sourceWidth && destHeight == sourceHeight
+                ? source
+                : source.scaleSimple(destWidth, destHeight, GdkInterpType.BILINEAR);
+            break;
+        }
+        }
+
         document.detailPreviewImage.setFromPixbuf(pixbuf);
     }
     catch (Exception)

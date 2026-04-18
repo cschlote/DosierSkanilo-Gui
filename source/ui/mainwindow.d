@@ -50,7 +50,7 @@ import gtk.TreeSelection;
 import gtk.TreeView;
 import gtk.Widget;
 import gtk.Window;
-import gtk.c.types : GtkAlign, GtkTreeViewColumnSizing;
+import gtk.c.types : GtkAlign, GtkIconSize, GtkReliefStyle, GtkTreeViewColumnSizing;
 
 import core.thread : Thread;
 import core.time : MonoTime;
@@ -67,7 +67,7 @@ import std.string : join;
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
 import ui.appstate : AppState, loadAppState, saveAppState;
-import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL_FILE_TYPE, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_INDEX, COL_INDEX_SORT, COL_MEDIA_INFO, DocumentTab;
+import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL_FILE_TYPE, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_INDEX, COL_INDEX_SORT, COL_MEDIA_INFO, DocumentTab, PreviewScaleMode, clampPreviewScaleMode;
 import ui.detailswidgets : createDetailEntry, createDetailTextView,
     createDetailCaption, setDetailEntry, setEntryMonospace,
     setMetadataStatusLabel, setMetadataDetails, setKnownFilesTable, setMediaPreview,
@@ -500,6 +500,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
     bool isSyncingToolbarState;
     int splitPositionHorizontal = loadedState.splitPositionHorizontal;
     int splitPositionVertical = loadedState.splitPositionVertical;
+    int splitPositionPreview = loadedState.splitPositionPreview;
+    PreviewScaleMode previewScaleMode = clampPreviewScaleMode(loadedState.previewScaleMode);
     int lastKnownWindowWidth = loadedState.windowWidth;
     int lastKnownWindowHeight = loadedState.windowHeight;
     Timeout windowSizePersistTimer;
@@ -671,6 +673,59 @@ int runMainWindow(string[] args, ref CliOptions cli)
         filterTorrent.setActive(document.filterTorrent);
         syncToolbarSensitivity();
         isSyncingToolbarState = false;
+    }
+
+    /** Mirror the active tab's preview mode button state back into the preview toolbar. */
+    void syncPreviewToolbarFromCurrentDocument()
+    {
+        auto document = currentDocument();
+        if (document is null)
+        {
+            return;
+        }
+
+        isSyncingToolbarState = true;
+        document.detailPreviewContainButton.setActive(document.previewScaleMode == PreviewScaleMode.contain);
+        document.detailPreviewFitWidthButton.setActive(document.previewScaleMode == PreviewScaleMode.fitWidth);
+        document.detailPreviewFitHeightButton.setActive(document.previewScaleMode == PreviewScaleMode.fitHeight);
+        document.detailPreviewCenterButton.setActive(document.previewScaleMode == PreviewScaleMode.center);
+        document.detailPreviewCoverButton.setActive(document.previewScaleMode == PreviewScaleMode.cover);
+        isSyncingToolbarState = false;
+    }
+
+    /** Update the preview-mode buttons of one tab without triggering toggle callbacks. */
+    void syncPreviewToolbarFromDocument(DocumentTab document)
+    {
+        isSyncingToolbarState = true;
+        document.detailPreviewContainButton.setActive(document.previewScaleMode == PreviewScaleMode.contain);
+        document.detailPreviewFitWidthButton.setActive(document.previewScaleMode == PreviewScaleMode.fitWidth);
+        document.detailPreviewFitHeightButton.setActive(document.previewScaleMode == PreviewScaleMode.fitHeight);
+        document.detailPreviewCenterButton.setActive(document.previewScaleMode == PreviewScaleMode.center);
+        document.detailPreviewCoverButton.setActive(document.previewScaleMode == PreviewScaleMode.cover);
+        isSyncingToolbarState = false;
+    }
+
+    /** Apply one preview scaling mode to all open documents and refresh visible image previews. */
+    void setPreviewScaleMode(PreviewScaleMode mode)
+    {
+        if (previewScaleMode == mode)
+        {
+            return;
+        }
+
+        previewScaleMode = mode;
+        foreach (tab; documents)
+        {
+            tab.previewScaleMode = mode;
+            if (tab.detailPreviewContainButton !is null)
+            {
+                syncPreviewToolbarFromDocument(tab);
+            }
+            if (tab.selectedPreviewIsImage)
+            {
+                refreshMediaPreview(tab);
+            }
+        }
     }
 
     /** Refresh the performance summary label for a document tab. */
@@ -1000,6 +1055,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     {
         auto document = new DocumentTab();
         document.filePath = filePath;
+        document.previewScaleMode = previewScaleMode;
 
         void attachField(Grid grid, int row, int column, string caption, Entry entry, int entryWidth = 1)
         {
@@ -1080,6 +1136,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailPreviewImage = new Image();
         document.detailPreviewImage.setHexpand(true);
         document.detailPreviewImage.setVexpand(true);
+        document.detailPreviewImage.setHalign(GtkAlign.CENTER);
+        document.detailPreviewImage.setValign(GtkAlign.CENTER);
 
         document.detailPreviewScroll = new ScrolledWindow(null, null);
         document.detailPreviewScroll.setPolicy(GtkPolicyType.AUTOMATIC, GtkPolicyType.AUTOMATIC);
@@ -1103,8 +1161,83 @@ int runMainWindow(string[] args, ref CliOptions cli)
         previewPane.setHexpand(true);
         previewPane.setVexpand(true);
         previewPane.packStart(document.detailPreviewTitle, false, false, 0);
+
+        auto previewControls = new Box(Orientation.HORIZONTAL, 2);
+        previewControls.setHalign(GtkAlign.START);
+        previewControls.setHexpand(true);
+
+        ToggleButton createPreviewModeButton(string iconName, string tooltip)
+        {
+            auto button = new ToggleButton();
+            button.setMode(false);
+            button.setRelief(GtkReliefStyle.NONE);
+            button.setFocusOnClick(false);
+            button.setAlwaysShowImage(true);
+
+            auto icon = new Image();
+            icon.setFromIconName(iconName, GtkIconSize.SMALL_TOOLBAR);
+            icon.setPixelSize(14);
+            button.setImage(icon);
+            button.setTooltipText(tooltip);
+            return button;
+        }
+
+        document.detailPreviewContainButton = createPreviewModeButton("zoom-fit-best", "Contain: keep the whole image visible");
+        document.detailPreviewFitWidthButton = createPreviewModeButton("zoom-in", "Fit width: scale to the available width");
+        document.detailPreviewFitHeightButton = createPreviewModeButton("zoom-out", "Fit height: scale to the available height");
+        document.detailPreviewCenterButton = createPreviewModeButton("zoom-original", "Center: keep the original size and center it");
+        document.detailPreviewCoverButton = createPreviewModeButton("view-fullscreen", "Cover: fill the area as much as possible");
+
+        document.detailPreviewContainButton.addOnToggled((ToggleButton button) {
+            if (isSyncingToolbarState || !button.getActive())
+            {
+                return;
+            }
+            setPreviewScaleMode(PreviewScaleMode.contain);
+            syncPreviewToolbarFromCurrentDocument();
+        });
+        document.detailPreviewFitWidthButton.addOnToggled((ToggleButton button) {
+            if (isSyncingToolbarState || !button.getActive())
+            {
+                return;
+            }
+            setPreviewScaleMode(PreviewScaleMode.fitWidth);
+            syncPreviewToolbarFromCurrentDocument();
+        });
+        document.detailPreviewFitHeightButton.addOnToggled((ToggleButton button) {
+            if (isSyncingToolbarState || !button.getActive())
+            {
+                return;
+            }
+            setPreviewScaleMode(PreviewScaleMode.fitHeight);
+            syncPreviewToolbarFromCurrentDocument();
+        });
+        document.detailPreviewCenterButton.addOnToggled((ToggleButton button) {
+            if (isSyncingToolbarState || !button.getActive())
+            {
+                return;
+            }
+            setPreviewScaleMode(PreviewScaleMode.center);
+            syncPreviewToolbarFromCurrentDocument();
+        });
+        document.detailPreviewCoverButton.addOnToggled((ToggleButton button) {
+            if (isSyncingToolbarState || !button.getActive())
+            {
+                return;
+            }
+            setPreviewScaleMode(PreviewScaleMode.cover);
+            syncPreviewToolbarFromCurrentDocument();
+        });
+
+        previewControls.packStart(document.detailPreviewContainButton, false, false, 0);
+        previewControls.packStart(document.detailPreviewFitWidthButton, false, false, 0);
+        previewControls.packStart(document.detailPreviewFitHeightButton, false, false, 0);
+        previewControls.packStart(document.detailPreviewCenterButton, false, false, 0);
+        previewControls.packStart(document.detailPreviewCoverButton, false, false, 0);
+        previewPane.packStart(previewControls, false, false, 0);
         previewPane.packStart(document.detailPreviewScroll, true, true, 0);
         previewPane.packStart(document.detailPreviewSummary, false, false, 0);
+        syncPreviewToolbarFromDocument(document);
 
         auto checksumGrid = new Grid();
         checksumGrid.setColumnSpacing(10);
@@ -1269,6 +1402,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         state.prefCaseSensitiveFilter = prefCaseSensitiveFilter;
         state.prefDetailsBelow = prefDetailsBelow;
         state.prefRestoreOpenFiles = prefRestoreOpenFiles;
+        state.previewScaleMode = cast(int) previewScaleMode;
+        state.splitPositionPreview = splitPositionPreview;
 
         auto document = currentDocument();
         if (document !is null)
@@ -1283,10 +1418,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 splitPositionHorizontal = currentSplitPosition;
             }
+
+            if (document.detailPreviewSplit !is null)
+            {
+                splitPositionPreview = document.detailPreviewSplit.getPosition();
+            }
+
+            previewScaleMode = document.previewScaleMode;
         }
 
         state.splitPositionHorizontal = splitPositionHorizontal;
         state.splitPositionVertical = splitPositionVertical;
+        state.splitPositionPreview = splitPositionPreview;
+        state.previewScaleMode = cast(int) previewScaleMode;
 
         int width = lastKnownWindowWidth;
         int height = lastKnownWindowHeight;
