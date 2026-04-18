@@ -4,11 +4,14 @@ import gtk.Box;
 import gtk.Button;
 import gtk.Entry;
 import gtk.Expander;
+import gtk.Image;
 import gtk.Label;
 import gtk.ListStore;
 import gtk.Paned;
 import gtk.TextView;
+import gtk.ScrolledWindow;
 import gtk.TreeView;
+import gtk.ToggleButton;
 
 import model.blobrow : BlobRow;
 
@@ -22,6 +25,25 @@ enum int COL_HAS_TORRENT = 6;
 enum int COL_INDEX_SORT = 7;
 enum int COL_FILE_SIZE_SORT = 8;
 enum int COL_COUNT = 9;
+
+enum PreviewScaleMode : int
+{
+    contain = 0,
+    fitWidth = 1,
+    fitHeight = 2,
+    center = 3,
+    cover = 4,
+}
+
+PreviewScaleMode clampPreviewScaleMode(int value)
+{
+    if (value < cast(int) PreviewScaleMode.contain || value > cast(int) PreviewScaleMode.cover)
+    {
+        return PreviewScaleMode.contain;
+    }
+
+    return cast(PreviewScaleMode) value;
+}
 
 /** Per-document UI and data state for one open JSON file tab. */
 class DocumentTab
@@ -48,6 +70,8 @@ class DocumentTab
     Entry detailXxh64HexEntry;
     Label detailChecksumStatus;
     Label detailFileNamesLabel;
+    Label detailPreviewTitle;
+    Label detailPreviewSummary;
     Label detailMediaInfoStatus;
     Label detailFileTypeStatus;
     Label detailArchiveStatus;
@@ -57,6 +81,14 @@ class DocumentTab
     Expander detailFileTypeExpander;
     Expander detailArchiveExpander;
     Expander detailTorrentExpander;
+    Paned detailPreviewSplit;
+    ToggleButton detailPreviewContainButton;
+    ToggleButton detailPreviewFitWidthButton;
+    ToggleButton detailPreviewFitHeightButton;
+    ToggleButton detailPreviewCenterButton;
+    ToggleButton detailPreviewCoverButton;
+    Image detailPreviewImage;
+    ScrolledWindow detailPreviewScroll;
     TextView detailMediaInfoView;
     TextView detailFileTypeView;
     TextView detailArchiveView;
@@ -70,6 +102,9 @@ class DocumentTab
     Label status;
     Label perfStatus;
     Label fileMetaStatus;
+    string selectedPreviewPath;
+    bool selectedPreviewIsImage;
+    PreviewScaleMode previewScaleMode = PreviewScaleMode.contain;
 
     BlobRow[] loadedRows;
     BlobRow[] visibleRows;
@@ -77,6 +112,7 @@ class DocumentTab
     int tableNaturalWidth = -1;
     int tableMinimumWidth = -1;
     bool fitHorizontalSplitAfterLoad;
+    bool pendingColumnMeasurement;
     string selectedSha1;
     string selectedFileName;
     string selectedDetailsText;

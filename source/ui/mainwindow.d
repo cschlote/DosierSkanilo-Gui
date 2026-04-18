@@ -25,6 +25,7 @@ import gtk.Clipboard;
 import gtk.Dialog;
 import gtk.Entry;
 import gtk.Expander;
+import gtk.Image;
 import gtk.FileChooserDialog;
 import gtk.Grid;
 import gtk.Label;
@@ -46,10 +47,12 @@ import gtk.ToggleButton;
 import gtk.TreeIter;
 import gtk.TreeModelIF;
 import gtk.TreeSelection;
+import gtk.TreePath;
 import gtk.TreeView;
+import gtk.TreeViewColumn;
 import gtk.Widget;
 import gtk.Window;
-import gtk.c.types : GtkAlign, GtkTreeViewColumnSizing;
+import gtk.c.types : GtkAlign, GtkIconSize, GtkReliefStyle, GtkTreeViewColumnSizing;
 
 import core.thread : Thread;
 import core.time : MonoTime;
@@ -59,18 +62,20 @@ import std.base64 : Base64;
 import std.conv : to;
 import std.file : exists;
 import std.format : format;
-import std.path : absolutePath, baseName;
+import std.path : absolutePath, baseName, buildNormalizedPath, dirName, isAbsolute;
+import std.process : Config, ProcessException, spawnProcess;
 import std.stdio : writeln;
 import std.string : join;
 
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
 import ui.appstate : AppState, loadAppState, saveAppState;
-import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL_FILE_TYPE, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_INDEX, COL_INDEX_SORT, COL_MEDIA_INFO, DocumentTab;
+import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL_FILE_TYPE, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_INDEX, COL_INDEX_SORT, COL_MEDIA_INFO, DocumentTab, PreviewScaleMode, clampPreviewScaleMode;
 import ui.detailswidgets : createDetailEntry, createDetailTextView,
     createDetailCaption, setDetailEntry, setEntryMonospace,
-    setMetadataStatusLabel, setMetadataDetails, setKnownFilesTable;
-import ui.tablecolumns : setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
+    setMetadataStatusLabel, setMetadataDetails, setKnownFilesTable, setMediaPreview,
+    refreshMediaPreview;
+import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : countDuplicateDigestGroups, filterRowsByText;
 import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, deserializeDataClassJsonFile;
 import cli.logging;
@@ -197,13 +202,15 @@ int measureTableColumnsWidth(DocumentTab document, int columnLimit = -1)
 /** Estimate or return the cached natural width of the blob table. */
 int naturalListWidth(DocumentTab document)
 {
-    return document.tableNaturalWidth > 0 ? document.tableNaturalWidth : measureTableColumnsWidth(document);
+    return document.tableNaturalWidth > 0 ? document.tableNaturalWidth
+        : measureTableColumnsWidth(document);
 }
 
 /** Estimate or return the cached minimum width that keeps the first two columns visible. */
 int minimumListWidth(DocumentTab document)
 {
-    return document.tableMinimumWidth > 0 ? document.tableMinimumWidth : measureTableColumnsWidth(document, 2);
+    return document.tableMinimumWidth > 0 ? document.tableMinimumWidth
+        : measureTableColumnsWidth(document, 2);
 }
 
 /** Measure the table columns once and freeze them at their natural widths. */
@@ -214,11 +221,18 @@ void lockMainTableColumnWidths(DocumentTab document)
         return;
     }
 
+    if (document.tableView.getModel() is null)
+    {
+        document.tableView.setModel(document.tableStore);
+    }
+
     document.tableView.columnsAutosize();
 
     auto columnCount = cast(int) document.tableView.getNColumns();
     int totalWidth = 0;
     int minimumWidth = 0;
+    logLineVerbose("[layout] measuring columns for ", document.filePath,
+        ": columnCount=", columnCount);
     foreach (columnIndex; 0 .. columnCount)
     {
         auto column = document.tableView.getColumn(columnIndex);
@@ -228,12 +242,22 @@ void lockMainTableColumnWidths(DocumentTab document)
         }
 
         auto measuredWidth = column.getWidth();
+        auto measuredMinWidth = column.getMinWidth();
         if (measuredWidth <= 0)
         {
-            measuredWidth = column.getMinWidth();
+            measuredWidth = measuredMinWidth;
+        }
+        if (measuredWidth <= 0 && columnIndex >= 5)
+        {
+            measuredWidth = MAIN_TABLE_FIXED_COLUMN_WIDTH;
         }
         if (measuredWidth <= 0)
         {
+            logLineVerbose("[layout] column ", columnIndex,
+                " skipped for ", document.filePath,
+                ": width=", column.getWidth(),
+                ", min=", measuredMinWidth,
+                ", fallbackFixed=", (columnIndex >= 5 ? MAIN_TABLE_FIXED_COLUMN_WIDTH : -1));
             continue;
         }
 
@@ -244,10 +268,57 @@ void lockMainTableColumnWidths(DocumentTab document)
         {
             minimumWidth += measuredWidth;
         }
+        logLineVerbose("[layout] column ", columnIndex,
+            " measured for ", document.filePath,
+            ": width=", measuredWidth,
+            ", min=", measuredMinWidth,
+            ", fallbackFixed=", (columnIndex >= 5 ? MAIN_TABLE_FIXED_COLUMN_WIDTH : -1),
+            ", fixed=", measuredWidth,
+            ", runningTotal=", totalWidth,
+            ", runningMinimum=", minimumWidth);
     }
 
     document.tableNaturalWidth = totalWidth;
     document.tableMinimumWidth = minimumWidth;
+    logLineVerbose("[layout] measured table widths for ", document.filePath,
+        ": total=", totalWidth, ", minimum=", minimumWidth);
+}
+
+/** Measure table widths after GTK has finished laying out the current model. */
+void finalizeTableColumnMeasurement(
+    DocumentTab document,
+    void delegate(DocumentTab) fitHorizontalSplit,
+    void delegate(DocumentTab) restoreSplit
+)
+{
+    if (document is null || document.tableView is null)
+    {
+        return;
+    }
+
+    if (document.tableView.getModel() is null)
+    {
+        document.tableView.setModel(document.tableStore);
+    }
+
+    lockMainTableColumnWidths(document);
+    logLineVerbose("[layout] finalize measurement for ", document.filePath,
+        ": fitAfterLoad=", document.fitHorizontalSplitAfterLoad);
+
+    if (document.fitHorizontalSplitAfterLoad)
+    {
+        if (fitHorizontalSplit !is null)
+        {
+            fitHorizontalSplit(document);
+        }
+    }
+    else
+    {
+        if (restoreSplit !is null)
+        {
+            restoreSplit(document);
+        }
+    }
 }
 
 /** Count media subtype hits in the currently filtered row set.
@@ -362,6 +433,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     auto toolbar = new Box(Orientation.HORIZONTAL, 8);
     auto btnReload = new Button("Reload");
+    auto btnRelayout = new Button("Relayout");
     auto btnCancelLoad = new Button("Cancel");
     btnCancelLoad.setSensitive(false);
     auto loadSpinner = new Spinner();
@@ -398,6 +470,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     progressBar.setVisible(false);
 
     toolbar.packStart(btnReload, false, false, 0);
+    toolbar.packStart(btnRelayout, false, false, 0);
     toolbar.packStart(btnCancelLoad, false, false, 0);
     toolbar.packStart(loadSpinner, false, false, 0);
     toolbar.packStart(filterEntry, true, true, 0);
@@ -425,11 +498,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
     bool prefCaseSensitiveFilter = loadedState.prefCaseSensitiveFilter;
     bool prefDetailsBelow = loadedState.prefDetailsBelow;
     bool prefRestoreOpenFiles = loadedState.prefRestoreOpenFiles;
+    string externalOpenProgram = loadedState.externalOpenProgram.length > 0 ? loadedState.externalOpenProgram : "xdg-open";
     bool clearSavedWindowGeometryOnExit;
     bool allowRuntimeStatePersistence = !loadedState.hasWindowSize;
     bool isSyncingToolbarState;
     int splitPositionHorizontal = loadedState.splitPositionHorizontal;
     int splitPositionVertical = loadedState.splitPositionVertical;
+    int splitPositionPreview = loadedState.splitPositionPreview;
+    PreviewScaleMode previewScaleMode = clampPreviewScaleMode(loadedState.previewScaleMode);
     int lastKnownWindowWidth = loadedState.windowWidth;
     int lastKnownWindowHeight = loadedState.windowHeight;
     Timeout windowSizePersistTimer;
@@ -452,6 +528,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
     {
         filterEntry.setText(cli.filterOnStart);
     }
+    else
+    {
+        filterEntry.setText("");
+    }
+    logLineVerbose("[startup] initial filter text length=", cli.filterOnStart.length,
+        ", verbose=", cli.argVerboseOutputs);
 
     /** Render a compact summary for media flags in the details form. */
     string mediaInfoStatusSummary(const(BlobRow) row)
@@ -542,6 +624,54 @@ int runMainWindow(string[] args, ref CliOptions cli)
         return null;
     }
 
+    /** Resolve a known-file entry path relative to the owning JSON file. */
+    string resolveKnownFilePath(DocumentTab document, string knownFileName)
+    {
+        if (knownFileName.length == 0)
+        {
+            return "";
+        }
+
+        if (isAbsolute(knownFileName))
+        {
+            return knownFileName;
+        }
+
+        auto baseDirectory = dirName(document.filePath);
+        if (baseDirectory.length == 0)
+        {
+            return knownFileName;
+        }
+
+        return buildNormalizedPath(baseDirectory, knownFileName);
+    }
+
+    /** Launch one known file in the user-configured external program. */
+    void openKnownFileExternally(DocumentTab document, string knownFileName)
+    {
+        auto resolvedPath = resolveKnownFilePath(document, knownFileName);
+        if (resolvedPath.length == 0)
+        {
+            return;
+        }
+
+        if (!exists(resolvedPath))
+        {
+            document.status.setText(format("Known file not found: %s", resolvedPath));
+            return;
+        }
+
+        auto program = externalOpenProgram.length > 0 ? externalOpenProgram : "xdg-open";
+        try
+        {
+            spawnProcess([program, resolvedPath], null, Config.detached);
+        }
+        catch (ProcessException ex)
+        {
+            document.status.setText(format("Failed to launch %s: %s", program, ex.msg));
+        }
+    }
+
     /** Refresh toolbar sensitivity from the global busy state and active tab presence. */
     void syncToolbarSensitivity()
     {
@@ -597,6 +727,59 @@ int runMainWindow(string[] args, ref CliOptions cli)
         isSyncingToolbarState = false;
     }
 
+    /** Mirror the active tab's preview mode button state back into the preview toolbar. */
+    void syncPreviewToolbarFromCurrentDocument()
+    {
+        auto document = currentDocument();
+        if (document is null)
+        {
+            return;
+        }
+
+        isSyncingToolbarState = true;
+        document.detailPreviewContainButton.setActive(document.previewScaleMode == PreviewScaleMode.contain);
+        document.detailPreviewFitWidthButton.setActive(document.previewScaleMode == PreviewScaleMode.fitWidth);
+        document.detailPreviewFitHeightButton.setActive(document.previewScaleMode == PreviewScaleMode.fitHeight);
+        document.detailPreviewCenterButton.setActive(document.previewScaleMode == PreviewScaleMode.center);
+        document.detailPreviewCoverButton.setActive(document.previewScaleMode == PreviewScaleMode.cover);
+        isSyncingToolbarState = false;
+    }
+
+    /** Update the preview-mode buttons of one tab without triggering toggle callbacks. */
+    void syncPreviewToolbarFromDocument(DocumentTab document)
+    {
+        isSyncingToolbarState = true;
+        document.detailPreviewContainButton.setActive(document.previewScaleMode == PreviewScaleMode.contain);
+        document.detailPreviewFitWidthButton.setActive(document.previewScaleMode == PreviewScaleMode.fitWidth);
+        document.detailPreviewFitHeightButton.setActive(document.previewScaleMode == PreviewScaleMode.fitHeight);
+        document.detailPreviewCenterButton.setActive(document.previewScaleMode == PreviewScaleMode.center);
+        document.detailPreviewCoverButton.setActive(document.previewScaleMode == PreviewScaleMode.cover);
+        isSyncingToolbarState = false;
+    }
+
+    /** Apply one preview scaling mode to all open documents and refresh visible image previews. */
+    void setPreviewScaleMode(PreviewScaleMode mode)
+    {
+        if (previewScaleMode == mode)
+        {
+            return;
+        }
+
+        previewScaleMode = mode;
+        foreach (tab; documents)
+        {
+            tab.previewScaleMode = mode;
+            if (tab.detailPreviewContainButton !is null)
+            {
+                syncPreviewToolbarFromDocument(tab);
+            }
+            if (tab.selectedPreviewIsImage)
+            {
+                refreshMediaPreview(tab);
+            }
+        }
+    }
+
     /** Refresh the performance summary label for a document tab. */
     void updatePerfStatus(DocumentTab document)
     {
@@ -628,8 +811,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         busyDocument = loading ? document : null;
         syncToolbarSensitivity();
 
-        // Während Laden: Spalten-Resizing deaktivieren
-        setTableColumnsResizable(document, !loading ? true : false);
+        // Spalten bleiben nicht-resizable, damit die gemessenen Breiten stabil bleiben.
+        setTableColumnsResizable(document, false);
 
         if (loading)
         {
@@ -720,6 +903,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.selectedSha1 = "";
         document.selectedFileName = "";
         document.selectedDetailsText = "";
+        document.selectedPreviewPath = "";
+        document.selectedPreviewIsImage = false;
         setDetailEntry(document.detailSha1HexEntry, "");
         setDetailEntry(document.detailMd5HexEntry, "");
         setDetailEntry(document.detailXxh64HexEntry, "");
@@ -742,6 +927,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
         setMetadataDetails(document.detailArchiveExpander, document.detailArchiveView, "Archive", "");
         setMetadataDetails(document.detailTorrentExpander, document.detailTorrentView, "Torrent", "");
         setKnownFilesTable(document, BlobRow.init);
+        if (document.detailPreviewImage !is null)
+        {
+            document.detailPreviewImage.clear();
+        }
+        if (document.detailPreviewSummary !is null)
+        {
+            document.detailPreviewSummary.setText("No preview available.");
+        }
         document.btnCopySha1.setSensitive(false);
         document.btnCopyFile.setSensitive(false);
         document.btnCopyDetails.setSensitive(false);
@@ -780,12 +973,34 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
         if (requestedPosition < minPosition)
         {
+            logLineVerbose("[layout] clamp low ", document.filePath,
+                ": requested=", requestedPosition,
+                ", min=", minPosition,
+                ", max=", maxPosition,
+                ", totalExtent=", totalExtent,
+                ", natural=", naturalListWidth(document),
+                ", minimum=", minimumListWidth(document));
             return minPosition;
         }
         if (requestedPosition > maxPosition)
         {
+            logLineVerbose("[layout] clamp high ", document.filePath,
+                ": requested=", requestedPosition,
+                ", min=", minPosition,
+                ", max=", maxPosition,
+                ", totalExtent=", totalExtent,
+                ", natural=", naturalListWidth(document),
+                ", minimum=", minimumListWidth(document));
             return maxPosition;
         }
+        logLineVerbose("[layout] clamp ok ", document.filePath,
+            ": orientation=", cast(int) orientation,
+            ", totalExtent=", totalExtent,
+            ", requested=", requestedPosition,
+            ", min=", minPosition,
+            ", max=", maxPosition,
+            ", natural=", naturalListWidth(document),
+            ", minimum=", minimumListWidth(document));
         return requestedPosition;
     }
 
@@ -812,10 +1027,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
             auto targetPosition = preferredPosition > currentPosition ? preferredPosition
                 : currentPosition;
             auto clampedPosition = clampSplitPositionToVisibleBounds(document, document.split, Orientation.HORIZONTAL, targetPosition);
+            logLineVerbose("[layout] fit attempt ", attempt,
+                " for ", document.filePath,
+                ": current=", currentPosition,
+                ", preferred=", preferredPosition,
+                ", target=", targetPosition,
+                ", clamped=", clampedPosition,
+                ", tableNatural=", document.tableNaturalWidth,
+                ", tableMinimum=", document.tableMinimumWidth);
             document.split.setPosition(clampedPosition);
             splitPositionHorizontal = clampedPosition;
 
-            if (attempt >= 4)
+            if (attempt >= 2 || clampedPosition == currentPosition)
             {
                 return;
             }
@@ -859,7 +1082,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
             else
             {
                 splitPositionHorizontal = realizedClamped;
-                schedulePreferredHorizontalSplit(document);
             }
             return false;
         });
@@ -885,6 +1107,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     {
         auto document = new DocumentTab();
         document.filePath = filePath;
+        document.previewScaleMode = previewScaleMode;
 
         void attachField(Grid grid, int row, int column, string caption, Entry entry, int entryWidth = 1)
         {
@@ -906,6 +1129,26 @@ int runMainWindow(string[] args, ref CliOptions cli)
         ]);
         document.tableView = new TreeView(document.tableStore);
         configureTableColumns(document.tableView);
+        document.tableView.addOnSizeAllocate((allocation, Widget _) {
+            if (!document.pendingColumnMeasurement)
+            {
+                return;
+            }
+
+            document.pendingColumnMeasurement = false;
+            new Idle({
+                finalizeTableColumnMeasurement(
+                document,
+                (DocumentTab measuredDocument) {
+                    schedulePreferredHorizontalSplit(measuredDocument);
+                },
+                (DocumentTab measuredDocument) {
+                    applyDetailsPanePreference(measuredDocument, false);
+                }
+                );
+                return false;
+            });
+        });
 
         auto scroll = new ScrolledWindow(null, null);
         scroll.setVexpand(true);
@@ -937,6 +1180,116 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailFileTypeExpander.setLabelWidget(document.detailFileTypeStatus);
         document.detailArchiveExpander.setLabelWidget(document.detailArchiveStatus);
         document.detailTorrentExpander.setLabelWidget(document.detailTorrentStatus);
+
+        document.detailPreviewTitle = new Label("Preview");
+        document.detailPreviewTitle.setXalign(0.0f);
+        document.detailPreviewSummary = new Label("No preview available.");
+        document.detailPreviewSummary.setXalign(0.0f);
+        document.detailPreviewImage = new Image();
+        document.detailPreviewImage.setHexpand(true);
+        document.detailPreviewImage.setVexpand(true);
+        document.detailPreviewImage.setHalign(GtkAlign.CENTER);
+        document.detailPreviewImage.setValign(GtkAlign.CENTER);
+
+        document.detailPreviewScroll = new ScrolledWindow(null, null);
+        document.detailPreviewScroll.setPolicy(GtkPolicyType.AUTOMATIC, GtkPolicyType.AUTOMATIC);
+        document.detailPreviewScroll.setMinContentWidth(120);
+        document.detailPreviewScroll.setMinContentHeight(120);
+        document.detailPreviewScroll.setPropagateNaturalWidth(false);
+        document.detailPreviewScroll.setPropagateNaturalHeight(false);
+        document.detailPreviewScroll.setHexpand(true);
+        document.detailPreviewScroll.setVexpand(true);
+        document.detailPreviewScroll.add(document.detailPreviewImage);
+
+        document.detailPreviewScroll.addOnSizeAllocate((allocation, Widget _) {
+            if (document.selectedPreviewPath.length == 0 || !document.selectedPreviewIsImage)
+            {
+                return;
+            }
+            refreshMediaPreview(document);
+        });
+
+        auto previewPane = new Box(Orientation.VERTICAL, 4);
+        previewPane.setHexpand(true);
+        previewPane.setVexpand(true);
+        previewPane.packStart(document.detailPreviewTitle, false, false, 0);
+
+        auto previewControls = new Box(Orientation.HORIZONTAL, 2);
+        previewControls.setHalign(GtkAlign.START);
+        previewControls.setHexpand(true);
+
+        ToggleButton createPreviewModeButton(string iconName, string tooltip)
+        {
+            auto button = new ToggleButton();
+            button.setMode(false);
+            button.setRelief(GtkReliefStyle.NONE);
+            button.setFocusOnClick(false);
+            button.setAlwaysShowImage(true);
+
+            auto icon = new Image();
+            icon.setFromIconName(iconName, GtkIconSize.SMALL_TOOLBAR);
+            icon.setPixelSize(14);
+            button.setImage(icon);
+            button.setTooltipText(tooltip);
+            return button;
+        }
+
+        document.detailPreviewContainButton = createPreviewModeButton("zoom-fit-best", "Contain: keep the whole image visible");
+        document.detailPreviewFitWidthButton = createPreviewModeButton("zoom-in", "Fit width: scale to the available width");
+        document.detailPreviewFitHeightButton = createPreviewModeButton("zoom-out", "Fit height: scale to the available height");
+        document.detailPreviewCenterButton = createPreviewModeButton("zoom-original", "Center: keep the original size and center it");
+        document.detailPreviewCoverButton = createPreviewModeButton("view-fullscreen", "Cover: fill the area as much as possible");
+
+        document.detailPreviewContainButton.addOnToggled((ToggleButton button) {
+            if (isSyncingToolbarState || !button.getActive())
+            {
+                return;
+            }
+            setPreviewScaleMode(PreviewScaleMode.contain);
+            syncPreviewToolbarFromCurrentDocument();
+        });
+        document.detailPreviewFitWidthButton.addOnToggled((ToggleButton button) {
+            if (isSyncingToolbarState || !button.getActive())
+            {
+                return;
+            }
+            setPreviewScaleMode(PreviewScaleMode.fitWidth);
+            syncPreviewToolbarFromCurrentDocument();
+        });
+        document.detailPreviewFitHeightButton.addOnToggled((ToggleButton button) {
+            if (isSyncingToolbarState || !button.getActive())
+            {
+                return;
+            }
+            setPreviewScaleMode(PreviewScaleMode.fitHeight);
+            syncPreviewToolbarFromCurrentDocument();
+        });
+        document.detailPreviewCenterButton.addOnToggled((ToggleButton button) {
+            if (isSyncingToolbarState || !button.getActive())
+            {
+                return;
+            }
+            setPreviewScaleMode(PreviewScaleMode.center);
+            syncPreviewToolbarFromCurrentDocument();
+        });
+        document.detailPreviewCoverButton.addOnToggled((ToggleButton button) {
+            if (isSyncingToolbarState || !button.getActive())
+            {
+                return;
+            }
+            setPreviewScaleMode(PreviewScaleMode.cover);
+            syncPreviewToolbarFromCurrentDocument();
+        });
+
+        previewControls.packStart(document.detailPreviewContainButton, false, false, 0);
+        previewControls.packStart(document.detailPreviewFitWidthButton, false, false, 0);
+        previewControls.packStart(document.detailPreviewFitHeightButton, false, false, 0);
+        previewControls.packStart(document.detailPreviewCenterButton, false, false, 0);
+        previewControls.packStart(document.detailPreviewCoverButton, false, false, 0);
+        previewPane.packStart(previewControls, false, false, 0);
+        previewPane.packStart(document.detailPreviewScroll, true, true, 0);
+        previewPane.packStart(document.detailPreviewSummary, false, false, 0);
+        syncPreviewToolbarFromDocument(document);
 
         auto checksumGrid = new Grid();
         checksumGrid.setColumnSpacing(10);
@@ -986,6 +1339,23 @@ int runMainWindow(string[] args, ref CliOptions cli)
         ]);
         document.detailFileNamesView = new TreeView(document.detailFileNamesStore);
         configureKnownFilesColumns(document.detailFileNamesView);
+        document.detailFileNamesView.addOnRowActivated((TreePath path, TreeViewColumn column, TreeView treeView) {
+            TreeModelIF model;
+            TreeIter iter;
+            auto selection = document.detailFileNamesView.getSelection();
+            if (!selection.getSelected(model, iter))
+            {
+                return;
+            }
+
+            auto knownFileName = model.getValueString(iter, 0);
+            if (knownFileName.length == 0)
+            {
+                return;
+            }
+
+            openKnownFileExternally(document, knownFileName);
+        });
 
         document.detailFileNamesLabel = createDetailCaption("Known file names (0)");
 
@@ -1013,10 +1383,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
         detailsBody.packStart(document.detailFileNamesLabel, false, false, 0);
         detailsBody.packStart(detailsScroll, true, true, 0);
 
+        auto detailsContent = new Paned(Orientation.HORIZONTAL);
+        detailsContent.pack1(detailsBody, true, false);
+        detailsContent.pack2(previewPane, true, false);
+
         auto detailsPane = new Box(Orientation.VERTICAL, 6);
         detailsPane.setValign(GtkAlign.START);
         detailsPane.packStart(detailsActions, false, false, 0);
-        detailsPane.packStart(detailsBody, true, true, 0);
+        detailsPane.packStart(detailsContent, true, true, 0);
 
         document.split = new Paned(Orientation.HORIZONTAL);
         document.split.pack1(scroll, false, true);
@@ -1033,8 +1407,22 @@ int runMainWindow(string[] args, ref CliOptions cli)
             auto clampedPosition = clampSplitPositionToVisibleBounds(document, document.split, Orientation.HORIZONTAL, currentPosition);
             if (clampedPosition != currentPosition)
             {
+                logLineVerbose("[layout] notify::position clamp for ", document.filePath,
+                    ": current=", currentPosition,
+                    ", clamped=", clampedPosition,
+                    ", stored=", splitPositionHorizontal,
+                    ", natural=", document.tableNaturalWidth,
+                    ", minimum=", document.tableMinimumWidth);
                 document.split.setPosition(clampedPosition);
                 splitPositionHorizontal = clampedPosition;
+            }
+            else
+            {
+                logLineVerbose("[layout] notify::position ok for ", document.filePath,
+                    ": position=", currentPosition,
+                    ", stored=", splitPositionHorizontal,
+                    ", natural=", document.tableNaturalWidth,
+                    ", minimum=", document.tableMinimumWidth);
             }
         }, "position");
 
@@ -1083,6 +1471,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
         state.prefCaseSensitiveFilter = prefCaseSensitiveFilter;
         state.prefDetailsBelow = prefDetailsBelow;
         state.prefRestoreOpenFiles = prefRestoreOpenFiles;
+        state.externalOpenProgram = externalOpenProgram;
+        state.previewScaleMode = cast(int) previewScaleMode;
+        state.splitPositionPreview = splitPositionPreview;
 
         auto document = currentDocument();
         if (document !is null)
@@ -1097,10 +1488,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 splitPositionHorizontal = currentSplitPosition;
             }
+
+            if (document.detailPreviewSplit !is null)
+            {
+                splitPositionPreview = document.detailPreviewSplit.getPosition();
+            }
+
+            previewScaleMode = document.previewScaleMode;
         }
 
         state.splitPositionHorizontal = splitPositionHorizontal;
         state.splitPositionVertical = splitPositionVertical;
+        state.splitPositionPreview = splitPositionPreview;
+        state.previewScaleMode = cast(int) previewScaleMode;
 
         int width = lastKnownWindowWidth;
         int height = lastKnownWindowHeight;
@@ -1191,6 +1591,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto localRenderRequestId = ++document.renderRequestId;
         enum size_t RENDER_BATCH_SIZE = 500;
 
+        logLineVerbose("[render] start ", document.filePath,
+            ": rows=", rowsCopyData.length,
+            ", filter=", filterLabel.length > 0 ? filterLabel : "<none>");
+
         // Performance hack: un-couple TreeView for bulk-imports
         TreeModelIF oldModel = document.tableView.getModel();
         document.tableView.setModel(null);
@@ -1204,6 +1608,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         renderStep = {
             if (localRenderRequestId != document.renderRequestId)
             {
+                logLineVerbose("[render] aborted ", document.filePath);
                 return false;
             }
 
@@ -1247,7 +1652,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             nextIndex = endIndex;
             if (nextIndex < rowsCopyData.length)
             {
-                document.status.setText(format("Rendering rows: %s/%s ...", nextIndex, rowsCopyData.length));
+                document.status.setText(format("Rendering rows: %s/%s ...", nextIndex, rowsCopyData
+                        .length));
                 return true;
             }
 
@@ -1255,6 +1661,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.lastRenderElapsedMs = cast(long)(MonoTime.currTime - renderStarted)
                 .total!"msecs";
             updatePerfStatus(document);
+            logLineVerbose("[render] finished ", document.filePath,
+                ": rows=", rowsCopyData.length,
+                ", elapsedMs=", document.lastRenderElapsedMs);
 
             string baseStatus;
             if (filterLabel.length > 0)
@@ -1290,31 +1699,23 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.pendingStatusSuffix = "";
             }
 
+            // Nach dem Laden: Spaltenbreiten einmal festziehen, danach bleiben sie stabil.
+            document.pendingColumnMeasurement =
+                document.tableNaturalWidth <= 0 && filterLabel.length == 0 && rowsCopyData.length == document
+                    .loadedRows.length;
+
+            // Nach dem Befüllen TreeView wieder verbinden und eine neue Layout-Runde anstoßen.
+            document.tableView.setModel(document.tableStore);
+            if (document.pendingColumnMeasurement)
+            {
+                document.tableView.queueResize();
+            }
+
             if (busyDocument is document)
             {
                 setLoadingState(document, false);
             }
-            // Nach dem Laden: Spaltenbreiten einmal festziehen, danach bleiben sie stabil.
-            setTableColumnsResizable(document, true);
-            if (document.fitHorizontalSplitAfterLoad && rowsCopyData.length == document.loadedRows.length)
-            {
-                document.fitHorizontalSplitAfterLoad = false;
-                new Idle({ schedulePreferredHorizontalSplit(document); return false; });
-            }
-            else
-            {
-                document.fitHorizontalSplitAfterLoad = false;
-                new Idle({ applyDetailsPanePreference(document, false); return false; });
-            }
             document.status.setText(baseStatus);
-
-            // Nach dem Befüllen TreeView wieder verbinden
-            document.tableView.setModel(document.tableStore);
-
-            if (document.tableNaturalWidth <= 0 && rowsCopyData.length == document.loadedRows.length)
-            {
-                lockMainTableColumnWidths(document);
-            }
 
             return false;
         };
@@ -1398,6 +1799,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 .archiveDetails);
         setMetadataDetails(document.detailTorrentExpander, document.detailTorrentView, "Torrent", row
                 .torrentDetails);
+        setMediaPreview(document, row);
         auto detailsText = format(
             "Selected Row Details\n\n" ~
                 "Index: %s\n" ~
@@ -1726,6 +2128,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.tableNaturalWidth = -1;
             document.tableMinimumWidth = -1;
             document.fitHorizontalSplitAfterLoad = false;
+            document.pendingColumnMeasurement = false;
             return;
         }
 
@@ -1733,6 +2136,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.tableNaturalWidth = -1;
         document.tableMinimumWidth = -1;
         document.fitHorizontalSplitAfterLoad = fitHorizontalSplitAfterLoad;
+        document.pendingColumnMeasurement = false;
+        logLineVerbose("[load] start ", document.filePath,
+            ", fitAfterLoad=", fitHorizontalSplitAfterLoad,
+            ", verbose=", cli.argVerboseOutputs);
         setLoadingState(document, true, format("Loading %s ...", document.filePath));
 
         auto worker = new Thread({
@@ -1743,6 +2150,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             try
             {
                 setLoadingPhase(document, requestId, "Loading scanner data via library ...");
+                logLineVerbose("[load-worker] parsing ", document.filePath);
                 auto blobs = deserializeDataClassJsonFile(document.filePath);
                 result.dataVersion = DATA_CLASS_VERSION2;
                 result.rootShape = "library";
@@ -1753,10 +2161,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
                 setLoadingPhase(document, requestId, "Computing duplicate groups ...");
                 result.duplicateGroups = countDuplicateDigestGroups(result.allRows);
+                logLineVerbose("[load-worker] done ", document.filePath,
+                    ": rows=", result.allRows.length,
+                    ", duplicateGroups=", result.duplicateGroups);
             }
             catch (Exception ex)
             {
                 result.error = ex.msg;
+                logLineVerbose("[load-worker] failed ", document.filePath, ": ", ex.msg);
             }
 
             result.elapsedMs = cast(long)(MonoTime.currTime - started).total!"msecs";
@@ -1817,6 +2229,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 {
                     renderRows(document, document.loadedRows);
                 }
+
+                logLineVerbose("[load] queued render ", document.filePath,
+                ": rows=", document.loadedRows.length,
+                ", autoFilter=", prefAutoApplyFilter ? "yes" : "no");
 
                 persistCurrentState(clearSavedWindowGeometryOnExit);
                 if (pendingStartupPaths.length > 0 && !isLoading)
@@ -1899,6 +2315,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         {
             return;
         }
+        logLineVerbose("[reload] ", document.filePath, ", split=", splitPositionHorizontal);
         loadDocument(document, false);
     }
 
@@ -1952,6 +2369,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto optRestoreOpenFiles = new CheckButton("Reopen previously open data files on startup");
         optRestoreOpenFiles.setActive(prefRestoreOpenFiles);
 
+        auto lblExternalOpenProgram = new Label("External opener program");
+        lblExternalOpenProgram.setXalign(0.0f);
+        auto entryExternalOpenProgram = new Entry();
+        entryExternalOpenProgram.setText(externalOpenProgram);
+        entryExternalOpenProgram.setPlaceholderText("xdg-open");
+
         auto optClearWindowGeometry = new CheckButton("Delete saved window positions on save");
         optClearWindowGeometry.setActive(false);
 
@@ -1959,6 +2382,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         prefsBox.packStart(optCaseSensitive, false, false, 0);
         prefsBox.packStart(optDetailsBelow, false, false, 0);
         prefsBox.packStart(optRestoreOpenFiles, false, false, 0);
+        prefsBox.packStart(lblExternalOpenProgram, false, false, 0);
+        prefsBox.packStart(entryExternalOpenProgram, false, false, 0);
         prefsBox.packStart(optClearWindowGeometry, false, false, 0);
         contentArea.packStart(prefsBox, true, true, 0);
 
@@ -1976,6 +2401,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 applyDetailsPanePreferenceToAll();
             }
+            auto newExternalOpenProgram = entryExternalOpenProgram.getText();
+            externalOpenProgram = newExternalOpenProgram.length > 0 ? newExternalOpenProgram : "xdg-open";
             auto clearGeometry = optClearWindowGeometry.getActive();
             clearSavedWindowGeometryOnExit = clearGeometry;
             persistCurrentState(clearGeometry);
@@ -2018,6 +2445,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto dialog = new AboutDialog();
         dialog.setTransientFor(window);
         dialog.setModal(true);
+        dialog.setLogoIconName("help-about");
         dialog.setProgramName("DosierSkanilo GUI");
         dialog.setVersion("0.1.0");
         dialog.setComments("Desktop frontend for DosierSkanilo.");
@@ -2103,6 +2531,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
     // btnLoad entfernt
 
     btnReload.addOnClicked((Button _) { reloadCurrentDocument(); });
+
+    btnRelayout.addOnClicked((Button _) {
+        auto document = currentDocument();
+        if (document is null)
+        {
+            return;
+        }
+
+        logLineVerbose("[relayout] manual relayout requested for ", document.filePath);
+        document.pendingColumnMeasurement = true;
+        document.tableView.setModel(document.tableStore);
+        document.tableView.queueResize();
+    });
 
     btnCancelLoad.addOnClicked((Button _) { cancelPendingLoad(); });
 

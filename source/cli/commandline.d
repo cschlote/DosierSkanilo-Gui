@@ -41,7 +41,7 @@ Startup options:
 
 EOF";
 
-CliOptions argsArray;
+__gshared CliOptions argsArray;
 
 /** Parse CLI arguments into startup option flags.
  *

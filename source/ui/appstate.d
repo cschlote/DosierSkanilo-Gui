@@ -17,6 +17,9 @@ struct AppState
 
     int splitPositionHorizontal = 720;
     int splitPositionVertical = 420;
+    int splitPositionPreview = 320;
+    int previewScaleMode;
+    string externalOpenProgram = "xdg-open";
 
     bool hasWindowGeometry;
     int windowX;
@@ -190,6 +193,21 @@ AppState loadAppState()
         {
             state.splitPositionVertical = jsonToInt(*value, state.splitPositionVertical);
         }
+        if (auto value = "splitPositionPreview" in root)
+        {
+            state.splitPositionPreview = jsonToInt(*value, state.splitPositionPreview);
+        }
+        if (auto value = "previewScaleMode" in root)
+        {
+            state.previewScaleMode = jsonToInt(*value, state.previewScaleMode);
+        }
+        if (auto value = "externalOpenProgram" in root)
+        {
+            if (value.type == JSONType.string)
+            {
+                state.externalOpenProgram = value.str;
+            }
+        }
 
         if (auto value = "hasWindowGeometry" in root)
         {
@@ -264,6 +282,9 @@ void saveAppState(const(AppState) state)
             "  \"prefRestoreOpenFiles\": %s,\n" ~
             "  \"splitPositionHorizontal\": %s,\n" ~
             "  \"splitPositionVertical\": %s,\n" ~
+            "  \"splitPositionPreview\": %s,\n" ~
+            "  \"previewScaleMode\": %s,\n" ~
+            "  \"externalOpenProgram\": \"%s\",\n" ~
             "  \"hasWindowGeometry\": %s,\n" ~
             "  \"windowX\": %s,\n" ~
             "  \"windowY\": %s,\n" ~
@@ -280,6 +301,9 @@ void saveAppState(const(AppState) state)
         state.prefRestoreOpenFiles ? "true" : "false",
         state.splitPositionHorizontal,
         state.splitPositionVertical,
+        state.splitPositionPreview,
+        state.previewScaleMode,
+        jsonEscapeString(state.externalOpenProgram),
         state.hasWindowGeometry ? "true" : "false",
         state.windowX,
         state.windowY,

@@ -4,9 +4,23 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Added a Preferences field for the external opener program and wired known-file double-clicks to open the selected file with that program.
+- Added icon-based preview scaling modes above the image preview, with Contain as the default and the selected mode persisted across exits.
+- Kept the preview caption below the image area so the available space is controlled by the chosen scaling mode instead of a manual splitter.
+- Added a right-hand preview pane next to the metadata expanders so the selected row can show image previews or media summaries with a fixed-width preview area.
 - Added a scroll container around the Archive metadata expander so its long text no longer forces the details pane to grow vertically.
 - Aligned the detail panel content to the top so the visible fields stay anchored when the archive section is expanded.
 - Made the horizontal splitter refit to the natural width only on fresh loads; reloads now restore the saved split position and filter updates only clamp to the valid range.
+- Kept the main table columns non-resizable after load so mouse-driven autosizing cannot invalidate the splitter width limits.
+- Ensured the main table columns are measured once before the mouse-resize lock is applied, so the Size column keeps its full width.
+- Reattached the TreeView model before column measurement so the splitter bounds are computed from the live data model instead of a detached table.
+- Deferred the column measurement until after GTK has rendered the reattached TreeView model, so the measured widths reflect the actual row content.
+- Only trigger that post-layout measurement for full loads, so filtered renders do not overwrite the splitter bounds.
+- Explicitly queued a new layout pass after reattaching the TreeView model so the measurement runs on rendered rows instead of the empty intermediate state.
+- Set the post-load measurement flag before the TreeView is reattached, so the size-allocate hook cannot miss the first layout pass.
+- Added a temporary Relayout button and verbose layout/load logging to help debug the splitter measurement path.
+- Added a fixed-width fallback for the Archive and Torrent columns so their widths still count even if GTK reports zero allocated width during measurement.
+- Avoided passing a null string into the filter entry at startup and logged the initial filter text length for debugging.
 - Reorganized internal code into distinct model, IO, and view modules. No user-visible changes.
 - Added a mode to view only records that appear more than once in the loaded dataset.
 - Added the ability to open a scanner data file and browse all records in the main window.

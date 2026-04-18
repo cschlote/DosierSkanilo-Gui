@@ -5,6 +5,8 @@ import gtk.TreeView;
 import gtk.TreeViewColumn;
 import gtk.c.types : GtkTreeViewColumnSizing;
 
+enum int MAIN_TABLE_FIXED_COLUMN_WIDTH = 68;
+
 import ui.documenttab : DocumentTab, COL_INDEX, COL_FILE_SIZE, COL_CHECKSUM_SET,
     COL_FILE_TYPE, COL_MEDIA_INFO, COL_HAS_ARCHIVE, COL_HAS_TORRENT,
     COL_INDEX_SORT, COL_FILE_SIZE_SORT;
@@ -49,7 +51,7 @@ void configureTableColumns(TreeView treeView)
         );
         if (modelColumn == COL_HAS_ARCHIVE || modelColumn == COL_HAS_TORRENT)
         {
-            column.setFixedWidth(68);
+            column.setFixedWidth(MAIN_TABLE_FIXED_COLUMN_WIDTH);
         }
         column.setClickable(true);
         treeView.appendColumn(column);
