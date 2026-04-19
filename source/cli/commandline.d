@@ -21,6 +21,8 @@ struct CliOptions
     bool disableAutoFilter;
     bool argVerboseOutputs;
     bool showHelp;
+    bool selfTestMode;
+    int selfTestDelayMs = 3000;
 }
 
 /** Return human-readable CLI usage text. */
@@ -37,6 +39,8 @@ Startup options:
     -v, --verbose           Enable verbose logging
             --case-sensitive    Use case-sensitive text matching
             --no-auto-filter    Disable auto-apply after load/reload
+            --self-test         Start, load queued files, then quit after a short delay
+            --self-test-delay   Delay in milliseconds before quitting in self-test mode
     -h, --help              Print this help and exit
 
 EOF";
@@ -59,6 +63,8 @@ void parseCliOptions(ref string[] args)
         "v|verbose", &argsArray.argVerboseOutputs,
         "case-sensitive", &argsArray.caseSensitiveFilter,
         "no-auto-filter", &argsArray.disableAutoFilter,
+        "self-test", &argsArray.selfTestMode,
+        "self-test-delay", &argsArray.selfTestDelayMs,
         "h|help", &argsArray.showHelp
     );
 

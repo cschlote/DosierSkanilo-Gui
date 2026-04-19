@@ -26,6 +26,7 @@ import std.file : exists;
 import std.format : format;
 import std.path : absolutePath, buildNormalizedPath, dirName, extension, isAbsolute;
 import std.string : startsWith, toLower;
+import std.exception : enforce;
 import std.uri : encode;
 
 import model.blobrow : BlobRow;
@@ -87,10 +88,19 @@ void setMetadataDetails(Expander expander, TextView view, string title, string d
     view.getBuffer().setText(hasDetails ? detailsText : "No details available.");
 }
 
-/** Populate the known-files table from the current row, preferring original file specs. */
+/** Populate the known-files table from the current row, preferring original file specs.
+ *
+ * Params:
+ *   document = active document tab whose known-file table should be updated
+ *   row = current row whose source file specs should be rendered
+ * Returns:
+ *   nothing
+ */
 void setKnownFilesTable(DocumentTab document, const(BlobRow) row)
 {
     document.detailFileNamesStore.clear();
+    enforce(document.detailFileNamesLabel !is null,
+        "detailFileNamesLabel must be initialized before setting known files table");
     document.detailFileNamesLabel.setText(format("Known file names (%s)", row.fileCount));
 
     if (row.sourceBlob is null || row.sourceBlob.fileSpecs.length == 0)

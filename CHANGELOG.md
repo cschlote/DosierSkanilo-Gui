@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Continued the UI refactor by moving the tab page root and status labels into a GTK Builder layout, so the outer shell is now also editable as UI data.
+- Continued the UI refactor by moving the right-hand details pane containers into a second GTK Builder layout while keeping widget behavior in D.
 - Started the UI refactor by moving the preview/details pane hierarchy into a GTK Builder layout so the structure can be edited independently of the D wiring.
 - Added a Preferences field for the external opener program and wired known-file double-clicks to open the selected file with that program.
 - Added icon-based preview scaling modes above the image preview, with Contain as the default and the selected mode persisted across exits.

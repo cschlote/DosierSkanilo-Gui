@@ -5,6 +5,7 @@ import gtk.Box;
 import gtk.Button;
 import gtk.DrawingArea;
 import gtk.Entry;
+import gtk.Builder;
 import gtk.Expander;
 import gtk.Image;
 import gtk.Label;
@@ -55,7 +56,7 @@ PreviewScaleMode clampPreviewScaleMode(int value)
 class DocumentTab
 {
     string filePath;
-    string filterQuery;
+    string filterQuery = "";
     bool filterVideo;
     bool filterAudio;
     bool filterImage;
@@ -67,6 +68,9 @@ class DocumentTab
 
     Box pageRoot;
     Paned split;
+    Builder pageBuilder;
+    Builder detailBuilder;
+    Builder previewBuilder;
     ListStore tableStore;
     TreeView tableView;
     Entry detailIndexEntry;
@@ -121,7 +125,7 @@ class DocumentTab
     Label status;
     Label perfStatus;
     Label fileMetaStatus;
-    string selectedPreviewPath;
+    string selectedPreviewPath = "";
     bool selectedPreviewIsImage;
     PreviewScaleMode previewScaleMode = PreviewScaleMode.contain;
     bool previewVideoAutostart;
@@ -135,9 +139,9 @@ class DocumentTab
     int tableMinimumWidth = -1;
     bool fitHorizontalSplitAfterLoad;
     bool pendingColumnMeasurement;
-    string selectedSha1;
-    string selectedFileName;
-    string selectedDetailsText;
+    string selectedSha1 = "";
+    string selectedFileName = "";
+    string selectedDetailsText = "";
     int loadedDataVersion = -1;
     string loadedRootShape = "-";
     string loadedRootKeysSummary = "-";
@@ -147,7 +151,7 @@ class DocumentTab
     ulong filterRequestId;
     ulong renderRequestId;
     long pendingLoadElapsedMs = -1;
-    string pendingStatusSuffix;
+    string pendingStatusSuffix = "";
     long lastLoadElapsedMs = -1;
     long lastFilterElapsedMs = -1;
     long lastRenderElapsedMs = -1;

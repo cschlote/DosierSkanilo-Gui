@@ -412,15 +412,45 @@ string digestBase64ToHex(string digest)
     }
 }
 
-/** Retrieve a typed object from a GtkBuilder layout. */
-private T builderObject(T)(Builder builder, string objectName)
+/** Retrieve a typed object from a GtkBuilder layout.
+ *
+ * Params:
+ *   builder = builder instance owning the object
+ *   builderLabel = short context label for diagnostics
+ *   objectName = exact object id to resolve
+ * Returns:
+ *   the requested widget cast to the expected type
+ */
+private T builderObject(T)(Builder builder, string builderLabel, string objectName)
 {
+    logLineVerbose("[ui] builder lookup start ", builderLabel, ".", objectName);
     auto object = builder.getObject(objectName);
     if (object is null)
     {
+        auto objectCount = builder.getObjects().length;
+        logLine("[ui] missing GtkBuilder object ", builderLabel, ".", objectName,
+            " (objects=", objectCount, ")");
+        throw new Exception(format("Missing GtkBuilder object: %s.%s", builderLabel, objectName));
+    }
+
+    logLineVerbose("[ui] builder lookup ok ", builderLabel, ".", objectName);
+
+    return cast(T) object;
+}
+
+/** Retrieve a typed object from a GtkBuilder layout, or return null if missing. */
+private T builderObjectOrNull(T)(Builder builder, string builderLabel, string objectName)
+{
+    logLineVerbose("[ui] builder lookup start ", builderLabel, ".", objectName);
+    auto object = builder.getObject(objectName);
+    if (object is null)
+    {
+        logLine("[ui] missing GtkBuilder object ", builderLabel, ".", objectName,
+            " (objects=", builder.getObjects().length, ")");
         return null;
     }
 
+    logLineVerbose("[ui] builder lookup ok ", builderLabel, ".", objectName);
     return cast(T) object;
 }
 
@@ -527,6 +557,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     bool clearSavedWindowGeometryOnExit;
     bool allowRuntimeStatePersistence = !loadedState.hasWindowSize;
     bool isSyncingToolbarState;
+    bool selfTestQuitScheduled;
     int splitPositionHorizontal = loadedState.splitPositionHorizontal;
     int splitPositionVertical = loadedState.splitPositionVertical;
     int splitPositionPreview = loadedState.hasSplitPositionPreview ? loadedState.splitPositionPreview : 0;
@@ -538,6 +569,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     DocumentTab busyDocument;
     Timeout progressPulseTimer;
     Timeout previewVideoProgressTimer;
+    Timeout selfTestQuitTimer;
 
     if (cli.disableAutoFilter)
     {
@@ -560,6 +592,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
     }
     logLineVerbose("[startup] initial filter text length=", cli.filterOnStart.length,
         ", verbose=", cli.argVerboseOutputs);
+    logLineVerbose("[startup] self-test mode=", cli.selfTestMode ? "yes" : "no",
+        ", delayMs=", cli.selfTestDelayMs);
 
     /** Render a compact summary for media flags in the details form. */
     string mediaInfoStatusSummary(const(BlobRow) row)
@@ -1220,19 +1254,31 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailTorrentExpander.setLabelWidget(document.detailTorrentStatus);
 
         auto previewBuilder = new Builder();
+        logLineVerbose("[ui] loading preview builder for ", filePath);
         previewBuilder.addFromString(import("source/ui/detailpreview.ui"));
+        document.previewBuilder = previewBuilder;
+        logLineVerbose("[ui] preview builder loaded, objects=", previewBuilder.getObjects().length);
 
-        auto previewPane = builderObject!Box(previewBuilder, "previewPane");
-        document.detailPreviewTitle = builderObject!Label(previewBuilder, "detailPreviewTitle");
-        document.detailPreviewSummary = builderObject!Label(previewBuilder, "detailPreviewSummary");
-        document.detailPreviewImage = builderObject!Image(previewBuilder, "detailPreviewImage");
-        document.detailPreviewVideoFrame = builderObject!AspectFrame(previewBuilder, "detailPreviewVideoFrame");
-        document.detailPreviewVideoArea = builderObject!DrawingArea(previewBuilder, "detailPreviewVideoArea");
-        document.detailPreviewVideoControls = builderObject!Box(previewBuilder, "detailPreviewVideoControls");
+        auto previewPane = builderObject!Box(previewBuilder, "preview", "previewPane");
+        document.detailPreviewTitle = builderObject!Label(previewBuilder, "preview", "detailPreviewTitle");
+        document.detailPreviewSummary = builderObject!Label(previewBuilder, "preview", "detailPreviewSummary");
+        document.detailPreviewImage = builderObjectOrNull!Image(previewBuilder, "preview", "detailPreviewImage");
+        if (document.detailPreviewImage is null)
+        {
+            logLine("[ui] creating fallback preview image widget for ", filePath);
+            document.detailPreviewImage = new Image();
+            document.detailPreviewImage.setHexpand(true);
+            document.detailPreviewImage.setVexpand(true);
+            document.detailPreviewImage.setHalign(GtkAlign.CENTER);
+            document.detailPreviewImage.setValign(GtkAlign.CENTER);
+        }
+        document.detailPreviewVideoFrame = builderObject!AspectFrame(previewBuilder, "preview", "detailPreviewVideoFrame");
+        document.detailPreviewVideoArea = builderObject!DrawingArea(previewBuilder, "preview", "detailPreviewVideoArea");
+        document.detailPreviewVideoControls = builderObject!Box(previewBuilder, "preview", "detailPreviewVideoControls");
 
-        auto previewButtonRow = builderObject!Box(previewBuilder, "previewButtonRow");
-        auto previewPositionRow = builderObject!Box(previewBuilder, "previewPositionRow");
-        auto previewVolumeRow = builderObject!Box(previewBuilder, "previewVolumeRow");
+        auto previewButtonRow = builderObject!Box(previewBuilder, "preview", "previewButtonRow");
+        auto previewPositionRow = builderObject!Box(previewBuilder, "preview", "previewPositionRow");
+        auto previewVolumeRow = builderObject!Box(previewBuilder, "preview", "previewVolumeRow");
 
         document.detailPreviewVideoArea.setDoubleBuffered(false);
         document.detailPreviewVideoArea.setSizeRequest(640, 480);
@@ -1242,6 +1288,48 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailPreviewVideoArea.setValign(GtkAlign.CENTER);
 
         document.detailPreviewVideoFrame.setSizeRequest(640, 480);
+
+        auto detailBuilder = new Builder();
+        logLineVerbose("[ui] loading detail builder for ", filePath);
+        detailBuilder.addFromString(import("source/ui/detailpane.ui"));
+        document.detailBuilder = detailBuilder;
+        logLineVerbose("[ui] detail builder loaded, objects=", detailBuilder.getObjects().length);
+
+        auto pageBuilder = new Builder();
+        logLineVerbose("[ui] loading page builder for ", filePath);
+        pageBuilder.addFromString(import("source/ui/documentpage.ui"));
+        document.pageBuilder = pageBuilder;
+        logLineVerbose("[ui] page builder loaded, objects=", pageBuilder.getObjects().length);
+
+        auto pageRoot = builderObject!Box(pageBuilder, "page", "pageRoot");
+        auto splitSlot = builderObject!Box(pageBuilder, "page", "splitSlot");
+        document.rowDetails = builderObject!Label(pageBuilder, "page", "rowDetails");
+        document.status = builderObject!Label(pageBuilder, "page", "status");
+        document.perfStatus = builderObject!Label(pageBuilder, "page", "perfStatus");
+        document.fileMetaStatus = builderObject!Label(pageBuilder, "page", "fileMetaStatus");
+
+        document.rowDetails.setXalign(0.0f);
+        document.status.setXalign(0.0f);
+        document.perfStatus.setXalign(0.0f);
+        document.fileMetaStatus.setXalign(0.0f);
+
+        auto detailsPane = builderObject!Box(detailBuilder, "detail", "detailsPane");
+        auto detailsActions = builderObject!Box(detailBuilder, "detail", "detailsActions");
+        auto detailsContent = builderObject!Paned(detailBuilder, "detail", "detailsContent");
+        auto detailsBody = builderObject!Box(detailBuilder, "detail", "detailsBody");
+        auto detailVisuals = builderObject!Box(detailBuilder, "detail", "detailVisuals");
+        auto detailGrid = builderObject!Grid(detailBuilder, "detail", "detailGrid");
+        document.detailFileNamesLabel = builderObject!Label(detailBuilder, "detail", "detailFileNamesLabel");
+        auto detailsScroll = builderObject!ScrolledWindow(detailBuilder, "detail", "detailsScroll");
+        auto previewSlot = builderObject!Box(detailBuilder, "detail", "previewSlot");
+
+        document.btnCopySha1 = builderObject!Button(detailBuilder, "detail", "btnCopySha1");
+        document.btnCopyFile = builderObject!Button(detailBuilder, "detail", "btnCopyFile");
+        document.btnCopyDetails = builderObject!Button(detailBuilder, "detail", "btnCopyDetails");
+
+        document.btnCopySha1.setSensitive(false);
+        document.btnCopyFile.setSensitive(false);
+        document.btnCopyDetails.setSensitive(false);
 
         document.detailPreviewAutostartButton = new CheckButton("Autostart");
         document.detailPreviewAutostartButton.setFocusOnClick(false);
@@ -1362,10 +1450,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         previewVolumeRow.packStart(volumeLabel, false, false, 0);
         previewVolumeRow.packStart(document.detailPreviewVolumeScale, true, true, 0);
 
-        document.detailPreviewVideoControls.packStart(previewButtonRow, false, false, 0);
-        document.detailPreviewVideoControls.packStart(previewPositionRow, false, false, 0);
-        document.detailPreviewVideoControls.packStart(previewVolumeRow, false, false, 0);
-
         document.detailPreviewScroll = new ScrolledWindow(null, null);
         document.detailPreviewScroll.setPolicy(GtkPolicyType.AUTOMATIC, GtkPolicyType.AUTOMATIC);
         document.detailPreviewScroll.setMinContentWidth(120);
@@ -1374,7 +1458,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailPreviewScroll.setPropagateNaturalHeight(false);
         document.detailPreviewScroll.setHexpand(true);
         document.detailPreviewScroll.setVexpand(true);
-        document.detailPreviewScroll.add(document.detailPreviewImage);
 
         document.detailPreviewScroll.addOnSizeAllocate((allocation, Widget _) {
             if (document.selectedPreviewPath.length == 0 || !document.selectedPreviewIsImage)
@@ -1462,17 +1545,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
             syncPreviewToolbarFromCurrentDocument();
         });
 
-        auto previewControls = builderObject!Box(previewBuilder, "previewControls");
+        auto previewControls = builderObject!Box(previewBuilder, "preview", "previewControls");
+        logLineVerbose("[ui] populating preview controls for ", filePath);
         previewControls.packStart(document.detailPreviewContainButton, false, false, 0);
         previewControls.packStart(document.detailPreviewFitWidthButton, false, false, 0);
         previewControls.packStart(document.detailPreviewFitHeightButton, false, false, 0);
         previewControls.packStart(document.detailPreviewCenterButton, false, false, 0);
         previewControls.packStart(document.detailPreviewCoverButton, false, false, 0);
 
-        auto previewContent = builderObject!Box(previewBuilder, "previewContent");
-        previewContent.packStart(document.detailPreviewScroll, true, true, 0);
-        previewContent.packStart(document.detailPreviewVideoFrame, false, false, 0);
-        previewContent.packStart(document.detailPreviewVideoControls, false, false, 0);
         syncPreviewToolbarFromDocument(document);
 
         auto checksumGrid = new Grid();
@@ -1502,16 +1582,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailArchiveExpander.add(archiveScroll);
         document.detailTorrentExpander.add(document.detailTorrentView);
 
-        auto detailVisuals = new Box(Orientation.VERTICAL, 4);
+        logLineVerbose("[ui] populating detail visuals for ", filePath);
         detailVisuals.packStart(document.detailChecksumExpander, false, false, 0);
         detailVisuals.packStart(document.detailMediaInfoExpander, false, false, 0);
         detailVisuals.packStart(document.detailFileTypeExpander, false, false, 0);
         detailVisuals.packStart(document.detailArchiveExpander, false, false, 0);
         detailVisuals.packStart(document.detailTorrentExpander, false, false, 0);
-
-        auto detailGrid = new Grid();
-        detailGrid.setColumnSpacing(10);
-        detailGrid.setRowSpacing(6);
 
         document.detailIndexEntry = createDetailEntry(10);
         document.detailSizeEntry = createDetailEntry(14);
@@ -1541,35 +1617,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
             openKnownFileExternally(document, knownFileName);
         });
 
-        document.detailFileNamesLabel = createDetailCaption("Known file names (0)");
-
-        auto detailsActions = new Box(Orientation.HORIZONTAL, 6);
-        document.btnCopySha1 = new Button("Copy SHA1");
-        document.btnCopyFile = new Button("Copy File");
-        document.btnCopyDetails = new Button("Copy Details");
-        document.btnCopySha1.setSensitive(false);
-        document.btnCopyFile.setSensitive(false);
-        document.btnCopyDetails.setSensitive(false);
-        detailsActions.packStart(document.btnCopySha1, false, false, 0);
-        detailsActions.packStart(document.btnCopyFile, false, false, 0);
-        detailsActions.packStart(document.btnCopyDetails, false, false, 0);
-
-        auto detailsScroll = new ScrolledWindow(null, null);
-        detailsScroll.setVexpand(true);
-        detailsScroll.setHexpand(true);
+        logLineVerbose("[ui] populating known-files scroll for ", filePath);
         detailsScroll.add(document.detailFileNamesView);
-
-        auto detailsBody = new Box(Orientation.VERTICAL, 10);
-        detailsBody.setBorderWidth(6);
-        detailsBody.setValign(GtkAlign.START);
-        detailsBody.packStart(detailVisuals, false, false, 0);
-        detailsBody.packStart(detailGrid, false, false, 0);
-        detailsBody.packStart(document.detailFileNamesLabel, false, false, 0);
-        detailsBody.packStart(detailsScroll, true, true, 0);
-
-        auto detailsContent = new Paned(Orientation.HORIZONTAL);
-        detailsContent.pack1(detailsBody, true, false);
-        detailsContent.pack2(previewPane, true, false);
+        logLineVerbose("[ui] populating preview slot for ", filePath);
+        previewSlot.packStart(previewPane, true, true, 0);
         document.detailPreviewSplit = detailsContent;
         detailsContent.addOnNotify((ParamSpec _, ObjectG __) {
             auto currentPosition = document.detailPreviewSplit.getPosition();
@@ -1589,11 +1640,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.detailPreviewSplit.setPosition(initialPosition);
             splitPositionPreview = initialPosition;
         });
-
-        auto detailsPane = new Box(Orientation.VERTICAL, 6);
-        detailsPane.setValign(GtkAlign.START);
-        detailsPane.packStart(detailsActions, false, false, 0);
-        detailsPane.packStart(detailsContent, true, true, 0);
 
         document.split = new Paned(Orientation.HORIZONTAL);
         document.split.pack1(scroll, false, true);
@@ -1629,21 +1675,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
         }, "position");
 
-        document.rowDetails = new Label("Selection: none");
-        document.rowDetails.setXalign(0.0f);
-        document.status = new Label(format("Ready: %s", filePath));
-        document.status.setXalign(0.0f);
-        document.perfStatus = new Label("Timings: load=- ms | filter=- ms | render=- ms");
-        document.perfStatus.setXalign(0.0f);
-        document.fileMetaStatus = new Label("File metadata: version=- | root=- | keys=-");
-        document.fileMetaStatus.setXalign(0.0f);
+        document.rowDetails.setText("Selection: none");
+        document.status.setText(format("Ready: %s", filePath));
+        document.perfStatus.setText("Timings: load=- ms | filter=- ms | render=- ms");
+        document.fileMetaStatus.setText("File metadata: version=- | root=- | keys=-");
 
-        document.pageRoot = new Box(Orientation.VERTICAL, 0);
-        document.pageRoot.packStart(document.split, true, true, 0);
-        document.pageRoot.packStart(document.rowDetails, false, false, 0);
-        document.pageRoot.packStart(document.status, false, false, 0);
-        document.pageRoot.packStart(document.perfStatus, false, false, 0);
-        document.pageRoot.packStart(document.fileMetaStatus, false, false, 0);
+        splitSlot.packStart(document.split, true, true, 0);
+        document.pageRoot = pageRoot;
         document.pageRoot.showAll();
 
         document.btnCopySha1.addOnClicked((Button _) {
@@ -2122,6 +2160,17 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 notebook.setCurrentPage(pendingStartupSelectIndex);
             }
+
+            if (cli.selfTestMode && !selfTestQuitScheduled)
+            {
+                selfTestQuitScheduled = true;
+                logLine("[self-test] scheduling quit in ", cli.selfTestDelayMs, " ms");
+                selfTestQuitTimer = new Timeout(cli.selfTestDelayMs, {
+                    logLine("[self-test] quitting after startup delay");
+                    Main.quit();
+                    return false;
+                });
+            }
             return;
         }
     }
@@ -2456,6 +2505,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 if (pendingStartupPaths.length > 0 && !isLoading)
                 {
                     new Idle({ loadNextPendingStartupPath(); return false; });
+                }
+                else if (cli.selfTestMode && pendingStartupPaths.length == 0 && !selfTestQuitScheduled)
+                {
+                    selfTestQuitScheduled = true;
+                    logLine("[self-test] scheduling quit in ", cli.selfTestDelayMs, " ms");
+                    selfTestQuitTimer = new Timeout(cli.selfTestDelayMs, {
+                        logLine("[self-test] quitting after startup delay");
+                        Main.quit();
+                        return false;
+                    });
                 }
                 return false;
             });
@@ -2958,6 +3017,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
             pendingStartupSelectIndex = loadedState.activeTabIndex;
         }
         loadNextPendingStartupPath();
+    }
+    else if (cli.selfTestMode && !selfTestQuitScheduled)
+    {
+        selfTestQuitScheduled = true;
+        logLine("[self-test] scheduling quit in ", cli.selfTestDelayMs, " ms");
+        selfTestQuitTimer = new Timeout(cli.selfTestDelayMs, {
+            logLine("[self-test] quitting after startup delay");
+            Main.quit();
+            return false;
+        });
     }
 
     Main.run();

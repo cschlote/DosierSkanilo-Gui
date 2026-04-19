@@ -45,6 +45,15 @@
             <property name="vexpand">True</property>
             <property name="min-content-width">120</property>
             <property name="min-content-height">120</property>
+            <child>
+              <object class="GtkImage" id="detailPreviewImage">
+                <property name="can-focus">False</property>
+                <property name="halign">center</property>
+                <property name="valign">center</property>
+                <property name="hexpand">True</property>
+                <property name="vexpand">True</property>
+              </object>
+            </child>
           </object>
           <packing>
             <property name="expand">False</property>
