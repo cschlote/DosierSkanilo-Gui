@@ -4,6 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Reattach the image preview widget to the scrolled preview container so image previews are visible again after the video layout adjustments.
 - Restore a 640x360 minimum size for the video aspect frame and center it vertically so the preview does not collapse to an undersized box when the splitter is narrow.
 - Removed the fixed 640x480 sizing from the video preview so the embedded frame can keep growing with the splitter instead of capping out early.
 - Let the embedded video drawing area fill the aspect frame instead of centering it, so the video preview no longer appears bottom-aligned.

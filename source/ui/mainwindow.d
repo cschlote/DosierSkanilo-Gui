@@ -1262,6 +1262,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto previewPane = builderObject!Box(previewBuilder, "preview", "previewPane");
         document.detailPreviewTitle = builderObject!Label(previewBuilder, "preview", "detailPreviewTitle");
         document.detailPreviewSummary = builderObject!Label(previewBuilder, "preview", "detailPreviewSummary");
+        document.detailPreviewScroll = builderObject!ScrolledWindow(previewBuilder, "preview", "detailPreviewScroll");
         document.detailPreviewImage = builderObjectOrNull!Image(previewBuilder, "preview", "detailPreviewImage");
         if (document.detailPreviewImage is null)
         {
@@ -1271,6 +1272,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.detailPreviewImage.setVexpand(true);
             document.detailPreviewImage.setHalign(GtkAlign.CENTER);
             document.detailPreviewImage.setValign(GtkAlign.CENTER);
+        }
+        if (document.detailPreviewScroll !is null)
+        {
+            document.detailPreviewScroll.add(document.detailPreviewImage);
+            document.detailPreviewImage.setVisible(true);
         }
         document.detailPreviewVideoFrame = builderObject!AspectFrame(previewBuilder, "preview", "detailPreviewVideoFrame");
         document.detailPreviewVideoArea = builderObject!DrawingArea(previewBuilder, "preview", "detailPreviewVideoArea");
@@ -1453,8 +1459,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         previewVolumeRow.packStart(volumeLabel, false, false, 0);
         previewVolumeRow.packStart(document.detailPreviewVolumeScale, true, true, 0);
 
-        document.detailPreviewScroll = new ScrolledWindow(null, null);
-        document.detailPreviewScroll.setPolicy(GtkPolicyType.AUTOMATIC, GtkPolicyType.AUTOMATIC);
         document.detailPreviewScroll.setMinContentWidth(120);
         document.detailPreviewScroll.setMinContentHeight(120);
         document.detailPreviewScroll.setPropagateNaturalWidth(false);
