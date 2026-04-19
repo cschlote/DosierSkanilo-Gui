@@ -55,6 +55,8 @@
         <child>
           <object class="GtkAspectFrame" id="detailPreviewVideoFrame">
             <property name="can-focus">False</property>
+            <property name="halign">fill</property>
+            <property name="valign">center</property>
             <property name="hexpand">True</property>
             <property name="vexpand">True</property>
             <property name="label-xalign">0</property>
@@ -63,18 +65,16 @@
             <property name="obey-child">False</property>
             <child>
               <object class="GtkDrawingArea" id="detailPreviewVideoArea">
-                <property name="width-request">640</property>
-                <property name="height-request">480</property>
                 <property name="can-focus">False</property>
-                <property name="halign">center</property>
-                <property name="valign">center</property>
+                <property name="halign">fill</property>
+                <property name="valign">fill</property>
                 <property name="hexpand">True</property>
                 <property name="vexpand">True</property>
               </object>
             </child>
           </object>
           <packing>
-            <property name="expand">False</property>
+            <property name="expand">True</property>
             <property name="fill">True</property>
             <property name="position">1</property>
           </packing>

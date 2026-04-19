@@ -1281,13 +1281,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto previewVolumeRow = builderObject!Box(previewBuilder, "preview", "previewVolumeRow");
 
         document.detailPreviewVideoArea.setDoubleBuffered(false);
-        document.detailPreviewVideoArea.setSizeRequest(640, 480);
         document.detailPreviewVideoArea.setHexpand(true);
         document.detailPreviewVideoArea.setVexpand(true);
-        document.detailPreviewVideoArea.setHalign(GtkAlign.CENTER);
-        document.detailPreviewVideoArea.setValign(GtkAlign.CENTER);
+        document.detailPreviewVideoArea.setHalign(GtkAlign.FILL);
+        document.detailPreviewVideoArea.setValign(GtkAlign.FILL);
 
-        document.detailPreviewVideoFrame.setSizeRequest(640, 480);
+        document.detailPreviewVideoFrame.setSizeRequest(640, 360);
+        document.detailPreviewVideoFrame.setHalign(GtkAlign.FILL);
+        document.detailPreviewVideoFrame.setValign(GtkAlign.CENTER);
 
         auto detailBuilder = new Builder();
         logLineVerbose("[ui] loading detail builder for ", filePath);

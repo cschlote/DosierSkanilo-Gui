@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Restore a 640x360 minimum size for the video aspect frame and center it vertically so the preview does not collapse to an undersized box when the splitter is narrow.
+- Removed the fixed 640x480 sizing from the video preview so the embedded frame can keep growing with the splitter instead of capping out early.
+- Let the embedded video drawing area fill the aspect frame instead of centering it, so the video preview no longer appears bottom-aligned.
 - Continued the UI refactor by moving the tab page root and status labels into a GTK Builder layout, so the outer shell is now also editable as UI data.
 - Continued the UI refactor by moving the right-hand details pane containers into a second GTK Builder layout while keeping widget behavior in D.
 - Started the UI refactor by moving the preview/details pane hierarchy into a GTK Builder layout so the structure can be edited independently of the D wiring.

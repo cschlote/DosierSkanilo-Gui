@@ -21,6 +21,7 @@ import gstreamer.Structure;
 import gstreamer.c.types : GstBusSyncReply, GstFormat, GstMessageType, GstSeekFlags, GstState;
 import gstinterfaces.VideoOverlay;
 import pango.PgFontDescription;
+import pango.c.types : PangoEllipsizeMode;
 
 import std.file : exists;
 import std.format : format;
@@ -75,6 +76,8 @@ void setEntryMonospace(Entry entry)
 /** Write compact status text with a bold title into one metadata label. */
 void setMetadataStatusLabel(Label label, string title, string summary)
 {
+    label.setEllipsize(PangoEllipsizeMode.MIDDLE);
+    label.setSingleLineMode(true);
     label.setMarkup(format("<b>%s</b>  %s", title, summary));
 }
 
