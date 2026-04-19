@@ -60,6 +60,7 @@
     <child>
       <object class="GtkPaned" id="detailsContent">
         <property name="can-focus">False</property>
+        <property name="wide-handle">True</property>
         <child>
           <object class="GtkBox" id="detailsBody">
             <property name="can-focus">False</property>
@@ -154,6 +155,10 @@
             <property name="hexpand">True</property>
             <property name="vexpand">True</property>
             <property name="orientation">vertical</property>
+            <property name="baseline-position">top</property>
+            <child>
+              <placeholder/>
+            </child>
           </object>
           <packing>
             <property name="resize">True</property>
@@ -162,7 +167,7 @@
         </child>
       </object>
       <packing>
-        <property name="expand">True</property>
+        <property name="expand">False</property>
         <property name="fill">True</property>
         <property name="position">1</property>
       </packing>
