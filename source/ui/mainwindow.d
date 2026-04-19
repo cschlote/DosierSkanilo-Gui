@@ -966,6 +966,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.selectedPreviewPath = "";
         document.selectedPreviewIsImage = false;
         document.selectedPreviewIsVideo = false;
+        document.selectedPreviewCandidatePath = "";
+        document.selectedPreviewCandidateExists = false;
+        document.selectedPreviewSourcePath = "";
+        document.selectedPreviewSourcePixbuf = null;
         setDetailEntry(document.detailSha1HexEntry, "");
         setDetailEntry(document.detailMd5HexEntry, "");
         setDetailEntry(document.detailXxh64HexEntry, "");

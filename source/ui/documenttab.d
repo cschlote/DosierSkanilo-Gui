@@ -18,6 +18,7 @@ import gtk.ToggleButton;
 import gtk.Scale;
 import gtk.CheckButton;
 
+import gdkpixbuf.Pixbuf;
 import gstreamer.Element;
 import gstinterfaces.VideoOverlay;
 import model.blobrow : BlobRow;
@@ -131,6 +132,10 @@ class DocumentTab
     bool previewVideoAutostart;
     double previewVideoVolume = 0.5;
     bool previewVideoPositionSyncing;
+    string selectedPreviewCandidatePath = "";
+    bool selectedPreviewCandidateExists;
+    string selectedPreviewSourcePath = "";
+    Pixbuf selectedPreviewSourcePixbuf;
 
     BlobRow[] loadedRows;
     BlobRow[] visibleRows;

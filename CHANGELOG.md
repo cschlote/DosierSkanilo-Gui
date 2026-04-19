@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
-- ...
+- Cache the loaded image preview pixbuf so resize-driven preview refreshes no longer reopen the same file on every layout pass.
 
 ## Release 0.6.0 - 2026-04-19
 

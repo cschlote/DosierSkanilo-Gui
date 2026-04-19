@@ -229,6 +229,34 @@ private string toFileUri(string path)
     return "file://" ~ encode(absolutePath(path));
 }
 
+/** Load or reuse the source pixbuf for the current image preview. */
+private bool ensureImagePreviewSource(DocumentTab document)
+{
+    if (document.selectedPreviewPath.length == 0 || !document.selectedPreviewIsImage)
+    {
+        return false;
+    }
+
+    if (document.selectedPreviewSourcePixbuf !is null
+        && document.selectedPreviewSourcePath == document.selectedPreviewPath)
+    {
+        return true;
+    }
+
+    try
+    {
+        document.selectedPreviewSourcePixbuf = new Pixbuf(document.selectedPreviewPath);
+        document.selectedPreviewSourcePath = document.selectedPreviewPath;
+        return true;
+    }
+    catch (Exception)
+    {
+        document.selectedPreviewSourcePixbuf = null;
+        document.selectedPreviewSourcePath = "";
+        return false;
+    }
+}
+
 /** Stop the embedded video player. */
 void stopVideoPreview(DocumentTab document)
 {
@@ -551,6 +579,13 @@ private void updatePreviewImage(DocumentTab document)
 
     try
     {
+        if (!ensureImagePreviewSource(document))
+        {
+            document.detailPreviewImage.clear();
+            return;
+        }
+
+        auto source = document.selectedPreviewSourcePixbuf;
         Pixbuf pixbuf;
         auto previewWidth = document.detailPreviewScroll !is null
             ? document.detailPreviewScroll.getAllocatedWidth() : 0;
@@ -570,7 +605,6 @@ private void updatePreviewImage(DocumentTab document)
         {
         case PreviewScaleMode.contain:
         {
-            auto source = new Pixbuf(document.selectedPreviewPath);
             auto sourceWidth = source.getWidth();
             auto sourceHeight = source.getHeight();
             auto widthScale = cast(double) previewWidth / sourceWidth;
@@ -592,17 +626,40 @@ private void updatePreviewImage(DocumentTab document)
             break;
         }
         case PreviewScaleMode.fitWidth:
-            pixbuf = new Pixbuf(document.selectedPreviewPath, previewWidth, -1, true);
+        {
+            auto sourceWidth = source.getWidth();
+            auto sourceHeight = source.getHeight();
+            auto scale = cast(double) previewWidth / sourceWidth;
+            auto destHeight = cast(int) (sourceHeight * scale);
+            if (destHeight < 1)
+            {
+                destHeight = 1;
+            }
+            pixbuf = previewWidth == sourceWidth
+                ? source
+                : source.scaleSimple(previewWidth, destHeight, GdkInterpType.BILINEAR);
             break;
+        }
         case PreviewScaleMode.fitHeight:
-            pixbuf = new Pixbuf(document.selectedPreviewPath, -1, previewHeight, true);
+        {
+            auto sourceWidth = source.getWidth();
+            auto sourceHeight = source.getHeight();
+            auto scale = cast(double) previewHeight / sourceHeight;
+            auto destWidth = cast(int) (sourceWidth * scale);
+            if (destWidth < 1)
+            {
+                destWidth = 1;
+            }
+            pixbuf = previewHeight == sourceHeight
+                ? source
+                : source.scaleSimple(destWidth, previewHeight, GdkInterpType.BILINEAR);
             break;
+        }
         case PreviewScaleMode.center:
-            pixbuf = new Pixbuf(document.selectedPreviewPath);
+            pixbuf = source;
             break;
         case PreviewScaleMode.cover:
         {
-            auto source = new Pixbuf(document.selectedPreviewPath);
             auto sourceWidth = source.getWidth();
             auto sourceHeight = source.getHeight();
             auto widthScale = cast(double) previewWidth / sourceWidth;
@@ -685,9 +742,24 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
     auto fileName = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
     auto mediaSummary = row.mediaInfoDetails.length > 0 ? row.mediaInfoDetails : "No media metadata available.";
     auto previewPath = resolvePreviewPath(document, row);
-    auto imagePreviewPath = previewPath.length > 0 && exists(previewPath) ? previewPath : "";
+    auto imagePreviewPath = "";
+    if (previewPath.length > 0)
+    {
+        if (previewPath != document.selectedPreviewCandidatePath)
+        {
+            document.selectedPreviewCandidatePath = previewPath;
+            document.selectedPreviewCandidateExists = exists(previewPath);
+        }
+
+        if (document.selectedPreviewCandidateExists)
+        {
+            imagePreviewPath = previewPath;
+        }
+    }
 
     document.selectedPreviewPath = imagePreviewPath;
+    document.selectedPreviewSourcePath = "";
+    document.selectedPreviewSourcePixbuf = null;
     document.selectedPreviewIsImage = isImagePreviewCandidate(row) && imagePreviewPath.length > 0;
     document.selectedPreviewIsVideo = !document.selectedPreviewIsImage && isVideoPreviewCandidate(row) && imagePreviewPath.length > 0;
 
