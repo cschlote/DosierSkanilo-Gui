@@ -1280,15 +1280,17 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto previewPositionRow = builderObject!Box(previewBuilder, "preview", "previewPositionRow");
         auto previewVolumeRow = builderObject!Box(previewBuilder, "preview", "previewVolumeRow");
 
+        // Fill provided space of parent container, but don't stretch video content itself.
         document.detailPreviewVideoArea.setDoubleBuffered(false);
         document.detailPreviewVideoArea.setHexpand(true);
         document.detailPreviewVideoArea.setVexpand(true);
         document.detailPreviewVideoArea.setHalign(GtkAlign.FILL);
         document.detailPreviewVideoArea.setValign(GtkAlign.FILL);
-
-        document.detailPreviewVideoFrame.setSizeRequest(640, 360);
+        // Fill provided space of parent container, but don't stretch video content itself.
+        document.detailPreviewVideoFrame.setHexpand(true);
+        document.detailPreviewVideoFrame.setVexpand(true);
         document.detailPreviewVideoFrame.setHalign(GtkAlign.FILL);
-        document.detailPreviewVideoFrame.setValign(GtkAlign.CENTER);
+        document.detailPreviewVideoFrame.setValign(GtkAlign.FILL);
 
         auto detailBuilder = new Builder();
         logLineVerbose("[ui] loading detail builder for ", filePath);
