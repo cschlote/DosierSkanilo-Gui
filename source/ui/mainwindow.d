@@ -516,7 +516,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     bool isSyncingToolbarState;
     int splitPositionHorizontal = loadedState.splitPositionHorizontal;
     int splitPositionVertical = loadedState.splitPositionVertical;
-    int splitPositionPreview = loadedState.splitPositionPreview;
+    int splitPositionPreview = loadedState.hasSplitPositionPreview ? loadedState.splitPositionPreview : 0;
     PreviewScaleMode previewScaleMode = clampPreviewScaleMode(loadedState.previewScaleMode);
     int lastKnownWindowWidth = loadedState.windowWidth;
     int lastKnownWindowHeight = loadedState.windowHeight;
@@ -1218,7 +1218,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
         document.detailPreviewVideoArea = new DrawingArea();
         document.detailPreviewVideoArea.setDoubleBuffered(false);
-        document.detailPreviewVideoArea.setSizeRequest(640, 360);
+        document.detailPreviewVideoArea.setSizeRequest(640, 480);
         document.detailPreviewVideoArea.setHexpand(true);
         document.detailPreviewVideoArea.setVexpand(true);
         document.detailPreviewVideoArea.setHalign(GtkAlign.CENTER);
@@ -1226,7 +1226,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
         document.detailPreviewVideoFrame = new AspectFrame("", 0.5f, 0.5f, 16.0 / 9.0, false);
         document.detailPreviewVideoFrame.setShadowType(GtkShadowType.NONE);
-        document.detailPreviewVideoFrame.setSizeRequest(640, 360);
+        document.detailPreviewVideoFrame.setSizeRequest(640, 480);
         document.detailPreviewVideoFrame.setHexpand(true);
         document.detailPreviewVideoFrame.setVexpand(true);
         document.detailPreviewVideoFrame.add(document.detailPreviewVideoArea);
@@ -1484,7 +1484,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         previewContent.setHexpand(true);
         previewContent.setVexpand(true);
         previewContent.packStart(document.detailPreviewScroll, true, true, 0);
-        previewContent.packStart(document.detailPreviewVideoFrame, true, true, 0);
+        previewContent.packStart(document.detailPreviewVideoFrame, false, false, 0);
         previewContent.packStart(document.detailPreviewVideoControls, false, false, 0);
         previewPane.packStart(previewContent, true, true, 0);
         previewPane.packStart(document.detailPreviewSummary, false, false, 0);
@@ -1585,6 +1585,25 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto detailsContent = new Paned(Orientation.HORIZONTAL);
         detailsContent.pack1(detailsBody, true, false);
         detailsContent.pack2(previewPane, true, false);
+        document.detailPreviewSplit = detailsContent;
+        detailsContent.addOnNotify((ParamSpec _, ObjectG __) {
+            auto currentPosition = document.detailPreviewSplit.getPosition();
+            splitPositionPreview = currentPosition;
+        }, "position");
+        detailsContent.addOnSizeAllocate((allocation, Widget _) {
+            if (splitPositionPreview > 0 || allocation.width <= 0)
+            {
+                return;
+            }
+
+            auto initialPosition = cast(int) (allocation.width * 0.25);
+            if (initialPosition < 1)
+            {
+                initialPosition = 1;
+            }
+            document.detailPreviewSplit.setPosition(initialPosition);
+            splitPositionPreview = initialPosition;
+        });
 
         auto detailsPane = new Box(Orientation.VERTICAL, 6);
         detailsPane.setValign(GtkAlign.START);
@@ -1675,6 +1694,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         state.previewVideoAutostart = previewVideoAutostart;
         state.previewVideoVolume = previewVideoVolume;
         state.splitPositionPreview = splitPositionPreview;
+        state.hasSplitPositionPreview = splitPositionPreview > 0;
 
         auto document = currentDocument();
         if (document !is null)
@@ -1693,6 +1713,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             if (document.detailPreviewSplit !is null)
             {
                 splitPositionPreview = document.detailPreviewSplit.getPosition();
+                state.splitPositionPreview = splitPositionPreview;
+                state.hasSplitPositionPreview = true;
             }
 
             previewScaleMode = document.previewScaleMode;
@@ -2001,6 +2023,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
         setMetadataDetails(document.detailTorrentExpander, document.detailTorrentView, "Torrent", row
                 .torrentDetails);
         setMediaPreview(document, row);
+        if (document.selectedPreviewIsVideo)
+        {
+            new Timeout(60, {
+                if (document.selectedPreviewIsVideo)
+                {
+                    refreshMediaPreview(document);
+                }
+                return false;
+            });
+        }
         auto detailsText = format(
             "Selected Row Details\n\n" ~
                 "Index: %s\n" ~

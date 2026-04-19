@@ -498,6 +498,8 @@ private void updatePreviewVideo(DocumentTab document)
     }
 
     document.detailPreviewVideoFrame.setVisible(true);
+    document.detailPreviewVideoFrame.queueResize();
+    document.detailPreviewVideoArea.queueResize();
     document.previewVideoPlayer.setState(GstState.NULL);
     setVideoPreviewVolume(document, document.previewVideoVolume);
     document.previewVideoPlayer.setProperty("uri", new Value(uri));

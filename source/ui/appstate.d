@@ -18,6 +18,7 @@ struct AppState
     int splitPositionHorizontal = 720;
     int splitPositionVertical = 420;
     int splitPositionPreview = 320;
+    bool hasSplitPositionPreview;
     int previewScaleMode;
     string externalOpenProgram = "xdg-open";
     bool previewVideoAutostart;
@@ -198,6 +199,7 @@ AppState loadAppState()
         if (auto value = "splitPositionPreview" in root)
         {
             state.splitPositionPreview = jsonToInt(*value, state.splitPositionPreview);
+            state.hasSplitPositionPreview = true;
         }
         if (auto value = "previewScaleMode" in root)
         {
@@ -296,6 +298,7 @@ void saveAppState(const(AppState) state)
             "  \"splitPositionHorizontal\": %s,\n" ~
             "  \"splitPositionVertical\": %s,\n" ~
             "  \"splitPositionPreview\": %s,\n" ~
+            "  \"hasSplitPositionPreview\": %s,\n" ~
             "  \"previewScaleMode\": %s,\n" ~
             "  \"externalOpenProgram\": \"%s\",\n" ~
             "  \"previewVideoAutostart\": %s,\n" ~
@@ -317,6 +320,7 @@ void saveAppState(const(AppState) state)
         state.splitPositionHorizontal,
         state.splitPositionVertical,
         state.splitPositionPreview,
+        state.hasSplitPositionPreview ? "true" : "false",
         state.previewScaleMode,
         jsonEscapeString(state.externalOpenProgram),
         state.previewVideoAutostart ? "true" : "false",

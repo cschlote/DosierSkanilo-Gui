@@ -5,6 +5,7 @@
 - Add export actions (CSV/JSON subset)
 - Add row activation action (copy path, open in file manager)
 - Add unit tests for CLI help text and startup filter parsing
+- Revisit the top-level splitter behavior and redesign it instead of patching around it
 
 ## Later
 
