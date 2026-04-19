@@ -15,6 +15,7 @@ import glib.Timeout;
 import gobject.Type : GType;
 import gobject.ObjectG : ObjectG;
 import gobject.ParamSpec : ParamSpec;
+import gtk.Builder;
 import gtk.AboutDialog;
 import gtk.AccelGroup;
 import gtk.Box;
@@ -409,6 +410,18 @@ string digestBase64ToHex(string digest)
     {
         return "<invalid base64>";
     }
+}
+
+/** Retrieve a typed object from a GtkBuilder layout. */
+private T builderObject(T)(Builder builder, string objectName)
+{
+    auto object = builder.getObject(objectName);
+    if (object is null)
+    {
+        return null;
+    }
+
+    return cast(T) object;
 }
 
 /** Program entry point.
@@ -1206,17 +1219,21 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailArchiveExpander.setLabelWidget(document.detailArchiveStatus);
         document.detailTorrentExpander.setLabelWidget(document.detailTorrentStatus);
 
-        document.detailPreviewTitle = new Label("Preview");
-        document.detailPreviewTitle.setXalign(0.0f);
-        document.detailPreviewSummary = new Label("No preview available.");
-        document.detailPreviewSummary.setXalign(0.0f);
-        document.detailPreviewImage = new Image();
-        document.detailPreviewImage.setHexpand(true);
-        document.detailPreviewImage.setVexpand(true);
-        document.detailPreviewImage.setHalign(GtkAlign.CENTER);
-        document.detailPreviewImage.setValign(GtkAlign.CENTER);
+        auto previewBuilder = new Builder();
+        previewBuilder.addFromString(import("source/ui/detailpreview.ui"));
 
-        document.detailPreviewVideoArea = new DrawingArea();
+        auto previewPane = builderObject!Box(previewBuilder, "previewPane");
+        document.detailPreviewTitle = builderObject!Label(previewBuilder, "detailPreviewTitle");
+        document.detailPreviewSummary = builderObject!Label(previewBuilder, "detailPreviewSummary");
+        document.detailPreviewImage = builderObject!Image(previewBuilder, "detailPreviewImage");
+        document.detailPreviewVideoFrame = builderObject!AspectFrame(previewBuilder, "detailPreviewVideoFrame");
+        document.detailPreviewVideoArea = builderObject!DrawingArea(previewBuilder, "detailPreviewVideoArea");
+        document.detailPreviewVideoControls = builderObject!Box(previewBuilder, "detailPreviewVideoControls");
+
+        auto previewButtonRow = builderObject!Box(previewBuilder, "previewButtonRow");
+        auto previewPositionRow = builderObject!Box(previewBuilder, "previewPositionRow");
+        auto previewVolumeRow = builderObject!Box(previewBuilder, "previewVolumeRow");
+
         document.detailPreviewVideoArea.setDoubleBuffered(false);
         document.detailPreviewVideoArea.setSizeRequest(640, 480);
         document.detailPreviewVideoArea.setHexpand(true);
@@ -1224,27 +1241,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailPreviewVideoArea.setHalign(GtkAlign.CENTER);
         document.detailPreviewVideoArea.setValign(GtkAlign.CENTER);
 
-        document.detailPreviewVideoFrame = new AspectFrame("", 0.5f, 0.5f, 16.0 / 9.0, false);
-        document.detailPreviewVideoFrame.setShadowType(GtkShadowType.NONE);
         document.detailPreviewVideoFrame.setSizeRequest(640, 480);
-        document.detailPreviewVideoFrame.setHexpand(true);
-        document.detailPreviewVideoFrame.setVexpand(true);
-        document.detailPreviewVideoFrame.add(document.detailPreviewVideoArea);
-        document.detailPreviewVideoFrame.setVisible(false);
-
-        document.detailPreviewVideoControls = new Box(Orientation.VERTICAL, 6);
-        document.detailPreviewVideoControls.setHexpand(true);
-        document.detailPreviewVideoControls.setVisible(false);
-
-        auto previewButtonRow = new Box(Orientation.HORIZONTAL, 6);
-        previewButtonRow.setHalign(GtkAlign.START);
-        previewButtonRow.setHexpand(true);
-
-        auto previewPositionRow = new Box(Orientation.HORIZONTAL, 6);
-        previewPositionRow.setHexpand(true);
-
-        auto previewVolumeRow = new Box(Orientation.HORIZONTAL, 6);
-        previewVolumeRow.setHexpand(true);
 
         document.detailPreviewAutostartButton = new CheckButton("Autostart");
         document.detailPreviewAutostartButton.setFocusOnClick(false);
@@ -1402,15 +1399,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
         });
 
-        auto previewPane = new Box(Orientation.VERTICAL, 4);
-        previewPane.setHexpand(true);
-        previewPane.setVexpand(true);
-        previewPane.packStart(document.detailPreviewTitle, false, false, 0);
-
-        auto previewControls = new Box(Orientation.HORIZONTAL, 2);
-        previewControls.setHalign(GtkAlign.START);
-        previewControls.setHexpand(true);
-
         ToggleButton createPreviewModeButton(string iconName, string tooltip)
         {
             auto button = new ToggleButton();
@@ -1474,20 +1462,17 @@ int runMainWindow(string[] args, ref CliOptions cli)
             syncPreviewToolbarFromCurrentDocument();
         });
 
+        auto previewControls = builderObject!Box(previewBuilder, "previewControls");
         previewControls.packStart(document.detailPreviewContainButton, false, false, 0);
         previewControls.packStart(document.detailPreviewFitWidthButton, false, false, 0);
         previewControls.packStart(document.detailPreviewFitHeightButton, false, false, 0);
         previewControls.packStart(document.detailPreviewCenterButton, false, false, 0);
         previewControls.packStart(document.detailPreviewCoverButton, false, false, 0);
-        previewPane.packStart(previewControls, false, false, 0);
-        auto previewContent = new Box(Orientation.VERTICAL, 0);
-        previewContent.setHexpand(true);
-        previewContent.setVexpand(true);
+
+        auto previewContent = builderObject!Box(previewBuilder, "previewContent");
         previewContent.packStart(document.detailPreviewScroll, true, true, 0);
         previewContent.packStart(document.detailPreviewVideoFrame, false, false, 0);
         previewContent.packStart(document.detailPreviewVideoControls, false, false, 0);
-        previewPane.packStart(previewContent, true, true, 0);
-        previewPane.packStart(document.detailPreviewSummary, false, false, 0);
         syncPreviewToolbarFromDocument(document);
 
         auto checksumGrid = new Grid();
