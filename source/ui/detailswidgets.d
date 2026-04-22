@@ -7,6 +7,7 @@ import gtk.Image;
 import gtk.Label;
 import gtk.TextView;
 import gtk.TreeIter;
+import gtk.StyleContext;
 import gtk.c.types : GtkWrapMode;
 import gdkpixbuf.Pixbuf;
 import gdkpixbuf.c.types : GdkInterpType;
@@ -20,7 +21,6 @@ import gstreamer.Message;
 import gstreamer.Structure;
 import gstreamer.c.types : GstBusSyncReply, GstFormat, GstMessageType, GstSeekFlags, GstState;
 import gstinterfaces.VideoOverlay;
-import pango.PgFontDescription;
 import pango.c.types : PangoEllipsizeMode;
 
 import std.file : exists;
@@ -70,7 +70,11 @@ void setDetailEntry(Entry entry, string value)
 /** Apply a monospace font to one entry widget. */
 void setEntryMonospace(Entry entry)
 {
-    entry.overrideFont(PgFontDescription.fromString("Monospace 10"));
+    auto styleContext = entry.getStyleContext();
+    if (styleContext !is null)
+    {
+        styleContext.addClass("digest-entry");
+    }
 }
 
 /** Write compact status text with a bold title into one metadata label. */

@@ -10,6 +10,7 @@ module ui.mainwindow;
 
 import gdk.c.types : GdkEventConfigure;
 import gdk.Display;
+import gdk.Screen;
 import glib.Idle;
 import glib.Timeout;
 import gobject.Type : GType;
@@ -24,6 +25,7 @@ import gtk.AspectFrame;
 import gtk.c.types : ButtonsType, DialogFlags, FileChooserAction, MessageType, Orientation, ResponseType;
 import gtk.CheckButton;
 import gtk.Clipboard;
+import gtk.CssProvider;
 import gtk.Dialog;
 import gtk.DrawingArea;
 import gtk.Entry;
@@ -53,11 +55,12 @@ import gtk.TreeIter;
 import gtk.TreeModelIF;
 import gtk.TreeSelection;
 import gtk.TreePath;
+import gtk.StyleContext;
 import gtk.TreeView;
 import gtk.TreeViewColumn;
 import gtk.Widget;
 import gtk.Window;
-import gtk.c.types : GtkAlign, GtkIconSize, GtkReliefStyle, GtkShadowType, GtkTreeViewColumnSizing;
+import gtk.c.types : GtkAlign, GtkIconSize, GtkReliefStyle, GtkShadowType, GtkTreeViewColumnSizing, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION;
 
 import core.thread : Thread;
 import core.time : MonoTime;
@@ -115,6 +118,34 @@ struct AsyncFilterResult
 
 enum int MIN_VALID_WINDOW_WIDTH = 320;
 enum int MIN_VALID_WINDOW_HEIGHT = 240;
+
+private __gshared CssProvider applicationCssProvider;
+
+/** Install application-scoped CSS classes used by the Builder and widget factory helpers. */
+private void installApplicationCss()
+{
+    if (applicationCssProvider !is null)
+    {
+        return;
+    }
+
+    auto screen = Screen.getDefault();
+    if (screen is null)
+    {
+        return;
+    }
+
+    auto provider = new CssProvider();
+    provider.loadFromData(q{
+.digest-entry {
+    font-family: Monospace;
+    font-size: 10pt;
+}
+});
+
+    StyleContext.addProviderForScreen(screen, provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    applicationCssProvider = provider;
+}
 
 /** Summarize checksum availability for the list view. */
 string checksumSetStatus(const(BlobRow) row)
@@ -467,6 +498,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     GStreamer.init(args);
     Main.init(args);
+    installApplicationCss();
 
     // Construct the main window and shared toolbar widgets, which will be manipulated and re-parented by document tabs.
 
