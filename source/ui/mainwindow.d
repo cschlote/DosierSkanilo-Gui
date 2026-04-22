@@ -136,12 +136,25 @@ private void installApplicationCss()
     }
 
     auto provider = new CssProvider();
-    provider.loadFromData(q{
+    provider.loadFromData(q"CSS
 .digest-entry {
     font-family: Monospace;
     font-size: 10pt;
 }
-});
+
+.document-status-label {
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+.preview-title {
+    font-weight: 600;
+}
+
+.preview-summary {
+    font-size: 0.95em;
+}
+CSS");
 
     StyleContext.addProviderForScreen(screen, provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     applicationCssProvider = provider;
