@@ -6,6 +6,8 @@ import gtk.Container;
 import gtk.DrawingArea;
 import gtk.Image;
 import gtk.Label;
+import gtk.ComboBoxText;
+import gtk.Box;
 import gtk.TextView;
 import gtk.TreeIter;
 import gtk.Widget;
@@ -559,7 +561,162 @@ void syncVideoPlaybackButton(DocumentTab document, bool playing)
         return;
     }
 
-    document.detailPreviewPlayButton.setLabel(playing ? "Pause" : "Play");
+    auto icon = new Image();
+    icon.setFromIconName(playing ? "media-playback-pause" : "media-playback-start", GtkIconSize.BUTTON);
+    icon.show();
+    document.detailPreviewPlayButton.setImage(icon);
+    document.detailPreviewPlayButton.setLabel("");
+    document.detailPreviewPlayButton.setTooltipText(playing ? "Video pausieren" : "Video starten");
+}
+
+private int getElementIntProperty(Element element, string propertyName, int fallback = -1)
+{
+    if (element is null)
+    {
+        return fallback;
+    }
+
+    auto value = new Value(0);
+    element.getProperty(propertyName, value);
+    return value.getInt();
+}
+
+private void setElementIntProperty(Element element, string propertyName, int propertyValue)
+{
+    if (element is null)
+    {
+        return;
+    }
+
+    element.setProperty(propertyName, new Value(propertyValue));
+}
+
+private void clearTrackSelector(ComboBoxText combo, Box row)
+{
+    if (combo !is null)
+    {
+        combo.removeAll();
+        combo.setActive(-1);
+    }
+    if (row !is null)
+    {
+        row.setVisible(false);
+    }
+}
+
+private void syncIndexedTrackSelector(
+    ComboBoxText combo,
+    Box row,
+    string prefix,
+    int trackCount,
+    int currentIndex,
+    ref int cachedCount)
+{
+    if (combo is null || row is null)
+    {
+        return;
+    }
+
+    if (trackCount <= 1)
+    {
+        clearTrackSelector(combo, row);
+        cachedCount = trackCount;
+        return;
+    }
+
+    row.setVisible(true);
+    if (cachedCount != trackCount)
+    {
+        combo.removeAll();
+        foreach (index; 0 .. trackCount)
+        {
+            combo.appendText(format("%s %s", prefix, index + 1));
+        }
+        cachedCount = trackCount;
+    }
+
+    if (currentIndex >= 0 && combo.getActive() != currentIndex)
+    {
+        combo.setActive(currentIndex);
+    }
+}
+
+private void syncSubtitleTrackSelector(DocumentTab document, int trackCount, int currentIndex)
+{
+    auto combo = document.detailPreviewSubtitleTrackCombo;
+    auto row = document.detailPreviewSubtitleTrackBox;
+    if (combo is null || row is null)
+    {
+        return;
+    }
+
+    if (trackCount <= 0)
+    {
+        clearTrackSelector(combo, row);
+        document.previewSubtitleTrackCount = trackCount;
+        return;
+    }
+
+    row.setVisible(true);
+    if (document.previewSubtitleTrackCount != trackCount)
+    {
+        combo.removeAll();
+        combo.appendText("Off");
+        foreach (index; 0 .. trackCount)
+        {
+            combo.appendText(format("Subtitle %s", index + 1));
+        }
+        document.previewSubtitleTrackCount = trackCount;
+    }
+
+    auto activeIndex = currentIndex >= 0 ? currentIndex + 1 : 0;
+    if (combo.getActive() != activeIndex)
+    {
+        combo.setActive(activeIndex);
+    }
+}
+
+void syncVideoTrackSelectors(DocumentTab document)
+{
+    if (document is null)
+    {
+        return;
+    }
+
+    if (!document.selectedPreviewIsVideo || document.previewVideoPlayer is null)
+    {
+        clearTrackSelector(document.detailPreviewVideoTrackCombo, document.detailPreviewVideoTrackBox);
+        clearTrackSelector(document.detailPreviewAudioTrackCombo, document.detailPreviewAudioTrackBox);
+        clearTrackSelector(document.detailPreviewSubtitleTrackCombo, document.detailPreviewSubtitleTrackBox);
+        document.previewVideoTrackCount = -1;
+        document.previewAudioTrackCount = -1;
+        document.previewSubtitleTrackCount = -1;
+        return;
+    }
+
+    document.previewVideoTrackSyncing = true;
+    scope(exit) document.previewVideoTrackSyncing = false;
+
+    syncIndexedTrackSelector(
+        document.detailPreviewVideoTrackCombo,
+        document.detailPreviewVideoTrackBox,
+        "Video",
+        getElementIntProperty(document.previewVideoPlayer, "n-video", 0),
+        getElementIntProperty(document.previewVideoPlayer, "current-video", 0),
+        document.previewVideoTrackCount);
+
+    syncIndexedTrackSelector(
+        document.detailPreviewAudioTrackCombo,
+        document.detailPreviewAudioTrackBox,
+        "Audio",
+        getElementIntProperty(document.previewVideoPlayer, "n-audio", 0),
+        getElementIntProperty(document.previewVideoPlayer, "current-audio", 0),
+        document.previewAudioTrackCount);
+
+    syncSubtitleTrackSelector(
+        document,
+        getElementIntProperty(document.previewVideoPlayer, "n-text", 0),
+        getElementIntProperty(document.previewVideoPlayer, "current-text", -1));
 }
 
 /** Start video playback for the active preview. */
@@ -654,6 +811,7 @@ private void updatePreviewVideo(DocumentTab document)
     if (!syncVideoPreviewWindow(document))
     {
         document.previewVideoPlayer.setState(GstState.READY);
+        syncVideoTrackSelectors(document);
         return;
     }
 
@@ -668,6 +826,7 @@ private void updatePreviewVideo(DocumentTab document)
         syncVideoPlaybackButton(document, false);
     }
 
+    syncVideoTrackSelectors(document);
     cast(void) syncVideoPreviewPosition(document);
 }
 
@@ -802,6 +961,10 @@ void refreshMediaPreview(DocumentTab document)
 {
     if (document.selectedPreviewIsVideo)
     {
+        if (document.detailPreviewImageControls !is null)
+        {
+            document.detailPreviewImageControls.setVisible(false);
+        }
         if (document.detailPreviewScroll !is null)
         {
             document.detailPreviewScroll.setVisible(false);
@@ -824,9 +987,14 @@ void refreshMediaPreview(DocumentTab document)
     {
         document.detailPreviewVideoControls.setVisible(false);
     }
+    syncVideoTrackSelectors(document);
 
     if (document.selectedPreviewIsImage)
     {
+        if (document.detailPreviewImageControls !is null)
+        {
+            document.detailPreviewImageControls.setVisible(true);
+        }
         if (document.detailPreviewScroll !is null)
         {
             document.detailPreviewScroll.setVisible(true);
@@ -838,6 +1006,10 @@ void refreshMediaPreview(DocumentTab document)
     if (document.detailPreviewScroll !is null)
     {
         document.detailPreviewScroll.setVisible(false);
+    }
+    if (document.detailPreviewImageControls !is null)
+    {
+        document.detailPreviewImageControls.setVisible(false);
     }
     document.detailPreviewImage.clear();
 }

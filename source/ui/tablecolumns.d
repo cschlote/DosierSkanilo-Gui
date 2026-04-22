@@ -63,7 +63,7 @@ void configureTableColumns(TreeView treeView)
     }
 
     addTextColumn("#", "Index number", COL_INDEX, COL_INDEX_SORT);
-    addTextColumn("Sz", "File size", COL_FILE_SIZE, COL_FILE_SIZE_SORT);
+    addTextColumn("Size", "File size", COL_FILE_SIZE, COL_FILE_SIZE_SORT);
     addTextColumn("Chk", "Checksums", COL_CHECKSUM_SET);
     addTextColumn("FT", "File type", COL_FILE_TYPE);
     addTextColumn("Med", "Media information", COL_MEDIA_INFO);

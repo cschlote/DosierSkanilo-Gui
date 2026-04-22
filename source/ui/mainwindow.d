@@ -13,6 +13,7 @@ import gdk.Display;
 import gdk.Screen;
 import glib.Idle;
 import glib.Timeout;
+import gobject.Value;
 import gobject.Type : GType;
 import gobject.ObjectG : ObjectG;
 import gobject.ParamSpec : ParamSpec;
@@ -25,6 +26,7 @@ import gtk.AspectFrame;
 import gtk.c.types : ButtonsType, DialogFlags, FileChooserAction, MessageType, Orientation, ResponseType;
 import gtk.CheckButton;
 import gtk.Clipboard;
+import gtk.ComboBoxText;
 import gtk.CssProvider;
 import gtk.Dialog;
 import gtk.DrawingArea;
@@ -86,7 +88,7 @@ import ui.detailswidgets : createDetailEntry, createDetailTextView,
     setMetadataStatusLabel, setMetadataDetails, setKnownFilesTable, setMediaPreview,
     refreshMediaPreview, syncVideoPreviewWindow, setVideoPreviewVolume, playVideoPreview,
     pauseVideoPreview, jumpVideoPreview, stopVideoPreview, syncVideoPreviewPosition,
-    seekVideoPreview, syncVideoPlaybackButton;
+    seekVideoPreview, syncVideoPlaybackButton, syncVideoTrackSelectors;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : countDuplicateDigestGroups, filterRowsByText;
 import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, deserializeDataClassJsonFile;
@@ -1417,16 +1419,28 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
         });
 
-        document.detailPreviewJumpBackButton = new Button("-10s");
+        Button createPreviewActionButton(string iconName, string tooltip)
+        {
+            auto button = new Button();
+            button.setFocusOnClick(false);
+            button.setAlwaysShowImage(true);
+            auto icon = new Image();
+            icon.setFromIconName(iconName, GtkIconSize.BUTTON);
+            icon.show();
+            button.setImage(icon);
+            button.setLabel("");
+            button.setTooltipText(tooltip);
+            return button;
+        }
+
+        document.detailPreviewJumpBackButton = createPreviewActionButton("media-seek-backward", "10 Sekunden zurück springen");
         document.detailPreviewJumpBackButton.setFocusOnClick(false);
-        document.detailPreviewJumpBackButton.setTooltipText("10 Sekunden zurück springen");
         document.detailPreviewJumpBackButton.addOnClicked((Button _) {
             jumpVideoPreview(document, -10);
         });
 
-        document.detailPreviewPlayButton = new Button("Play");
+        document.detailPreviewPlayButton = createPreviewActionButton("media-playback-start", "Video starten");
         document.detailPreviewPlayButton.setFocusOnClick(false);
-        document.detailPreviewPlayButton.setTooltipText("Video starten oder pausieren");
         document.detailPreviewPlayButton.addOnClicked((Button _) {
             if (document.previewVideoPlayer is null)
             {
@@ -1453,11 +1467,73 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
         });
 
-        document.detailPreviewJumpForwardButton = new Button("+10s");
+        document.detailPreviewJumpForwardButton = createPreviewActionButton("media-seek-forward", "10 Sekunden vor springen");
         document.detailPreviewJumpForwardButton.setFocusOnClick(false);
-        document.detailPreviewJumpForwardButton.setTooltipText("10 Sekunden vor springen");
         document.detailPreviewJumpForwardButton.addOnClicked((Button _) {
             jumpVideoPreview(document, 10);
+        });
+
+        Box createTrackSelectorRow(string labelText, string tooltip, out ComboBoxText combo)
+        {
+            auto row = new Box(Orientation.HORIZONTAL, 6);
+            auto label = createDetailCaption(labelText);
+            combo = new ComboBoxText();
+            combo.setTooltipText(tooltip);
+            combo.setHexpand(true);
+            row.packStart(label, false, false, 0);
+            row.packStart(combo, true, true, 0);
+            row.setVisible(false);
+            return row;
+        }
+
+        document.detailPreviewVideoTrackBox = createTrackSelectorRow(
+            "Video",
+            "Zwischen verfügbaren Videospuren umschalten",
+            document.detailPreviewVideoTrackCombo);
+        document.detailPreviewAudioTrackBox = createTrackSelectorRow(
+            "Audio",
+            "Zwischen verfügbaren Audiospuren umschalten",
+            document.detailPreviewAudioTrackCombo);
+        document.detailPreviewSubtitleTrackBox = createTrackSelectorRow(
+            "Subtitle",
+            "Zwischen verfügbaren Untertitelspuren umschalten oder Untertitel deaktivieren",
+            document.detailPreviewSubtitleTrackCombo);
+
+        document.detailPreviewVideoTrackCombo.addOnChanged((ComboBoxText combo) {
+            if (isSyncingToolbarState || document.previewVideoTrackSyncing || document.previewVideoPlayer is null)
+            {
+                return;
+            }
+
+            auto active = combo.getActive();
+            if (active >= 0)
+            {
+                document.previewVideoPlayer.setProperty("current-video", new Value(active));
+            }
+        });
+        document.detailPreviewAudioTrackCombo.addOnChanged((ComboBoxText combo) {
+            if (isSyncingToolbarState || document.previewVideoTrackSyncing || document.previewVideoPlayer is null)
+            {
+                return;
+            }
+
+            auto active = combo.getActive();
+            if (active >= 0)
+            {
+                document.previewVideoPlayer.setProperty("current-audio", new Value(active));
+            }
+        });
+        document.detailPreviewSubtitleTrackCombo.addOnChanged((ComboBoxText combo) {
+            if (isSyncingToolbarState || document.previewVideoTrackSyncing || document.previewVideoPlayer is null)
+            {
+                return;
+            }
+
+            auto active = combo.getActive();
+            if (active >= 0)
+            {
+                document.previewVideoPlayer.setProperty("current-text", new Value(active - 1));
+            }
         });
 
         document.detailPreviewPositionLabel = createDetailCaption("Position 00:00 / --:--");
@@ -1507,6 +1583,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
         previewVolumeRow.packStart(volumeLabel, false, false, 0);
         previewVolumeRow.packStart(document.detailPreviewVolumeScale, true, true, 0);
+
+        document.detailPreviewVideoControls.packStart(document.detailPreviewVideoTrackBox, false, false, 0);
+        document.detailPreviewVideoControls.packStart(document.detailPreviewAudioTrackBox, false, false, 0);
+        document.detailPreviewVideoControls.packStart(document.detailPreviewSubtitleTrackBox, false, false, 0);
 
         document.detailPreviewScroll.setMinContentWidth(120);
         document.detailPreviewScroll.setMinContentHeight(120);
@@ -1602,12 +1682,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
         });
 
         auto previewControls = builderObject!Box(previewBuilder, "preview", "previewControls");
+        document.detailPreviewImageControls = previewControls;
         logLineVerbose("[ui] populating preview controls for ", filePath);
         previewControls.packStart(document.detailPreviewContainButton, false, false, 0);
         previewControls.packStart(document.detailPreviewFitWidthButton, false, false, 0);
         previewControls.packStart(document.detailPreviewFitHeightButton, false, false, 0);
         previewControls.packStart(document.detailPreviewCenterButton, false, false, 0);
         previewControls.packStart(document.detailPreviewCoverButton, false, false, 0);
+        previewControls.setVisible(false);
 
         syncPreviewToolbarFromDocument(document);
 
@@ -3046,6 +3128,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         if (document !is null && document.selectedPreviewIsVideo && document.previewVideoPlayer !is null)
         {
             syncVideoPreviewPosition(document);
+            syncVideoTrackSelectors(document);
 
             GstState state;
             GstState pending;

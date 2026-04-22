@@ -17,6 +17,7 @@ import gtk.TreeView;
 import gtk.ToggleButton;
 import gtk.Scale;
 import gtk.CheckButton;
+import gtk.ComboBoxText;
 import gtk.Widget;
 
 import gdkpixbuf.Pixbuf;
@@ -99,10 +100,17 @@ class DocumentTab
     ToggleButton detailPreviewFitHeightButton;
     ToggleButton detailPreviewCenterButton;
     ToggleButton detailPreviewCoverButton;
+    Box detailPreviewImageControls;
     CheckButton detailPreviewAutostartButton;
     Button detailPreviewPlayButton;
     Button detailPreviewJumpBackButton;
     Button detailPreviewJumpForwardButton;
+    Box detailPreviewVideoTrackBox;
+    Box detailPreviewAudioTrackBox;
+    Box detailPreviewSubtitleTrackBox;
+    ComboBoxText detailPreviewVideoTrackCombo;
+    ComboBoxText detailPreviewAudioTrackCombo;
+    ComboBoxText detailPreviewSubtitleTrackCombo;
     Label detailPreviewPositionLabel;
     Scale detailPreviewPositionScale;
     Scale detailPreviewVolumeScale;
@@ -134,6 +142,10 @@ class DocumentTab
     bool previewVideoAutostart;
     double previewVideoVolume = 0.5;
     bool previewVideoPositionSyncing;
+    bool previewVideoTrackSyncing;
+    int previewVideoTrackCount = -1;
+    int previewAudioTrackCount = -1;
+    int previewSubtitleTrackCount = -1;
     string selectedPreviewCandidatePath = "";
     bool selectedPreviewCandidateExists;
     string selectedPreviewSourcePath = "";
