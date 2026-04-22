@@ -17,6 +17,7 @@ import gtk.TreeView;
 import gtk.ToggleButton;
 import gtk.Scale;
 import gtk.CheckButton;
+import gtk.Widget;
 
 import gdkpixbuf.Pixbuf;
 import gstreamer.Element;
@@ -108,6 +109,7 @@ class DocumentTab
     Image detailPreviewImage;
     AspectFrame detailPreviewVideoFrame;
     DrawingArea detailPreviewVideoArea;
+    Widget detailPreviewVideoSinkWidget;
     Box detailPreviewVideoControls;
     ScrolledWindow detailPreviewScroll;
     TextView detailMediaInfoView;

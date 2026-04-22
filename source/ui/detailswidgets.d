@@ -2,16 +2,19 @@ module ui.detailswidgets;
 
 import gtk.Entry;
 import gtk.Expander;
+import gtk.Container;
 import gtk.DrawingArea;
 import gtk.Image;
 import gtk.Label;
 import gtk.TextView;
 import gtk.TreeIter;
+import gtk.Widget;
 import gtk.StyleContext;
 import gtk.c.types : GtkWrapMode;
 import gdkpixbuf.Pixbuf;
 import gdkpixbuf.c.types : GdkInterpType;
 import gdk.X11 : getXid;
+import gobject.ObjectG;
 import gobject.Value;
 import gstreamer.Bus;
 import gstreamer.Element;
@@ -270,6 +273,91 @@ void stopVideoPreview(DocumentTab document)
     }
 }
 
+/** Resolve the GtkWidget exposed by gtksink. */
+private Widget resolveGtkVideoSinkWidget(Element sink)
+{
+    if (sink is null)
+    {
+        return null;
+    }
+
+    auto value = new Value();
+    sink.getProperty("widget", value);
+    auto object = value.getObject();
+    if (object is null)
+    {
+        return null;
+    }
+
+    return ObjectG.getDObject!(Widget)(cast(GtkWidget*) object.getObjectGStruct());
+}
+
+/** Replace the overlay drawing area with the widget provided by gtksink. */
+private bool attachGtkVideoSinkWidget(DocumentTab document, Element sink)
+{
+    if (document is null || document.detailPreviewVideoFrame is null)
+    {
+        return false;
+    }
+
+    auto widget = resolveGtkVideoSinkWidget(sink);
+    if (widget is null)
+    {
+        return false;
+    }
+
+    auto currentChild = document.detailPreviewVideoFrame.getChild();
+    if (currentChild !is null && currentChild !is widget)
+    {
+        document.detailPreviewVideoFrame.remove(currentChild);
+    }
+
+    auto parent = widget.getParent();
+    if (parent !is null && parent !is document.detailPreviewVideoFrame)
+    {
+        auto parentContainer = cast(Container) parent;
+        if (parentContainer !is null)
+        {
+            parentContainer.remove(widget);
+        }
+    }
+
+    if (widget.getParent() is null)
+    {
+        document.detailPreviewVideoFrame.add(widget);
+    }
+
+    widget.setHexpand(true);
+    widget.setVexpand(true);
+    widget.showAll();
+    document.detailPreviewVideoSinkWidget = widget;
+    document.previewVideoOverlay = null;
+    return true;
+}
+
+/** Restore the original drawing area used by overlay-based sinks. */
+private void restoreOverlayVideoArea(DocumentTab document)
+{
+    if (document is null || document.detailPreviewVideoFrame is null || document.detailPreviewVideoArea is null)
+    {
+        return;
+    }
+
+    auto currentChild = document.detailPreviewVideoFrame.getChild();
+    if (currentChild !is null && currentChild !is document.detailPreviewVideoArea)
+    {
+        document.detailPreviewVideoFrame.remove(currentChild);
+    }
+
+    if (document.detailPreviewVideoArea.getParent() is null)
+    {
+        document.detailPreviewVideoFrame.add(document.detailPreviewVideoArea);
+    }
+
+    document.detailPreviewVideoArea.show();
+    document.detailPreviewVideoSinkWidget = null;
+}
+
 /** Attach the embedded video sink to the realized preview widget. */
 bool syncVideoPreviewWindow(DocumentTab document, int renderWidth = -1, int renderHeight = -1)
 {
@@ -278,16 +366,15 @@ bool syncVideoPreviewWindow(DocumentTab document, int renderWidth = -1, int rend
         return false;
     }
 
+    if (document.previewVideoOverlay is null)
+    {
+        return document.detailPreviewVideoSinkWidget !is null;
+    }
+
     auto window = document.detailPreviewVideoArea.getWindow();
     if (window is null || !window.ensureNative())
     {
         return false;
-    }
-
-    if (document.previewVideoOverlay is null)
-    {
-        document.previewVideoOverlay = new VideoOverlay(document.previewVideoSink);
-        document.previewVideoOverlay.handleEvents(false);
     }
 
     document.previewVideoOverlay.setWindowHandle(getXid(window));
@@ -314,38 +401,54 @@ private bool ensureVideoPreviewPlayer(DocumentTab document)
     }
 
     auto player = ElementFactory.make("playbin", "preview-playbin");
-    auto sink = ElementFactory.make("ximagesink", "preview-videosink");
-    if (player is null || sink is null)
+    if (player is null)
     {
         return false;
     }
 
+    auto sink = ElementFactory.make("gtksink", "preview-videosink");
+    auto usesOverlay = false;
+    if (sink is null || !attachGtkVideoSinkWidget(document, sink))
+    {
+        sink = ElementFactory.make("ximagesink", "preview-videosink");
+        if (sink is null)
+        {
+            return false;
+        }
+
+        restoreOverlayVideoArea(document);
+        document.previewVideoOverlay = new VideoOverlay(sink);
+        document.previewVideoOverlay.handleEvents(false);
+        usesOverlay = true;
+    }
+
     player.setProperty("video-sink", new Value(sink));
-    auto bus = player.getBus();
-    bus.setSyncHandler((Message msg) {
-        if (msg.type() != GstMessageType.ELEMENT)
-        {
+    if (usesOverlay)
+    {
+        auto bus = player.getBus();
+        bus.setSyncHandler((Message msg) {
+            if (msg.type() != GstMessageType.ELEMENT)
+            {
+                return GstBusSyncReply.PASS;
+            }
+
+            auto structure = msg.getStructure();
+            if (structure is null || !structure.hasName("prepare-window-handle"))
+            {
+                return GstBusSyncReply.PASS;
+            }
+
+            if (syncVideoPreviewWindow(document))
+            {
+                return GstBusSyncReply.DROP;
+            }
+
             return GstBusSyncReply.PASS;
-        }
-
-        auto structure = msg.getStructure();
-        if (structure is null || !structure.hasName("prepare-window-handle"))
-        {
-            return GstBusSyncReply.PASS;
-        }
-
-        if (syncVideoPreviewWindow(document))
-        {
-            return GstBusSyncReply.DROP;
-        }
-
-        return GstBusSyncReply.PASS;
-    });
+        });
+    }
 
     document.previewVideoPlayer = player;
     document.previewVideoSink = sink;
-    document.previewVideoOverlay = new VideoOverlay(sink);
-    document.previewVideoOverlay.handleEvents(false);
     return true;
 }
 
