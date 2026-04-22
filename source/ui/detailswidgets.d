@@ -604,6 +604,20 @@ private void clearTrackSelector(ComboBoxText combo, Box row)
     }
 }
 
+private void showTrackSelectorPlaceholder(ComboBoxText combo, Box row, string text)
+{
+    if (combo is null || row is null)
+    {
+        return;
+    }
+
+    row.setVisible(true);
+    combo.removeAll();
+    combo.appendText(text);
+    combo.setActive(0);
+    combo.setSensitive(false);
+}
+
 private void syncIndexedTrackSelector(
     ComboBoxText combo,
     Box row,
@@ -617,9 +631,9 @@ private void syncIndexedTrackSelector(
         return;
     }
 
-    if (trackCount <= 1)
+    if (trackCount <= 0)
     {
-        clearTrackSelector(combo, row);
+        showTrackSelectorPlaceholder(combo, row, prefix ~ " lädt...");
         cachedCount = trackCount;
         return;
     }
@@ -634,6 +648,8 @@ private void syncIndexedTrackSelector(
         }
         cachedCount = trackCount;
     }
+
+    combo.setSensitive(trackCount > 1);
 
     if (currentIndex >= 0 && combo.getActive() != currentIndex)
     {
@@ -652,7 +668,7 @@ private void syncSubtitleTrackSelector(DocumentTab document, int trackCount, int
 
     if (trackCount <= 0)
     {
-        clearTrackSelector(combo, row);
+        showTrackSelectorPlaceholder(combo, row, "Keine Untertitel");
         document.previewSubtitleTrackCount = trackCount;
         return;
     }
@@ -668,6 +684,8 @@ private void syncSubtitleTrackSelector(DocumentTab document, int trackCount, int
         }
         document.previewSubtitleTrackCount = trackCount;
     }
+
+    combo.setSensitive(trackCount > 0);
 
     auto activeIndex = currentIndex >= 0 ? currentIndex + 1 : 0;
     if (combo.getActive() != activeIndex)
