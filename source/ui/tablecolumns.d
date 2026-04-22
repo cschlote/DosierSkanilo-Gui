@@ -1,11 +1,12 @@
 module ui.tablecolumns;
 
 import gtk.CellRendererText;
+import gtk.Label;
 import gtk.TreeView;
 import gtk.TreeViewColumn;
 import gtk.c.types : GtkTreeViewColumnSizing;
 
-enum int MAIN_TABLE_FIXED_COLUMN_WIDTH = 68;
+enum int MAIN_TABLE_FIXED_COLUMN_WIDTH = 44;
 
 import ui.documenttab : DocumentTab, COL_INDEX, COL_FILE_SIZE, COL_CHECKSUM_SET,
     COL_FILE_TYPE, COL_MEDIA_INFO, COL_HAS_ARCHIVE, COL_HAS_TORRENT,
@@ -32,13 +33,17 @@ void setTableColumnsResizable(DocumentTab document, bool resizable)
 /** Configure columns for the main result table. */
 void configureTableColumns(TreeView treeView)
 {
-    void addTextColumn(string title, int modelColumn, int sortColumn = -1)
+    void addTextColumn(string title, string tooltip, int modelColumn, int sortColumn = -1)
     {
         auto renderer = new CellRendererText();
         auto xalign = (modelColumn == COL_INDEX || modelColumn == COL_FILE_SIZE) ? 1.0f : 0.5f;
         renderer.setAlignment(xalign, 0.5f);
         auto column = new TreeViewColumn();
-        column.setTitle(title);
+        auto headerLabel = new Label(title);
+        headerLabel.setTooltipText(tooltip);
+        headerLabel.setXalign(0.5f);
+        headerLabel.show();
+        column.setWidget(headerLabel);
         column.packStart(renderer, false);
         column.addAttribute(renderer, "text", modelColumn);
         column.setSortColumnId(sortColumn >= 0 ? sortColumn : modelColumn);
@@ -57,13 +62,13 @@ void configureTableColumns(TreeView treeView)
         treeView.appendColumn(column);
     }
 
-    addTextColumn("Index#", COL_INDEX, COL_INDEX_SORT);
-    addTextColumn("Size", COL_FILE_SIZE, COL_FILE_SIZE_SORT);
-    addTextColumn("Checksums", COL_CHECKSUM_SET);
-    addTextColumn("File Type", COL_FILE_TYPE);
-    addTextColumn("MediaInfo", COL_MEDIA_INFO);
-    addTextColumn("Archive", COL_HAS_ARCHIVE);
-    addTextColumn("Torrent", COL_HAS_TORRENT);
+    addTextColumn("#", "Index number", COL_INDEX, COL_INDEX_SORT);
+    addTextColumn("Sz", "File size", COL_FILE_SIZE, COL_FILE_SIZE_SORT);
+    addTextColumn("Chk", "Checksums", COL_CHECKSUM_SET);
+    addTextColumn("FT", "File type", COL_FILE_TYPE);
+    addTextColumn("Med", "Media information", COL_MEDIA_INFO);
+    addTextColumn("AR", "Archive", COL_HAS_ARCHIVE);
+    addTextColumn("TO", "Torrent", COL_HAS_TORRENT);
 
     treeView.setHeadersClickable(true);
 }
