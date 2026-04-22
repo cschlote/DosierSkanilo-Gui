@@ -23,15 +23,18 @@ import gstreamer.Element;
 import gstreamer.ElementFactory;
 import gstreamer.GStreamer;
 import gstreamer.Message;
+import gstreamer.Stream;
+import gstreamer.StreamCollection;
 import gstreamer.Structure;
-import gstreamer.c.types : GstBusSyncReply, GstFormat, GstMessageType, GstSeekFlags, GstState;
+import gstreamer.TagList;
+import gstreamer.c.types : GstBusSyncReply, GstFormat, GstMessageType, GstSeekFlags, GstState, GstStreamType;
 import gstinterfaces.VideoOverlay;
 import pango.c.types : PangoEllipsizeMode;
 
 import std.file : exists;
 import std.format : format;
 import std.path : absolutePath, buildNormalizedPath, dirName, extension, isAbsolute;
-import std.string : startsWith, toLower;
+import std.string : join, startsWith, toLower;
 import std.exception : enforce;
 import std.uri : encode;
 
@@ -449,6 +452,20 @@ private bool ensureVideoPreviewPlayer(DocumentTab document)
         });
     }
 
+    auto bus = player.getBus();
+    bus.addSignalWatch();
+    bus.addOnMessage((Message msg, Bus _) {
+        if (msg.type() != GstMessageType.STREAM_COLLECTION)
+        {
+            return;
+        }
+
+        StreamCollection collection;
+        msg.parseStreamCollection(collection);
+        updateTrackLabelsFromStreamCollection(document, collection);
+        syncVideoTrackSelectors(document);
+    });
+
     document.previewVideoPlayer = player;
     document.previewVideoSink = sink;
     return true;
@@ -604,6 +621,112 @@ private void clearTrackSelector(ComboBoxText combo, Box row)
     }
 }
 
+private bool tryGetTrackTagString(TagList tags, string tagName, out string value)
+{
+    value = "";
+    if (tags is null)
+    {
+        return false;
+    }
+
+    return tags.getString(tagName, value) && value.length > 0;
+}
+
+private string buildStreamDisplayLabel(string prefix, size_t index, Stream stream)
+{
+    auto fallback = format("%s %s", prefix, index + 1);
+    if (stream is null)
+    {
+        return fallback;
+    }
+
+    auto tags = stream.getTags();
+    string title;
+    string language;
+    string codec;
+    string[] fragments;
+
+    if (tryGetTrackTagString(tags, "title", title))
+    {
+        fragments ~= title;
+    }
+    if (tryGetTrackTagString(tags, "language-code", language))
+    {
+        fragments ~= language;
+    }
+    if (tryGetTrackTagString(tags, "codec", codec)
+        || tryGetTrackTagString(tags, "audio-codec", codec)
+        || tryGetTrackTagString(tags, "video-codec", codec))
+    {
+        fragments ~= codec;
+    }
+
+    if (fragments.length == 0)
+    {
+        auto streamId = stream.getStreamId();
+        if (streamId.length > 0)
+        {
+            return fallback ~ " [" ~ streamId ~ "]";
+        }
+        return fallback;
+    }
+
+    return fallback ~ ": " ~ fragments.join(" | ");
+}
+
+private void updateTrackLabelsFromStreamCollection(DocumentTab document, StreamCollection collection)
+{
+    if (document is null)
+    {
+        return;
+    }
+
+    document.previewVideoTrackLabels = null;
+    document.previewAudioTrackLabels = null;
+    document.previewSubtitleTrackLabels = null;
+
+    if (collection is null)
+    {
+        document.previewVideoTrackSignature = "";
+        document.previewAudioTrackSignature = "";
+        document.previewSubtitleTrackSignature = "";
+        return;
+    }
+
+    size_t videoIndex = 0;
+    size_t audioIndex = 0;
+    size_t subtitleIndex = 0;
+    foreach (collectionIndex; 0 .. collection.getSize())
+    {
+        auto stream = collection.getStream(collectionIndex);
+        if (stream is null)
+        {
+            continue;
+        }
+
+        auto streamType = stream.getStreamType();
+        if ((streamType & GstStreamType.VIDEO) == GstStreamType.VIDEO)
+        {
+            document.previewVideoTrackLabels ~= buildStreamDisplayLabel("Video", videoIndex, stream);
+            ++videoIndex;
+        }
+        else if ((streamType & GstStreamType.AUDIO) == GstStreamType.AUDIO)
+        {
+            document.previewAudioTrackLabels ~= buildStreamDisplayLabel("Audio", audioIndex, stream);
+            ++audioIndex;
+        }
+        else if ((streamType & GstStreamType.TEXT) == GstStreamType.TEXT)
+        {
+            document.previewSubtitleTrackLabels ~= buildStreamDisplayLabel("Subtitle", subtitleIndex, stream);
+            ++subtitleIndex;
+        }
+    }
+
+    document.previewVideoTrackSignature = document.previewVideoTrackLabels.join("\n");
+    document.previewAudioTrackSignature = document.previewAudioTrackLabels.join("\n");
+    document.previewSubtitleTrackSignature = document.previewSubtitleTrackLabels.join("\n");
+}
+
 private void showTrackSelectorPlaceholder(ComboBoxText combo, Box row, string text)
 {
     if (combo is null || row is null)
@@ -624,7 +747,9 @@ private void syncIndexedTrackSelector(
     string prefix,
     int trackCount,
     int currentIndex,
-    ref int cachedCount)
+    string[] labels,
+    ref int cachedCount,
+    ref string cachedSignature)
 {
     if (combo is null || row is null)
     {
@@ -635,18 +760,34 @@ private void syncIndexedTrackSelector(
     {
         showTrackSelectorPlaceholder(combo, row, prefix ~ " lädt...");
         cachedCount = trackCount;
+        cachedSignature = prefix ~ " lädt...";
         return;
     }
 
     row.setVisible(true);
-    if (cachedCount != trackCount)
+    string[] displayLabels;
+    if (labels.length == trackCount)
     {
-        combo.removeAll();
+        displayLabels = labels.dup;
+    }
+    else
+    {
         foreach (index; 0 .. trackCount)
         {
-            combo.appendText(format("%s %s", prefix, index + 1));
+            displayLabels ~= format("%s %s", prefix, index + 1);
+        }
+    }
+
+    auto signature = displayLabels.join("\n");
+    if (cachedCount != trackCount || cachedSignature != signature)
+    {
+        combo.removeAll();
+        foreach (label; displayLabels)
+        {
+            combo.appendText(label);
         }
         cachedCount = trackCount;
+        cachedSignature = signature;
     }
 
     combo.setSensitive(trackCount > 1);
@@ -670,19 +811,34 @@ private void syncSubtitleTrackSelector(DocumentTab document, int trackCount, int
     {
         showTrackSelectorPlaceholder(combo, row, "Keine Untertitel");
         document.previewSubtitleTrackCount = trackCount;
+        document.previewSubtitleTrackSignature = "Keine Untertitel";
         return;
     }
 
     row.setVisible(true);
-    if (document.previewSubtitleTrackCount != trackCount)
+    string[] displayLabels = ["Off"];
+    if (document.previewSubtitleTrackLabels.length == trackCount)
     {
-        combo.removeAll();
-        combo.appendText("Off");
+        displayLabels ~= document.previewSubtitleTrackLabels;
+    }
+    else
+    {
         foreach (index; 0 .. trackCount)
         {
-            combo.appendText(format("Subtitle %s", index + 1));
+            displayLabels ~= format("Subtitle %s", index + 1);
+        }
+    }
+
+    auto signature = displayLabels.join("\n");
+    if (document.previewSubtitleTrackCount != trackCount || document.previewSubtitleTrackSignature != signature)
+    {
+        combo.removeAll();
+        foreach (label; displayLabels)
+        {
+            combo.appendText(label);
         }
         document.previewSubtitleTrackCount = trackCount;
+        document.previewSubtitleTrackSignature = signature;
     }
 
     combo.setSensitive(trackCount > 0);
@@ -709,6 +865,12 @@ void syncVideoTrackSelectors(DocumentTab document)
         document.previewVideoTrackCount = -1;
         document.previewAudioTrackCount = -1;
         document.previewSubtitleTrackCount = -1;
+        document.previewVideoTrackLabels = null;
+        document.previewAudioTrackLabels = null;
+        document.previewSubtitleTrackLabels = null;
+        document.previewVideoTrackSignature = "";
+        document.previewAudioTrackSignature = "";
+        document.previewSubtitleTrackSignature = "";
         return;
     }
 
@@ -721,7 +883,9 @@ void syncVideoTrackSelectors(DocumentTab document)
         "Video",
         getElementIntProperty(document.previewVideoPlayer, "n-video", 0),
         getElementIntProperty(document.previewVideoPlayer, "current-video", 0),
-        document.previewVideoTrackCount);
+        document.previewVideoTrackLabels,
+        document.previewVideoTrackCount,
+        document.previewVideoTrackSignature);
 
     syncIndexedTrackSelector(
         document.detailPreviewAudioTrackCombo,
@@ -729,14 +893,15 @@ void syncVideoTrackSelectors(DocumentTab document)
         "Audio",
         getElementIntProperty(document.previewVideoPlayer, "n-audio", 0),
         getElementIntProperty(document.previewVideoPlayer, "current-audio", 0),
-        document.previewAudioTrackCount);
+        document.previewAudioTrackLabels,
+        document.previewAudioTrackCount,
+        document.previewAudioTrackSignature);
 
     syncSubtitleTrackSelector(
         document,
         getElementIntProperty(document.previewVideoPlayer, "n-text", 0),
         getElementIntProperty(document.previewVideoPlayer, "current-text", -1));
 }
-
 /** Start video playback for the active preview. */
 void playVideoPreview(DocumentTab document)
 {

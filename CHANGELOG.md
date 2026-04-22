@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 - Raised the Glade/GTK Builder UI minimum requirement from GTK 3.10 to GTK 3.22 across the UI definition files.
 - Compact the BinaryBlob table header labels, keep the full column names in header tooltips, show image scaling buttons only for image previews, and add icon-based video controls plus preview track selectors.
+- Populate the video preview track selectors from GStreamer stream metadata when available and align the video/audio/subtitle dropdowns side by side.
 - Cache the loaded image preview pixbuf so resize-driven preview refreshes no longer reopen the same file on every layout pass.
 
 ## Release 0.6.0 - 2026-04-19

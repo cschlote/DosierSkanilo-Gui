@@ -1475,16 +1475,21 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
         Box createTrackSelectorRow(string labelText, string tooltip, out ComboBoxText combo)
         {
-            auto row = new Box(Orientation.HORIZONTAL, 6);
+            auto row = new Box(Orientation.VERTICAL, 3);
             auto label = createDetailCaption(labelText);
             combo = new ComboBoxText();
             combo.setTooltipText(tooltip);
             combo.setHexpand(true);
+            label.setTooltipText(tooltip);
             row.packStart(label, false, false, 0);
             row.packStart(combo, true, true, 0);
             row.setVisible(false);
             return row;
         }
+
+        auto previewTrackSelectorsRow = new Box(Orientation.HORIZONTAL, 12);
+        previewTrackSelectorsRow.setHexpand(true);
+        document.detailPreviewTrackSelectorsRow = previewTrackSelectorsRow;
 
         document.detailPreviewVideoTrackBox = createTrackSelectorRow(
             "Video",
@@ -1585,8 +1590,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
         previewVolumeRow.packStart(document.detailPreviewVolumeScale, true, true, 0);
 
         document.detailPreviewVideoControls.packStart(document.detailPreviewVideoTrackBox, false, false, 0);
-        document.detailPreviewVideoControls.packStart(document.detailPreviewAudioTrackBox, false, false, 0);
-        document.detailPreviewVideoControls.packStart(document.detailPreviewSubtitleTrackBox, false, false, 0);
+        previewTrackSelectorsRow.packStart(document.detailPreviewVideoTrackBox, true, true, 0);
+        previewTrackSelectorsRow.packStart(document.detailPreviewAudioTrackBox, true, true, 0);
+        previewTrackSelectorsRow.packStart(document.detailPreviewSubtitleTrackBox, true, true, 0);
+        document.detailPreviewVideoControls.packStart(previewTrackSelectorsRow, false, true, 0);
 
         document.detailPreviewScroll.setMinContentWidth(120);
         document.detailPreviewScroll.setMinContentHeight(120);

@@ -105,6 +105,7 @@ class DocumentTab
     Button detailPreviewPlayButton;
     Button detailPreviewJumpBackButton;
     Button detailPreviewJumpForwardButton;
+    Box detailPreviewTrackSelectorsRow;
     Box detailPreviewVideoTrackBox;
     Box detailPreviewAudioTrackBox;
     Box detailPreviewSubtitleTrackBox;
@@ -146,6 +147,12 @@ class DocumentTab
     int previewVideoTrackCount = -1;
     int previewAudioTrackCount = -1;
     int previewSubtitleTrackCount = -1;
+    string[] previewVideoTrackLabels;
+    string[] previewAudioTrackLabels;
+    string[] previewSubtitleTrackLabels;
+    string previewVideoTrackSignature;
+    string previewAudioTrackSignature;
+    string previewSubtitleTrackSignature;
     string selectedPreviewCandidatePath = "";
     bool selectedPreviewCandidateExists;
     string selectedPreviewSourcePath = "";
