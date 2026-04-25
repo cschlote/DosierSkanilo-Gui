@@ -1247,7 +1247,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailPreviewVideoFrame = builderObject!AspectFrame(previewBuilder, "preview", "detailPreviewVideoFrame");
         document.detailPreviewVideoArea = builderObject!DrawingArea(previewBuilder, "preview", "detailPreviewVideoArea");
         document.detailPreviewVideoControls = builderObject!Box(previewBuilder, "preview", "detailPreviewVideoControls");
-        document.detailPreviewVideoArea.setDoubleBuffered(false);
 
         document.detailPreviewAutostartButton = builderObject!CheckButton(previewBuilder, "preview", "detailPreviewAutostartButton");
         document.detailPreviewJumpBackButton = builderObject!Button(previewBuilder, "preview", "detailPreviewJumpBackButton");
