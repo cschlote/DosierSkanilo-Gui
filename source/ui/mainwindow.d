@@ -1255,7 +1255,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailPreviewPositionLabel = builderObject!Label(previewBuilder, "preview", "detailPreviewPositionLabel");
         document.detailPreviewPositionScale = builderObject!Scale(previewBuilder, "preview", "detailPreviewPositionScale");
         document.detailPreviewVolumeScale = builderObject!Scale(previewBuilder, "preview", "detailPreviewVolumeScale");
-        document.detailPreviewTrackSelectorsRow = builderObject!Box(previewBuilder, "preview", "previewTrackSelectorsRow");
+        document.detailPreviewTrackSelectorsRow = builderObject!Box(previewBuilder, "preview", "detailPreviewTrackSelectorsRow");
         document.detailPreviewVideoTrackBox = builderObject!Box(previewBuilder, "preview", "detailPreviewVideoTrackBox");
         document.detailPreviewAudioTrackBox = builderObject!Box(previewBuilder, "preview", "detailPreviewAudioTrackBox");
         document.detailPreviewSubtitleTrackBox = builderObject!Box(previewBuilder, "preview", "detailPreviewSubtitleTrackBox");
