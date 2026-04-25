@@ -11,7 +11,6 @@
 - Remove the legacy `double-buffered` properties from the Glade preview widgets and rely on GTK's default rendering path.
 - Rework embedded video preview sink selection so Wayland/X11 setups prefer a GTK-friendly sink such as `gtksink`, with `ximagesink` only as a fallback.
 - Move more visual UI tuning from D code and per-widget properties into GTK style classes so the Builder layouts can drive appearance more consistently.
-- Evaluate whether the remaining menu item structure should also move into Glade once accelerator wiring stays manageable.
 - Evaluate whether any repeated detail subtrees should become Builder templates or composite widgets.
 - Keep expanding default widget state in Glade so D only mutates values when the runtime state actually changes.
 

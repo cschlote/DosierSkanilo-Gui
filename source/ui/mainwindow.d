@@ -528,8 +528,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
     window.addAccelGroup(accelGroup);
 
     auto root = builderObject!Box(mainBuilder, "main", "root");
-    auto menuBarSlot = builderObject!Box(mainBuilder, "main", "menuBarSlot");
-    auto menuBar = builderObject!MenuBar(mainBuilder, "main", "menuBar");
+    auto fileMenu = builderObject!Menu(mainBuilder, "main", "fileMenu");
+    auto editMenu = builderObject!Menu(mainBuilder, "main", "editMenu");
+    auto helpMenu = builderObject!Menu(mainBuilder, "main", "helpMenu");
     auto content = builderObject!Box(mainBuilder, "main", "content");
     auto separator = builderObject!Separator(mainBuilder, "main", "separator");
     auto toolbar = builderObject!Box(mainBuilder, "main", "toolbar");
@@ -2634,10 +2635,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         dialog.destroy();
     }
 
-    auto fileMenuItem = new MenuItem("_File");
-    auto fileMenu = new Menu();
-    fileMenuItem.setSubmenu(fileMenu);
-
     auto fileOpen = new MenuItem((MenuItem _) { chooseAndLoadPath(); }, "_Open JSON", "file.open", true, accelGroup, 'o');
 
     auto fileReload = new MenuItem((MenuItem _) { reloadCurrentDocument(); }, "_Reload", "file.reload", true, accelGroup, 'r');
@@ -2657,11 +2654,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
     fileMenu.append(fileCancelOperation);
     fileMenu.append(new SeparatorMenuItem());
     fileMenu.append(fileQuit);
-    menuBar.append(fileMenuItem);
-
-    auto editMenuItem = new MenuItem("_Edit");
-    auto editMenu = new Menu();
-    editMenuItem.setSubmenu(editMenu);
 
     auto editApplyFilter = new MenuItem((MenuItem _) { applyFilterFromEntry(); }, "_Apply Filter", "edit.applyFilter", true, accelGroup, 'f');
 
@@ -2693,11 +2685,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
     editMenu.append(new SeparatorMenuItem());
     editMenu.append(editResetMetrics);
     editMenu.append(editPreferences);
-    menuBar.append(editMenuItem);
-
-    auto helpMenuItem = new MenuItem("_Help");
-    auto helpMenu = new Menu();
-    helpMenuItem.setSubmenu(helpMenu);
 
     auto helpShortcuts = new MenuItem((MenuItem _) { showShortcutsHelp(); }, "_Keyboard Shortcuts", true);
 
@@ -2706,7 +2693,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
     helpMenu.append(helpShortcuts);
     helpMenu.append(new SeparatorMenuItem());
     helpMenu.append(helpAbout);
-    menuBar.append(helpMenuItem);
 
     // btnLoad entfernt
 
