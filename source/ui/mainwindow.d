@@ -2545,37 +2545,27 @@ int runMainWindow(string[] args, ref CliOptions cli)
         );
 
         auto contentArea = dialog.getContentArea();
-        auto prefsBox = new Box(Orientation.VERTICAL, 8);
+        auto prefsBuilder = new Builder();
+        logLineVerbose("[ui] loading preferences builder");
+        prefsBuilder.addFromString(import("source/ui/preferencesdialog.ui"));
+        logLineVerbose("[ui] preferences builder loaded, objects=", prefsBuilder.getObjects().length);
+
+        auto prefsBox = builderObject!Box(prefsBuilder, "prefs", "prefsBox");
+        auto optAutoApply = builderObject!CheckButton(prefsBuilder, "prefs", "optAutoApply");
+        auto optCaseSensitive = builderObject!CheckButton(prefsBuilder, "prefs", "optCaseSensitive");
+        auto optDetailsBelow = builderObject!CheckButton(prefsBuilder, "prefs", "optDetailsBelow");
+        auto optRestoreOpenFiles = builderObject!CheckButton(prefsBuilder, "prefs", "optRestoreOpenFiles");
+        auto lblExternalOpenProgram = builderObject!Label(prefsBuilder, "prefs", "lblExternalOpenProgram");
+        auto entryExternalOpenProgram = builderObject!Entry(prefsBuilder, "prefs", "entryExternalOpenProgram");
+        auto optClearWindowGeometry = builderObject!CheckButton(prefsBuilder, "prefs", "optClearWindowGeometry");
+
         prefsBox.setBorderWidth(8);
-
-        auto optAutoApply = new CheckButton("Auto-apply filter after load/reload");
         optAutoApply.setActive(prefAutoApplyFilter);
-
-        auto optCaseSensitive = new CheckButton("Case-sensitive text filtering");
         optCaseSensitive.setActive(prefCaseSensitiveFilter);
-
-        auto optDetailsBelow = new CheckButton("Show details below list (instead of on the right)");
         optDetailsBelow.setActive(prefDetailsBelow);
-
-        auto optRestoreOpenFiles = new CheckButton("Reopen previously open data files on startup");
         optRestoreOpenFiles.setActive(prefRestoreOpenFiles);
-
-        auto lblExternalOpenProgram = new Label("External opener program");
-        lblExternalOpenProgram.setXalign(0.0f);
-        auto entryExternalOpenProgram = new Entry();
         entryExternalOpenProgram.setText(externalOpenProgram);
-        entryExternalOpenProgram.setPlaceholderText("xdg-open");
 
-        auto optClearWindowGeometry = new CheckButton("Delete saved window positions on save");
-        optClearWindowGeometry.setActive(false);
-
-        prefsBox.packStart(optAutoApply, false, false, 0);
-        prefsBox.packStart(optCaseSensitive, false, false, 0);
-        prefsBox.packStart(optDetailsBelow, false, false, 0);
-        prefsBox.packStart(optRestoreOpenFiles, false, false, 0);
-        prefsBox.packStart(lblExternalOpenProgram, false, false, 0);
-        prefsBox.packStart(entryExternalOpenProgram, false, false, 0);
-        prefsBox.packStart(optClearWindowGeometry, false, false, 0);
         contentArea.packStart(prefsBox, true, true, 0);
 
         dialog.showAll();
