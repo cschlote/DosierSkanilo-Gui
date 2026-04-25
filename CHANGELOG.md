@@ -6,6 +6,7 @@ All notable changes to this project are documented in this file.
 
 - Raised the Glade/GTK Builder UI minimum requirement from GTK 3.10 to GTK 3.22 across the UI definition files.
 - Moved the top-level window shell, shared toolbar, and notebook layout into a GtkBuilder UI file so the startup code now binds the static structure instead of constructing it manually.
+- Moved the main menu bar container into the GtkBuilder shell so the top-level layout now owns the menu placement while D keeps the action wiring.
 - Moved the Preferences dialog form into a GtkBuilder UI file so the dialog layout and its default widget state now live alongside the other UI definitions.
 - Moved static detail and preview widget defaults from D setup code into the GtkBuilder UI files so the runtime code now mainly wires behavior and state changes.
 - Compact the BinaryBlob table header labels, keep the full column names in header tooltips, show image scaling buttons only for image previews, and add icon-based video controls plus preview track selectors.

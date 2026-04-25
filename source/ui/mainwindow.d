@@ -529,6 +529,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     auto root = builderObject!Box(mainBuilder, "main", "root");
     auto menuBarSlot = builderObject!Box(mainBuilder, "main", "menuBarSlot");
+    auto menuBar = builderObject!MenuBar(mainBuilder, "main", "menuBar");
     auto content = builderObject!Box(mainBuilder, "main", "content");
     auto separator = builderObject!Separator(mainBuilder, "main", "separator");
     auto toolbar = builderObject!Box(mainBuilder, "main", "toolbar");
@@ -587,8 +588,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
     {
         prefCaseSensitiveFilter = true;
     }
-
-    auto menuBar = new MenuBar();
 
     if (cli.filterOnStart.length > 0)
     {
@@ -2811,7 +2810,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
     });
 
-    menuBarSlot.packStart(menuBar, false, false, 0);
     window.add(root);
     window.showAll();
 
