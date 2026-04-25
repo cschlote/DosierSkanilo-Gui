@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated with glade 3.40.0 -->
+<interface>
+  <requires lib="gtk+" version="3.22"/>
+  <object class="GtkWindow" id="mainWindow">
+    <property name="title">DosierSkanilo GUI</property>
+    <child>
+      <object class="GtkBox" id="root">
+        <property name="can-focus">False</property>
+        <property name="orientation">vertical</property>
+        <child>
+          <object class="GtkBox" id="menuBarSlot">
+            <property name="can-focus">False</property>
+            <property name="hexpand">True</property>
+            <property name="orientation">vertical</property>
+          </object>
+          <packing>
+            <property name="expand">False</property>
+            <property name="fill">True</property>
+            <property name="position">0</property>
+          </packing>
+        </child>
+        <child>
+          <object class="GtkBox" id="content">
+            <property name="can-focus">False</property>
+            <property name="border-width">10</property>
+            <property name="orientation">vertical</property>
+            <property name="spacing">10</property>
+            <child>
+              <object class="GtkSeparator" id="separator">
+                <property name="can-focus">False</property>
+                <property name="orientation">horizontal</property>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="fill">True</property>
+                <property name="position">0</property>
+              </packing>
+            </child>
+            <child>
+              <object class="GtkBox" id="toolbar">
+                <property name="can-focus">False</property>
+                <property name="orientation">horizontal</property>
+                <property name="spacing">8</property>
+                <child>
+                  <object class="GtkButton" id="btnReload">
+                    <property name="label">Reload</property>
+                    <property name="can-focus">False</property>
+                    <property name="receives-default">False</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="btnRelayout">
+                    <property name="label">Relayout</property>
+                    <property name="can-focus">False</property>
+                    <property name="receives-default">False</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="btnCancelLoad">
+                    <property name="label">Cancel</property>
+                    <property name="can-focus">False</property>
+                    <property name="receives-default">False</property>
+                    <property name="sensitive">False</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkSpinner" id="loadSpinner">
+                    <property name="can-focus">False</property>
+                    <property name="visible">False</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkEntry" id="filterEntry">
+                    <property name="can-focus">False</property>
+                    <property name="hexpand">True</property>
+                    <property name="placeholder-text">Filter by filename or SHA1...</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkCheckButton" id="filterVideo">
+                    <property name="label">V</property>
+                    <property name="can-focus">False</property>
+                    <property name="tooltip-text">Filter to rows with video media metadata</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkCheckButton" id="filterAudio">
+                    <property name="label">A</property>
+                    <property name="can-focus">False</property>
+                    <property name="tooltip-text">Filter to rows with audio media metadata</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkCheckButton" id="filterImage">
+                    <property name="label">I</property>
+                    <property name="can-focus">False</property>
+                    <property name="tooltip-text">Filter to rows with image media metadata</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkCheckButton" id="filterText">
+                    <property name="label">T</property>
+                    <property name="can-focus">False</property>
+                    <property name="tooltip-text">Filter to rows with text/subtitle media metadata</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkCheckButton" id="filterMediaNot">
+                    <property name="label">NOT</property>
+                    <property name="can-focus">False</property>
+                    <property name="tooltip-text">Invert the selected media-type filters</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkCheckButton" id="filterFileType">
+                    <property name="label">FT</property>
+                    <property name="can-focus">False</property>
+                    <property name="tooltip-text">Filter to rows with file type signature metadata</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkCheckButton" id="filterArchive">
+                    <property name="label">AR</property>
+                    <property name="can-focus">False</property>
+                    <property name="tooltip-text">Filter to rows with file archives.</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkCheckButton" id="filterTorrent">
+                    <property name="label">TO</property>
+                    <property name="can-focus">False</property>
+                    <property name="tooltip-text">Filter to rows with torrent files.</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="btnApplyFilter">
+                    <property name="label">Apply Filter</property>
+                    <property name="can-focus">False</property>
+                    <property name="receives-default">False</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="btnClearFilter">
+                    <property name="label">Clear Filter</property>
+                    <property name="can-focus">False</property>
+                    <property name="receives-default">False</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkProgressBar" id="progressBar">
+                    <property name="can-focus">False</property>
+                    <property name="hexpand">True</property>
+                    <property name="show-text">True</property>
+                    <property name="text">Idle</property>
+                    <property name="pulse-step">0.05</property>
+                    <property name="visible">False</property>
+                  </object>
+                </child>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="fill">True</property>
+                <property name="position">1</property>
+              </packing>
+            </child>
+            <child>
+              <object class="GtkNotebook" id="notebook">
+                <property name="can-focus">False</property>
+                <property name="hexpand">True</property>
+                <property name="vexpand">True</property>
+              </object>
+              <packing>
+                <property name="expand">True</property>
+                <property name="fill">True</property>
+                <property name="position">2</property>
+              </packing>
+            </child>
+          </object>
+          <packing>
+            <property name="expand">True</property>
+            <property name="fill">True</property>
+            <property name="position">1</property>
+          </packing>
+        </child>
+      </object>
+    </child>
+  </object>
+</interface>

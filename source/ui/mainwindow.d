@@ -516,77 +516,39 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     // Construct the main window and shared toolbar widgets, which will be manipulated and re-parented by document tabs.
 
-    auto window = new Window("DosierSkanilo GUI");
+    auto mainBuilder = new Builder();
+    logLineVerbose("[ui] loading main window builder");
+    mainBuilder.addFromString(import("source/ui/mainwindow.ui"));
+    logLineVerbose("[ui] main window builder loaded, objects=", mainBuilder.getObjects().length);
+
+    auto window = builderObject!Window(mainBuilder, "main", "mainWindow");
     window.setDefaultSize(loadedState.windowWidth, loadedState.windowHeight);
 
     auto accelGroup = new AccelGroup();
     window.addAccelGroup(accelGroup);
 
-    auto root = new Box(Orientation.VERTICAL, 0);
-
-    auto content = new Box(Orientation.VERTICAL, 10);
-    content.setBorderWidth(10);
-
-    auto separator = new Separator(Orientation.HORIZONTAL);
-
-    auto toolbar = new Box(Orientation.HORIZONTAL, 8);
-    auto btnReload = new Button("Reload");
-    auto btnRelayout = new Button("Relayout");
-    auto btnCancelLoad = new Button("Cancel");
-    btnCancelLoad.setSensitive(false);
-    auto loadSpinner = new Spinner();
-    loadSpinner.setVisible(false);
-
-    auto filterEntry = new Entry();
-    filterEntry.setHexpand(true);
-    filterEntry.setPlaceholderText("Filter by filename or SHA1...");
-    auto filterMediaNot = new CheckButton("NOT");
-    filterMediaNot.setTooltipText("Invert the selected media-type filters");
-    auto filterVideo = new CheckButton("V");
-    filterVideo.setTooltipText("Filter to rows with video media metadata");
-    auto filterAudio = new CheckButton("A");
-    filterAudio.setTooltipText("Filter to rows with audio media metadata");
-    auto filterImage = new CheckButton("I");
-    filterImage.setTooltipText("Filter to rows with image media metadata");
-    auto filterText = new CheckButton("T");
-    filterText.setTooltipText("Filter to rows with text/subtitle media metadata");
-    auto filterFileType = new CheckButton("FT");
-    filterFileType.setTooltipText("Filter to rows with file type signature metadata");
-    auto filterArchive = new CheckButton("AR");
-    filterArchive.setTooltipText("Filter to rows with file archives.");
-    auto filterTorrent = new CheckButton("TO");
-    filterTorrent.setTooltipText("Filter to rows with torrent files.");
-
-    auto btnApplyFilter = new Button("Apply Filter");
-    auto btnClearFilter = new Button("Clear Filter");
-
-    auto progressBar = new ProgressBar();
-    progressBar.setHexpand(true);
-    progressBar.setShowText(true);
-    progressBar.setText("Idle");
-    progressBar.setPulseStep(0.05);
-    progressBar.setVisible(false);
-
-    toolbar.packStart(btnReload, false, false, 0);
-    toolbar.packStart(btnRelayout, false, false, 0);
-    toolbar.packStart(btnCancelLoad, false, false, 0);
-    toolbar.packStart(loadSpinner, false, false, 0);
-    toolbar.packStart(filterEntry, true, true, 0);
-    toolbar.packStart(filterVideo, false, false, 0);
-    toolbar.packStart(filterAudio, false, false, 0);
-    toolbar.packStart(filterImage, false, false, 0);
-    toolbar.packStart(filterText, false, false, 0);
-    toolbar.packStart(filterMediaNot, false, false, 0);
-    toolbar.packStart(filterFileType, false, false, 0);
-    toolbar.packStart(filterArchive, false, false, 0);
-    toolbar.packStart(filterTorrent, false, false, 0);
-    toolbar.packStart(btnApplyFilter, false, false, 0);
-    toolbar.packStart(btnClearFilter, false, false, 0);
-    toolbar.packStart(progressBar, true, true, 0);
-
-    auto notebook = new Notebook();
-    notebook.setHexpand(true);
-    notebook.setVexpand(true);
+    auto root = builderObject!Box(mainBuilder, "main", "root");
+    auto menuBarSlot = builderObject!Box(mainBuilder, "main", "menuBarSlot");
+    auto content = builderObject!Box(mainBuilder, "main", "content");
+    auto separator = builderObject!Separator(mainBuilder, "main", "separator");
+    auto toolbar = builderObject!Box(mainBuilder, "main", "toolbar");
+    auto btnReload = builderObject!Button(mainBuilder, "main", "btnReload");
+    auto btnRelayout = builderObject!Button(mainBuilder, "main", "btnRelayout");
+    auto btnCancelLoad = builderObject!Button(mainBuilder, "main", "btnCancelLoad");
+    auto loadSpinner = builderObject!Spinner(mainBuilder, "main", "loadSpinner");
+    auto filterEntry = builderObject!Entry(mainBuilder, "main", "filterEntry");
+    auto filterMediaNot = builderObject!CheckButton(mainBuilder, "main", "filterMediaNot");
+    auto filterVideo = builderObject!CheckButton(mainBuilder, "main", "filterVideo");
+    auto filterAudio = builderObject!CheckButton(mainBuilder, "main", "filterAudio");
+    auto filterImage = builderObject!CheckButton(mainBuilder, "main", "filterImage");
+    auto filterText = builderObject!CheckButton(mainBuilder, "main", "filterText");
+    auto filterFileType = builderObject!CheckButton(mainBuilder, "main", "filterFileType");
+    auto filterArchive = builderObject!CheckButton(mainBuilder, "main", "filterArchive");
+    auto filterTorrent = builderObject!CheckButton(mainBuilder, "main", "filterTorrent");
+    auto btnApplyFilter = builderObject!Button(mainBuilder, "main", "btnApplyFilter");
+    auto btnClearFilter = builderObject!Button(mainBuilder, "main", "btnClearFilter");
+    auto progressBar = builderObject!ProgressBar(mainBuilder, "main", "progressBar");
+    auto notebook = builderObject!Notebook(mainBuilder, "main", "notebook");
 
     DocumentTab[] documents;
     string[] pendingStartupPaths;
@@ -2859,13 +2821,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
     });
 
-    content.packStart(separator, false, false, 0);
-    content.packStart(toolbar, false, false, 0);
-    content.packStart(notebook, true, true, 0);
-
-    root.packStart(menuBar, false, false, 0);
-    root.packStart(content, true, true, 0);
-
+    menuBarSlot.packStart(menuBar, false, false, 0);
     window.add(root);
     window.showAll();
 
