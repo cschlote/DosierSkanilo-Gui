@@ -10,6 +10,7 @@ All notable changes to this project are documented in this file.
 - Moved the static File/Edit/Help menu shells into the GtkBuilder shell so the menu hierarchy now lives with the rest of the layout and D only appends runtime actions.
 - Moved the Preferences dialog form into a GtkBuilder UI file so the dialog layout and its default widget state now live alongside the other UI definitions.
 - Moved the remaining video preview rendering default into the GtkBuilder UI file so the preview widget setup no longer needs a D-side special case.
+- Fixed the main Builder startup warning by letting the window keep the root widget from Glade instead of adding it again, and removed the unsupported GtkScale value property from the preview UI.
 - Moved static detail and preview widget defaults from D setup code into the GtkBuilder UI files so the runtime code now mainly wires behavior and state changes.
 - Compact the BinaryBlob table header labels, keep the full column names in header tooltips, show image scaling buttons only for image previews, and add icon-based video controls plus preview track selectors.
 - Populate the video preview track selectors from GStreamer stream metadata when available and align the video/audio/subtitle dropdowns side by side.

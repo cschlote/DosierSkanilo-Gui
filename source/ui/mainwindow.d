@@ -2795,7 +2795,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
     });
 
-    window.add(root);
     window.showAll();
 
     if (loadedState.hasWindowSize)
