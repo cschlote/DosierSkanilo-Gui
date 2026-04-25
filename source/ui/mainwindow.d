@@ -83,8 +83,7 @@ import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
 import ui.appstate : AppState, loadAppState, saveAppState;
 import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL_FILE_TYPE, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_INDEX, COL_INDEX_SORT, COL_MEDIA_INFO, DocumentTab, PreviewScaleMode, clampPreviewScaleMode;
-import ui.detailswidgets : createDetailEntry, createDetailTextView,
-    createDetailCaption, setDetailEntry, setEntryMonospace,
+import ui.detailswidgets : setDetailEntry,
     setMetadataStatusLabel, setMetadataDetails, setKnownFilesTable, setMediaPreview,
     refreshMediaPreview, syncVideoPreviewWindow, setVideoPreviewVolume, playVideoPreview,
     pauseVideoPreview, jumpVideoPreview, stopVideoPreview, syncVideoPreviewPosition,
@@ -1232,13 +1231,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.previewVideoAutostart = previewVideoAutostart;
         document.previewVideoVolume = previewVideoVolume;
 
-        void attachField(Grid grid, int row, int column, string caption, Entry entry, int entryWidth = 1)
-        {
-            auto label = createDetailCaption(caption);
-            grid.attach(label, column, row, 1, 1);
-            grid.attach(entry, column + 1, row, entryWidth, 1);
-        }
-
         document.tableStore = new ListStore([
             GType.STRING,
             GType.STRING,
@@ -1278,32 +1270,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         scroll.setHexpand(true);
         scroll.add(document.tableView);
 
-        document.detailChecksumStatus = new Label("");
-        document.detailChecksumStatus.setXalign(0.0f);
-        document.detailMediaInfoStatus = new Label("");
-        document.detailMediaInfoStatus.setXalign(0.0f);
-        document.detailFileTypeStatus = new Label("");
-        document.detailFileTypeStatus.setXalign(0.0f);
-        document.detailArchiveStatus = new Label("");
-        document.detailArchiveStatus.setXalign(0.0f);
-        document.detailTorrentStatus = new Label("");
-        document.detailTorrentStatus.setXalign(0.0f);
-
-        document.detailChecksumExpander = new Expander("");
-        document.detailMediaInfoView = createDetailTextView(true);
-        document.detailFileTypeView = createDetailTextView(true);
-        document.detailArchiveView = createDetailTextView(true);
-        document.detailTorrentView = createDetailTextView(true);
-        document.detailMediaInfoExpander = new Expander("");
-        document.detailFileTypeExpander = new Expander("");
-        document.detailArchiveExpander = new Expander("");
-        document.detailTorrentExpander = new Expander("");
-        document.detailChecksumExpander.setLabelWidget(document.detailChecksumStatus);
-        document.detailMediaInfoExpander.setLabelWidget(document.detailMediaInfoStatus);
-        document.detailFileTypeExpander.setLabelWidget(document.detailFileTypeStatus);
-        document.detailArchiveExpander.setLabelWidget(document.detailArchiveStatus);
-        document.detailTorrentExpander.setLabelWidget(document.detailTorrentStatus);
-
         auto previewBuilder = new Builder();
         logLineVerbose("[ui] loading preview builder for ", filePath);
         previewBuilder.addFromString(import("source/ui/detailpreview.ui"));
@@ -1313,41 +1279,33 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto previewPane = builderObject!Box(previewBuilder, "preview", "previewPane");
         document.detailPreviewTitle = builderObject!Label(previewBuilder, "preview", "detailPreviewTitle");
         document.detailPreviewSummary = builderObject!Label(previewBuilder, "preview", "detailPreviewSummary");
+        document.detailPreviewImageControls = builderObject!Box(previewBuilder, "preview", "previewControls");
         document.detailPreviewScroll = builderObject!ScrolledWindow(previewBuilder, "preview", "detailPreviewScroll");
-        document.detailPreviewImage = builderObjectOrNull!Image(previewBuilder, "preview", "detailPreviewImage");
-        if (document.detailPreviewImage is null)
-        {
-            logLine("[ui] creating fallback preview image widget for ", filePath);
-            document.detailPreviewImage = new Image();
-            document.detailPreviewImage.setHexpand(true);
-            document.detailPreviewImage.setVexpand(true);
-            document.detailPreviewImage.setHalign(GtkAlign.CENTER);
-            document.detailPreviewImage.setValign(GtkAlign.CENTER);
-        }
-        if (document.detailPreviewScroll !is null)
-        {
-            document.detailPreviewScroll.add(document.detailPreviewImage);
-            document.detailPreviewImage.setVisible(true);
-        }
+        document.detailPreviewImage = builderObject!Image(previewBuilder, "preview", "detailPreviewImage");
         document.detailPreviewVideoFrame = builderObject!AspectFrame(previewBuilder, "preview", "detailPreviewVideoFrame");
         document.detailPreviewVideoArea = builderObject!DrawingArea(previewBuilder, "preview", "detailPreviewVideoArea");
         document.detailPreviewVideoControls = builderObject!Box(previewBuilder, "preview", "detailPreviewVideoControls");
-
-        auto previewButtonRow = builderObject!Box(previewBuilder, "preview", "previewButtonRow");
-        auto previewPositionRow = builderObject!Box(previewBuilder, "preview", "previewPositionRow");
-        auto previewVolumeRow = builderObject!Box(previewBuilder, "preview", "previewVolumeRow");
-
-        // Fill provided space of parent container, but don't stretch video content itself.
         document.detailPreviewVideoArea.setDoubleBuffered(false);
-        document.detailPreviewVideoArea.setHexpand(true);
-        document.detailPreviewVideoArea.setVexpand(true);
-        document.detailPreviewVideoArea.setHalign(GtkAlign.FILL);
-        document.detailPreviewVideoArea.setValign(GtkAlign.FILL);
-        // Fill provided space of parent container, but don't stretch video content itself.
-        document.detailPreviewVideoFrame.setHexpand(true);
-        document.detailPreviewVideoFrame.setVexpand(true);
-        document.detailPreviewVideoFrame.setHalign(GtkAlign.FILL);
-        document.detailPreviewVideoFrame.setValign(GtkAlign.FILL);
+
+        document.detailPreviewAutostartButton = builderObject!CheckButton(previewBuilder, "preview", "detailPreviewAutostartButton");
+        document.detailPreviewJumpBackButton = builderObject!Button(previewBuilder, "preview", "detailPreviewJumpBackButton");
+        document.detailPreviewPlayButton = builderObject!Button(previewBuilder, "preview", "detailPreviewPlayButton");
+        document.detailPreviewJumpForwardButton = builderObject!Button(previewBuilder, "preview", "detailPreviewJumpForwardButton");
+        document.detailPreviewPositionLabel = builderObject!Label(previewBuilder, "preview", "detailPreviewPositionLabel");
+        document.detailPreviewPositionScale = builderObject!Scale(previewBuilder, "preview", "detailPreviewPositionScale");
+        document.detailPreviewVolumeScale = builderObject!Scale(previewBuilder, "preview", "detailPreviewVolumeScale");
+        document.detailPreviewTrackSelectorsRow = builderObject!Box(previewBuilder, "preview", "previewTrackSelectorsRow");
+        document.detailPreviewVideoTrackBox = builderObject!Box(previewBuilder, "preview", "detailPreviewVideoTrackBox");
+        document.detailPreviewAudioTrackBox = builderObject!Box(previewBuilder, "preview", "detailPreviewAudioTrackBox");
+        document.detailPreviewSubtitleTrackBox = builderObject!Box(previewBuilder, "preview", "detailPreviewSubtitleTrackBox");
+        document.detailPreviewVideoTrackCombo = builderObject!ComboBoxText(previewBuilder, "preview", "detailPreviewVideoTrackCombo");
+        document.detailPreviewAudioTrackCombo = builderObject!ComboBoxText(previewBuilder, "preview", "detailPreviewAudioTrackCombo");
+        document.detailPreviewSubtitleTrackCombo = builderObject!ComboBoxText(previewBuilder, "preview", "detailPreviewSubtitleTrackCombo");
+        document.detailPreviewContainButton = builderObject!ToggleButton(previewBuilder, "preview", "detailPreviewContainButton");
+        document.detailPreviewFitWidthButton = builderObject!ToggleButton(previewBuilder, "preview", "detailPreviewFitWidthButton");
+        document.detailPreviewFitHeightButton = builderObject!ToggleButton(previewBuilder, "preview", "detailPreviewFitHeightButton");
+        document.detailPreviewCenterButton = builderObject!ToggleButton(previewBuilder, "preview", "detailPreviewCenterButton");
+        document.detailPreviewCoverButton = builderObject!ToggleButton(previewBuilder, "preview", "detailPreviewCoverButton");
 
         auto detailBuilder = new Builder();
         logLineVerbose("[ui] loading detail builder for ", filePath);
@@ -1368,11 +1326,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.perfStatus = builderObject!Label(pageBuilder, "page", "perfStatus");
         document.fileMetaStatus = builderObject!Label(pageBuilder, "page", "fileMetaStatus");
 
-        document.rowDetails.setXalign(0.0f);
-        document.status.setXalign(0.0f);
-        document.perfStatus.setXalign(0.0f);
-        document.fileMetaStatus.setXalign(0.0f);
-
         auto detailsPane = builderObject!Box(detailBuilder, "detail", "detailsPane");
         auto detailsActions = builderObject!Box(detailBuilder, "detail", "detailsActions");
         auto detailsContent = builderObject!Paned(detailBuilder, "detail", "detailsContent");
@@ -1387,14 +1340,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.btnCopyFile = builderObject!Button(detailBuilder, "detail", "btnCopyFile");
         document.btnCopyDetails = builderObject!Button(detailBuilder, "detail", "btnCopyDetails");
 
-        document.btnCopySha1.setSensitive(false);
-        document.btnCopyFile.setSensitive(false);
-        document.btnCopyDetails.setSensitive(false);
-
-        document.detailPreviewAutostartButton = new CheckButton("Autostart");
-        document.detailPreviewAutostartButton.setFocusOnClick(false);
         document.detailPreviewAutostartButton.setActive(document.previewVideoAutostart);
-        document.detailPreviewAutostartButton.setTooltipText("Video beim Laden automatisch starten");
         document.detailPreviewAutostartButton.addOnToggled((ToggleButton button) {
             if (isSyncingToolbarState)
             {
@@ -1418,29 +1364,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 pauseVideoPreview(document);
             }
         });
-
-        Button createPreviewActionButton(string iconName, string tooltip)
-        {
-            auto button = new Button();
-            button.setFocusOnClick(false);
-            button.setAlwaysShowImage(true);
-            auto icon = new Image();
-            icon.setFromIconName(iconName, GtkIconSize.BUTTON);
-            icon.show();
-            button.setImage(icon);
-            button.setLabel("");
-            button.setTooltipText(tooltip);
-            return button;
-        }
-
-        document.detailPreviewJumpBackButton = createPreviewActionButton("media-seek-backward", "10 Sekunden zurück springen");
-        document.detailPreviewJumpBackButton.setFocusOnClick(false);
         document.detailPreviewJumpBackButton.addOnClicked((Button _) {
             jumpVideoPreview(document, -10);
         });
 
-        document.detailPreviewPlayButton = createPreviewActionButton("media-playback-start", "Video starten");
-        document.detailPreviewPlayButton.setFocusOnClick(false);
         document.detailPreviewPlayButton.addOnClicked((Button _) {
             if (document.previewVideoPlayer is null)
             {
@@ -1467,42 +1394,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
         });
 
-        document.detailPreviewJumpForwardButton = createPreviewActionButton("media-seek-forward", "10 Sekunden vor springen");
-        document.detailPreviewJumpForwardButton.setFocusOnClick(false);
         document.detailPreviewJumpForwardButton.addOnClicked((Button _) {
             jumpVideoPreview(document, 10);
         });
-
-        Box createTrackSelectorRow(string labelText, string tooltip, out ComboBoxText combo)
-        {
-            auto row = new Box(Orientation.VERTICAL, 3);
-            auto label = createDetailCaption(labelText);
-            combo = new ComboBoxText();
-            combo.setTooltipText(tooltip);
-            combo.setHexpand(true);
-            label.setTooltipText(tooltip);
-            row.packStart(label, false, false, 0);
-            row.packStart(combo, true, true, 0);
-            row.setVisible(false);
-            return row;
-        }
-
-        auto previewTrackSelectorsRow = new Box(Orientation.HORIZONTAL, 12);
-        previewTrackSelectorsRow.setHexpand(true);
-        document.detailPreviewTrackSelectorsRow = previewTrackSelectorsRow;
-
-        document.detailPreviewVideoTrackBox = createTrackSelectorRow(
-            "Video",
-            "Zwischen verfügbaren Videospuren umschalten",
-            document.detailPreviewVideoTrackCombo);
-        document.detailPreviewAudioTrackBox = createTrackSelectorRow(
-            "Audio",
-            "Zwischen verfügbaren Audiospuren umschalten",
-            document.detailPreviewAudioTrackCombo);
-        document.detailPreviewSubtitleTrackBox = createTrackSelectorRow(
-            "Subtitle",
-            "Zwischen verfügbaren Untertitelspuren umschalten oder Untertitel deaktivieren",
-            document.detailPreviewSubtitleTrackCombo);
 
         document.detailPreviewVideoTrackCombo.addOnChanged((ComboBoxText combo) {
             if (isSyncingToolbarState || document.previewVideoTrackSyncing || document.previewVideoPlayer is null)
@@ -1541,12 +1435,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
         });
 
-        document.detailPreviewPositionLabel = createDetailCaption("Position 00:00 / --:--");
-        document.detailPreviewPositionScale = new Scale(Orientation.HORIZONTAL, 0.0, 1.0, 0.1);
-        document.detailPreviewPositionScale.setDigits(1);
-        document.detailPreviewPositionScale.setDrawValue(false);
-        document.detailPreviewPositionScale.setHexpand(true);
-        document.detailPreviewPositionScale.setTooltipText("Wiedergabeposition");
         document.detailPreviewPositionScale.addOnValueChanged((Range range) {
             if (isSyncingToolbarState || document.previewVideoPositionSyncing)
             {
@@ -1561,13 +1449,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             syncVideoPreviewPosition(document);
         });
 
-        auto volumeLabel = createDetailCaption("Volume");
-        document.detailPreviewVolumeScale = new Scale(Orientation.HORIZONTAL, 0.0, 1.0, 0.01);
-        document.detailPreviewVolumeScale.setDigits(2);
-        document.detailPreviewVolumeScale.setDrawValue(true);
-        document.detailPreviewVolumeScale.setHexpand(true);
         document.detailPreviewVolumeScale.setValue(document.previewVideoVolume);
-        document.detailPreviewVolumeScale.setTooltipText("Wiedergabe-Lautstärke");
         document.detailPreviewVolumeScale.addOnValueChanged((Range range) {
             if (isSyncingToolbarState)
             {
@@ -1577,30 +1459,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
             setVideoPreviewVolume(document, range.getValue());
             previewVideoVolume = document.previewVideoVolume;
         });
-
-        previewButtonRow.packStart(document.detailPreviewAutostartButton, false, false, 0);
-        previewButtonRow.packStart(document.detailPreviewJumpBackButton, false, false, 0);
-        previewButtonRow.packStart(document.detailPreviewPlayButton, false, false, 0);
-        previewButtonRow.packStart(document.detailPreviewJumpForwardButton, false, false, 0);
-
-        previewPositionRow.packStart(document.detailPreviewPositionLabel, false, false, 0);
-        previewPositionRow.packStart(document.detailPreviewPositionScale, true, true, 0);
-
-        previewVolumeRow.packStart(volumeLabel, false, false, 0);
-        previewVolumeRow.packStart(document.detailPreviewVolumeScale, true, true, 0);
-
-        document.detailPreviewVideoControls.packStart(document.detailPreviewVideoTrackBox, false, false, 0);
-        previewTrackSelectorsRow.packStart(document.detailPreviewVideoTrackBox, true, true, 0);
-        previewTrackSelectorsRow.packStart(document.detailPreviewAudioTrackBox, true, true, 0);
-        previewTrackSelectorsRow.packStart(document.detailPreviewSubtitleTrackBox, true, true, 0);
-        document.detailPreviewVideoControls.packStart(previewTrackSelectorsRow, false, true, 0);
-
-        document.detailPreviewScroll.setMinContentWidth(120);
-        document.detailPreviewScroll.setMinContentHeight(120);
-        document.detailPreviewScroll.setPropagateNaturalWidth(false);
-        document.detailPreviewScroll.setPropagateNaturalHeight(false);
-        document.detailPreviewScroll.setHexpand(true);
-        document.detailPreviewScroll.setVexpand(true);
 
         document.detailPreviewScroll.addOnSizeAllocate((allocation, Widget _) {
             if (document.selectedPreviewPath.length == 0 || !document.selectedPreviewIsImage)
@@ -1624,28 +1482,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 syncVideoPreviewWindow(document, allocation.width, allocation.height);
             }
         });
-
-        ToggleButton createPreviewModeButton(string iconName, string tooltip)
-        {
-            auto button = new ToggleButton();
-            button.setMode(false);
-            button.setRelief(GtkReliefStyle.NONE);
-            button.setFocusOnClick(false);
-            button.setAlwaysShowImage(true);
-
-            auto icon = new Image();
-            icon.setFromIconName(iconName, GtkIconSize.SMALL_TOOLBAR);
-            icon.setPixelSize(14);
-            button.setImage(icon);
-            button.setTooltipText(tooltip);
-            return button;
-        }
-
-        document.detailPreviewContainButton = createPreviewModeButton("zoom-fit-best", "Contain: keep the whole image visible");
-        document.detailPreviewFitWidthButton = createPreviewModeButton("zoom-in", "Fit width: scale to the available width");
-        document.detailPreviewFitHeightButton = createPreviewModeButton("zoom-out", "Fit height: scale to the available height");
-        document.detailPreviewCenterButton = createPreviewModeButton("zoom-original", "Center: keep the original size and center it");
-        document.detailPreviewCoverButton = createPreviewModeButton("view-fullscreen", "Cover: fill the area as much as possible");
 
         document.detailPreviewContainButton.addOnToggled((ToggleButton button) {
             if (isSyncingToolbarState || !button.getActive())
@@ -1688,56 +1524,27 @@ int runMainWindow(string[] args, ref CliOptions cli)
             syncPreviewToolbarFromCurrentDocument();
         });
 
-        auto previewControls = builderObject!Box(previewBuilder, "preview", "previewControls");
-        document.detailPreviewImageControls = previewControls;
-        logLineVerbose("[ui] populating preview controls for ", filePath);
-        previewControls.packStart(document.detailPreviewContainButton, false, false, 0);
-        previewControls.packStart(document.detailPreviewFitWidthButton, false, false, 0);
-        previewControls.packStart(document.detailPreviewFitHeightButton, false, false, 0);
-        previewControls.packStart(document.detailPreviewCenterButton, false, false, 0);
-        previewControls.packStart(document.detailPreviewCoverButton, false, false, 0);
-        previewControls.setVisible(false);
-
         syncPreviewToolbarFromDocument(document);
 
-        auto checksumGrid = new Grid();
-        checksumGrid.setColumnSpacing(10);
-        checksumGrid.setRowSpacing(6);
-
-        document.detailSha1HexEntry = createDetailEntry(40);
-        document.detailMd5HexEntry = createDetailEntry(40);
-        document.detailXxh64HexEntry = createDetailEntry(40);
-        setEntryMonospace(document.detailSha1HexEntry);
-        setEntryMonospace(document.detailMd5HexEntry);
-        setEntryMonospace(document.detailXxh64HexEntry);
-        attachField(checksumGrid, 0, 0, "SHA1 (hex)", document.detailSha1HexEntry, 3);
-        attachField(checksumGrid, 1, 0, "MD5 (hex)", document.detailMd5HexEntry, 3);
-        attachField(checksumGrid, 2, 0, "xxh64 (hex)", document.detailXxh64HexEntry, 3);
-
-        document.detailChecksumExpander.add(checksumGrid);
-        document.detailMediaInfoExpander.add(document.detailMediaInfoView);
-        document.detailFileTypeExpander.add(document.detailFileTypeView);
-        auto archiveScroll = new ScrolledWindow(null, null);
-        archiveScroll.setPolicy(GtkPolicyType.AUTOMATIC, GtkPolicyType.AUTOMATIC);
-        archiveScroll.setMinContentHeight(180);
-        archiveScroll.setPropagateNaturalHeight(false);
-        archiveScroll.setVexpand(true);
-        archiveScroll.setHexpand(true);
-        archiveScroll.add(document.detailArchiveView);
-        document.detailArchiveExpander.add(archiveScroll);
-        document.detailTorrentExpander.add(document.detailTorrentView);
-
-        logLineVerbose("[ui] populating detail visuals for ", filePath);
-        detailVisuals.packStart(document.detailChecksumExpander, false, false, 0);
-        detailVisuals.packStart(document.detailMediaInfoExpander, false, false, 0);
-        detailVisuals.packStart(document.detailFileTypeExpander, false, false, 0);
-        detailVisuals.packStart(document.detailArchiveExpander, false, false, 0);
-        detailVisuals.packStart(document.detailTorrentExpander, false, false, 0);
-
-        document.detailIndexEntry = createDetailEntry(10);
-        document.detailSizeEntry = createDetailEntry(14);
-        attachField(detailGrid, 0, 0, "Index", document.detailIndexEntry);
-        attachField(detailGrid, 0, 2, "File size", document.detailSizeEntry);
+        document.detailChecksumExpander = builderObject!Expander(detailBuilder, "detail", "detailChecksumExpander");
+        document.detailChecksumStatus = builderObject!Label(detailBuilder, "detail", "detailChecksumStatus");
+        document.detailMediaInfoExpander = builderObject!Expander(detailBuilder, "detail", "detailMediaInfoExpander");
+        document.detailMediaInfoStatus = builderObject!Label(detailBuilder, "detail", "detailMediaInfoStatus");
+        document.detailMediaInfoView = builderObject!TextView(detailBuilder, "detail", "detailMediaInfoView");
+        document.detailFileTypeExpander = builderObject!Expander(detailBuilder, "detail", "detailFileTypeExpander");
+        document.detailFileTypeStatus = builderObject!Label(detailBuilder, "detail", "detailFileTypeStatus");
+        document.detailFileTypeView = builderObject!TextView(detailBuilder, "detail", "detailFileTypeView");
+        document.detailArchiveExpander = builderObject!Expander(detailBuilder, "detail", "detailArchiveExpander");
+        document.detailArchiveStatus = builderObject!Label(detailBuilder, "detail", "detailArchiveStatus");
+        document.detailArchiveView = builderObject!TextView(detailBuilder, "detail", "detailArchiveView");
+        document.detailTorrentExpander = builderObject!Expander(detailBuilder, "detail", "detailTorrentExpander");
+        document.detailTorrentStatus = builderObject!Label(detailBuilder, "detail", "detailTorrentStatus");
+        document.detailTorrentView = builderObject!TextView(detailBuilder, "detail", "detailTorrentView");
+        document.detailIndexEntry = builderObject!Entry(detailBuilder, "detail", "detailIndexEntry");
+        document.detailSizeEntry = builderObject!Entry(detailBuilder, "detail", "detailSizeEntry");
+        document.detailSha1HexEntry = builderObject!Entry(detailBuilder, "detail", "detailSha1HexEntry");
+        document.detailMd5HexEntry = builderObject!Entry(detailBuilder, "detail", "detailMd5HexEntry");
+        document.detailXxh64HexEntry = builderObject!Entry(detailBuilder, "detail", "detailXxh64HexEntry");
 
         document.detailFileNamesStore = new ListStore([
             GType.STRING, GType.STRING

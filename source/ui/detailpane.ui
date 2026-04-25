@@ -19,6 +19,7 @@
             <property name="label">Copy SHA1</property>
             <property name="can-focus">False</property>
             <property name="receives-default">False</property>
+            <property name="sensitive">False</property>
           </object>
           <packing>
             <property name="expand">False</property>
@@ -31,6 +32,7 @@
             <property name="label">Copy File</property>
             <property name="can-focus">False</property>
             <property name="receives-default">False</property>
+            <property name="sensitive">False</property>
           </object>
           <packing>
             <property name="expand">False</property>
@@ -43,6 +45,7 @@
             <property name="label">Copy Details</property>
             <property name="can-focus">False</property>
             <property name="receives-default">False</property>
+            <property name="sensitive">False</property>
           </object>
           <packing>
             <property name="expand">False</property>
@@ -73,6 +76,247 @@
                 <property name="can-focus">False</property>
                 <property name="orientation">vertical</property>
                 <property name="spacing">4</property>
+                <child>
+                  <object class="GtkExpander" id="detailChecksumExpander">
+                    <property name="can-focus">False</property>
+                    <property name="expanded">False</property>
+                    <property name="sensitive">False</property>
+                    <property name="visible">True</property>
+                    <child type="label">
+                      <object class="GtkLabel" id="detailChecksumStatus">
+                        <property name="can-focus">False</property>
+                        <property name="label">Checksums</property>
+                        <property name="xalign">0</property>
+                        <style>
+                          <class name="document-status-label"/>
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkGrid" id="checksumGrid">
+                        <property name="can-focus">False</property>
+                        <property name="column-spacing">10</property>
+                        <property name="row-spacing">6</property>
+                        <child>
+                          <object class="GtkLabel" id="checksumSha1Label">
+                            <property name="can-focus">False</property>
+                            <property name="label">SHA1 (hex)</property>
+                            <property name="xalign">0</property>
+                          </object>
+                          <packing>
+                            <property name="left-attach">0</property>
+                            <property name="top-attach">0</property>
+                          </packing>
+                        </child>
+                        <child>
+                          <object class="GtkEntry" id="detailSha1HexEntry">
+                            <property name="can-focus">False</property>
+                            <property name="editable">False</property>
+                            <property name="hexpand">True</property>
+                            <property name="width-chars">40</property>
+                            <style>
+                              <class name="digest-entry"/>
+                            </style>
+                          </object>
+                          <packing>
+                            <property name="left-attach">1</property>
+                            <property name="top-attach">0</property>
+                          </packing>
+                        </child>
+                        <child>
+                          <object class="GtkLabel" id="checksumMd5Label">
+                            <property name="can-focus">False</property>
+                            <property name="label">MD5 (hex)</property>
+                            <property name="xalign">0</property>
+                          </object>
+                          <packing>
+                            <property name="left-attach">0</property>
+                            <property name="top-attach">1</property>
+                          </packing>
+                        </child>
+                        <child>
+                          <object class="GtkEntry" id="detailMd5HexEntry">
+                            <property name="can-focus">False</property>
+                            <property name="editable">False</property>
+                            <property name="hexpand">True</property>
+                            <property name="width-chars">40</property>
+                            <style>
+                              <class name="digest-entry"/>
+                            </style>
+                          </object>
+                          <packing>
+                            <property name="left-attach">1</property>
+                            <property name="top-attach">1</property>
+                          </packing>
+                        </child>
+                        <child>
+                          <object class="GtkLabel" id="checksumXxh64Label">
+                            <property name="can-focus">False</property>
+                            <property name="label">xxh64 (hex)</property>
+                            <property name="xalign">0</property>
+                          </object>
+                          <packing>
+                            <property name="left-attach">0</property>
+                            <property name="top-attach">2</property>
+                          </packing>
+                        </child>
+                        <child>
+                          <object class="GtkEntry" id="detailXxh64HexEntry">
+                            <property name="can-focus">False</property>
+                            <property name="editable">False</property>
+                            <property name="hexpand">True</property>
+                            <property name="width-chars">40</property>
+                            <style>
+                              <class name="digest-entry"/>
+                            </style>
+                          </object>
+                          <packing>
+                            <property name="left-attach">1</property>
+                            <property name="top-attach">2</property>
+                          </packing>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">True</property>
+                    <property name="position">0</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkExpander" id="detailMediaInfoExpander">
+                    <property name="can-focus">False</property>
+                    <property name="expanded">False</property>
+                    <property name="sensitive">False</property>
+                    <property name="visible">True</property>
+                    <child type="label">
+                      <object class="GtkLabel" id="detailMediaInfoStatus">
+                        <property name="can-focus">False</property>
+                        <property name="label">MediaInfo</property>
+                        <property name="xalign">0</property>
+                        <style>
+                          <class name="document-status-label"/>
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkTextView" id="detailMediaInfoView">
+                        <property name="can-focus">False</property>
+                        <property name="editable">False</property>
+                        <property name="wrap-mode">word-char</property>
+                        <property name="monospace">True</property>
+                      </object>
+                    </child>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">True</property>
+                    <property name="position">1</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkExpander" id="detailFileTypeExpander">
+                    <property name="can-focus">False</property>
+                    <property name="expanded">False</property>
+                    <property name="sensitive">False</property>
+                    <property name="visible">True</property>
+                    <child type="label">
+                      <object class="GtkLabel" id="detailFileTypeStatus">
+                        <property name="can-focus">False</property>
+                        <property name="label">File Type</property>
+                        <property name="xalign">0</property>
+                        <style>
+                          <class name="document-status-label"/>
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkTextView" id="detailFileTypeView">
+                        <property name="can-focus">False</property>
+                        <property name="editable">False</property>
+                        <property name="wrap-mode">word-char</property>
+                        <property name="monospace">True</property>
+                      </object>
+                    </child>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">True</property>
+                    <property name="position">2</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkExpander" id="detailArchiveExpander">
+                    <property name="can-focus">False</property>
+                    <property name="expanded">False</property>
+                    <property name="sensitive">False</property>
+                    <property name="visible">True</property>
+                    <child type="label">
+                      <object class="GtkLabel" id="detailArchiveStatus">
+                        <property name="can-focus">False</property>
+                        <property name="label">Archive</property>
+                        <property name="xalign">0</property>
+                        <style>
+                          <class name="document-status-label"/>
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkScrolledWindow" id="detailArchiveScroll">
+                        <property name="can-focus">False</property>
+                        <property name="hexpand">True</property>
+                        <property name="vexpand">True</property>
+                        <property name="min-content-height">180</property>
+                        <property name="propagate-natural-height">False</property>
+                        <child>
+                          <object class="GtkTextView" id="detailArchiveView">
+                            <property name="can-focus">False</property>
+                            <property name="editable">False</property>
+                            <property name="wrap-mode">word-char</property>
+                            <property name="monospace">True</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">True</property>
+                    <property name="position">3</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkExpander" id="detailTorrentExpander">
+                    <property name="can-focus">False</property>
+                    <property name="expanded">False</property>
+                    <property name="sensitive">False</property>
+                    <property name="visible">True</property>
+                    <child type="label">
+                      <object class="GtkLabel" id="detailTorrentStatus">
+                        <property name="can-focus">False</property>
+                        <property name="label">Torrent</property>
+                        <property name="xalign">0</property>
+                        <style>
+                          <class name="document-status-label"/>
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkTextView" id="detailTorrentView">
+                        <property name="can-focus">False</property>
+                        <property name="editable">False</property>
+                        <property name="wrap-mode">word-char</property>
+                        <property name="monospace">True</property>
+                      </object>
+                    </child>
+                  </object>
+                  <packing>
+                    <property name="expand">False</property>
+                    <property name="fill">True</property>
+                    <property name="position">4</property>
+                  </packing>
+                </child>
               </object>
               <packing>
                 <property name="expand">False</property>
@@ -86,6 +330,58 @@
                 <property name="can-focus">False</property>
                 <property name="row-spacing">6</property>
                 <property name="column-spacing">10</property>
+                <child>
+                  <object class="GtkLabel" id="detailIndexLabel">
+                    <property name="can-focus">False</property>
+                    <property name="label">Index</property>
+                    <property name="xalign">0</property>
+                  </object>
+                  <packing>
+                    <property name="left-attach">0</property>
+                    <property name="top-attach">0</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkEntry" id="detailIndexEntry">
+                    <property name="can-focus">False</property>
+                    <property name="editable">False</property>
+                    <property name="hexpand">True</property>
+                    <property name="width-chars">10</property>
+                    <style>
+                      <class name="digest-entry"/>
+                    </style>
+                  </object>
+                  <packing>
+                    <property name="left-attach">1</property>
+                    <property name="top-attach">0</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkLabel" id="detailSizeLabel">
+                    <property name="can-focus">False</property>
+                    <property name="label">File size</property>
+                    <property name="xalign">0</property>
+                  </object>
+                  <packing>
+                    <property name="left-attach">0</property>
+                    <property name="top-attach">1</property>
+                  </packing>
+                </child>
+                <child>
+                  <object class="GtkEntry" id="detailSizeEntry">
+                    <property name="can-focus">False</property>
+                    <property name="editable">False</property>
+                    <property name="hexpand">True</property>
+                    <property name="width-chars">14</property>
+                    <style>
+                      <class name="digest-entry"/>
+                    </style>
+                  </object>
+                  <packing>
+                    <property name="left-attach">1</property>
+                    <property name="top-attach">1</property>
+                  </packing>
+                </child>
                 <child>
                   <placeholder/>
                 </child>
@@ -124,6 +420,7 @@
               <object class="GtkLabel" id="detailFileNamesLabel">
                 <property name="can-focus">False</property>
                 <property name="label">Known file names (0)</property>
+                <property name="xalign">0</property>
               </object>
               <packing>
                 <property name="expand">False</property>
@@ -136,6 +433,8 @@
                 <property name="can-focus">False</property>
                 <property name="hexpand">True</property>
                 <property name="vexpand">True</property>
+                <property name="min-content-height">120</property>
+                <property name="propagate-natural-height">False</property>
               </object>
               <packing>
                 <property name="expand">False</property>

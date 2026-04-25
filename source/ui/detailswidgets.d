@@ -41,48 +41,10 @@ import std.uri : encode;
 import model.blobrow : BlobRow;
 import ui.documenttab : DocumentTab, PreviewScaleMode;
 
-/** Build a read-only single-line field for the details form. */
-Entry createDetailEntry(int widthChars = 18)
-{
-    auto entry = new Entry();
-    entry.setEditable(false);
-    entry.setWidthChars(widthChars);
-    entry.setHexpand(true);
-    return entry;
-}
-
-/** Build a read-only multiline viewer for expanded metadata details. */
-TextView createDetailTextView(bool monospace = false)
-{
-    auto view = new TextView();
-    view.setEditable(false);
-    view.setWrapMode(GtkWrapMode.WORD_CHAR);
-    view.setMonospace(monospace);
-    return view;
-}
-
-/** Build a left-aligned caption label for the details form. */
-Label createDetailCaption(string text)
-{
-    auto label = new Label(text);
-    label.setXalign(0.0f);
-    return label;
-}
-
 /** Normalize empty field values in the details form. */
 void setDetailEntry(Entry entry, string value)
 {
     entry.setText(value.length > 0 ? value : "-");
-}
-
-/** Apply a monospace font to one entry widget. */
-void setEntryMonospace(Entry entry)
-{
-    auto styleContext = entry.getStyleContext();
-    if (styleContext !is null)
-    {
-        styleContext.addClass("digest-entry");
-    }
 }
 
 /** Write compact status text with a bold title into one metadata label. */
