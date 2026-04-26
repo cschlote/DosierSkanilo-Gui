@@ -10,7 +10,6 @@ module ui.mainwindow;
 
 import gdk.c.types : GdkEventConfigure;
 import gdk.Display;
-import gdk.Screen;
 import glib.Idle;
 import glib.Timeout;
 import gobject.Value;
@@ -18,17 +17,14 @@ import gobject.Type : GType;
 import gobject.ObjectG : ObjectG;
 import gobject.ParamSpec : ParamSpec;
 import gtk.Builder;
-import gtk.AboutDialog;
 import gtk.AccelGroup;
 import gtk.Box;
 import gtk.Button;
 import gtk.AspectFrame;
-import gtk.c.types : ButtonsType, DialogFlags, FileChooserAction, MessageType, Orientation, ResponseType;
+import gtk.c.types : Orientation;
 import gtk.CheckButton;
 import gtk.Clipboard;
 import gtk.ComboBoxText;
-import gtk.CssProvider;
-import gtk.Dialog;
 import gtk.DrawingArea;
 import gtk.Entry;
 import gtk.Expander;
@@ -41,7 +37,6 @@ import gtk.Main;
 import gtk.Menu;
 import gtk.MenuBar;
 import gtk.MenuItem;
-import gtk.MessageDialog;
 import gtk.Notebook;
 import gtk.Paned;
 import gtk.ProgressBar;
@@ -57,12 +52,11 @@ import gtk.TreeIter;
 import gtk.TreeModelIF;
 import gtk.TreeSelection;
 import gtk.TreePath;
-import gtk.StyleContext;
 import gtk.TreeView;
 import gtk.TreeViewColumn;
 import gtk.Widget;
 import gtk.Window;
-import gtk.c.types : GtkAlign, GtkIconSize, GtkReliefStyle, GtkShadowType, GtkTreeViewColumnSizing, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION;
+import gtk.c.types : GtkAlign, GtkIconSize, GtkReliefStyle, GtkShadowType, GtkTreeViewColumnSizing;
 
 import core.thread : Thread;
 import core.time : MonoTime;
@@ -82,12 +76,27 @@ import gstreamer.c.types : GstState, GstStateChangeReturn;
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
 import ui.appstate : AppState, loadAppState, saveAppState;
+import ui.builderutils : builderObject;
+import ui.detailpane : DetailPaneCallbacks, bindDetailPaneSignals, loadDetailPaneUi;
+import ui.detailpreview : DetailPreviewCallbacks, bindDetailPreviewSignals, loadDetailPreviewUi;
 import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL_FILE_TYPE, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_INDEX, COL_INDEX_SORT, COL_MEDIA_INFO, DocumentTab, PreviewScaleMode, clampPreviewScaleMode;
+import ui.documentpage : loadDocumentPageUi;
 import ui.detailswidgets : setDetailEntry,
     setMetadataStatusLabel, setMetadataDetails, setKnownFilesTable, setMediaPreview,
     refreshMediaPreview, syncVideoPreviewWindow, setVideoPreviewVolume, playVideoPreview,
     pauseVideoPreview, jumpVideoPreview, stopVideoPreview, syncVideoPreviewPosition,
     seekVideoPreview, syncVideoPlaybackButton, syncVideoTrackSelectors;
+import ui.fileopendialog : FileOpenDialogCallbacks, chooseAndLoadPath;
+import ui.helpdialogs : showAbout, showShortcutsHelp;
+import ui.loadingstatus;
+import ui.preferencesdialog : PreferencesDialogCallbacks, showPreferencesDialog;
+import ui.selectionstatus : boolStatusIcon, checksumStatusSummary, clearSelectionDetails,
+    mediaInfoStatusSummary, metadataPresenceSummary, resetFilterState, resetPerfMetrics, updateFileMetaStatus, updatePerfStatus;
+import ui.styles : installApplicationCss;
+import ui.toolbarbindings : ToolbarBindingsCallbacks, bindToolbarSignals;
+import ui.windowlifecycle : WindowLifecycleCallbacks, bindWindowLifecycleSignals;
+import ui.startupworkflow : scheduleSelfTestQuit, startStartupWorkflow;
+import ui.previewprogress : PreviewProgressCallbacks, startPreviewProgressTimer;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : countDuplicateDigestGroups, filterRowsByText;
 import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, deserializeDataClassJsonFile;
@@ -120,47 +129,6 @@ struct AsyncFilterResult
 enum int MIN_VALID_WINDOW_WIDTH = 320;
 enum int MIN_VALID_WINDOW_HEIGHT = 240;
 
-private __gshared CssProvider applicationCssProvider;
-
-/** Install application-scoped CSS classes used by the Builder and widget factory helpers. */
-private void installApplicationCss()
-{
-    if (applicationCssProvider !is null)
-    {
-        return;
-    }
-
-    auto screen = Screen.getDefault();
-    if (screen is null)
-    {
-        return;
-    }
-
-    auto provider = new CssProvider();
-    provider.loadFromData(q"CSS
-.digest-entry {
-    font-family: Monospace;
-    font-size: 10pt;
-}
-
-.document-status-label {
-    padding-top: 2px;
-    padding-bottom: 2px;
-}
-
-.preview-title {
-    font-weight: 600;
-}
-
-.preview-summary {
-    font-size: 0.95em;
-}
-CSS");
-
-    StyleContext.addProviderForScreen(screen, provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    applicationCssProvider = provider;
-}
-
 /** Summarize checksum availability for the list view. */
 string checksumSetStatus(const(BlobRow) row)
 {
@@ -187,12 +155,6 @@ string checksumSetStatus(const(BlobRow) row)
         return "full";
     }
     return format("partial (%s/3)", present);
-}
-
-/** Render a compact status icon for boolean table cells. */
-string boolStatusIcon(bool value)
-{
-    return value ? "✓" : "○";
 }
 
 /** Summarize media subtype flags for the list view. */
@@ -457,48 +419,6 @@ string digestBase64ToHex(string digest)
     }
 }
 
-/** Retrieve a typed object from a GtkBuilder layout.
- *
- * Params:
- *   builder = builder instance owning the object
- *   builderLabel = short context label for diagnostics
- *   objectName = exact object id to resolve
- * Returns:
- *   the requested widget cast to the expected type
- */
-private T builderObject(T)(Builder builder, string builderLabel, string objectName)
-{
-    logLineVerbose("[ui] builder lookup start ", builderLabel, ".", objectName);
-    auto object = builder.getObject(objectName);
-    if (object is null)
-    {
-        auto objectCount = builder.getObjects().length;
-        logLine("[ui] missing GtkBuilder object ", builderLabel, ".", objectName,
-            " (objects=", objectCount, ")");
-        throw new Exception(format("Missing GtkBuilder object: %s.%s", builderLabel, objectName));
-    }
-
-    logLineVerbose("[ui] builder lookup ok ", builderLabel, ".", objectName);
-
-    return cast(T) object;
-}
-
-/** Retrieve a typed object from a GtkBuilder layout, or return null if missing. */
-private T builderObjectOrNull(T)(Builder builder, string builderLabel, string objectName)
-{
-    logLineVerbose("[ui] builder lookup start ", builderLabel, ".", objectName);
-    auto object = builder.getObject(objectName);
-    if (object is null)
-    {
-        logLine("[ui] missing GtkBuilder object ", builderLabel, ".", objectName,
-            " (objects=", builder.getObjects().length, ")");
-        return null;
-    }
-
-    logLineVerbose("[ui] builder lookup ok ", builderLabel, ".", objectName);
-    return cast(T) object;
-}
-
 /** Program entry point.
  *
  * Params:
@@ -602,41 +522,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         ", verbose=", cli.argVerboseOutputs);
     logLineVerbose("[startup] self-test mode=", cli.selfTestMode ? "yes" : "no",
         ", delayMs=", cli.selfTestDelayMs);
-
-    /** Render a compact summary for media flags in the details form. */
-    string mediaInfoStatusSummary(const(BlobRow) row)
-    {
-        if (!row.hasMedia)
-        {
-            return format("%s none", boolStatusIcon(false));
-        }
-        return format(
-            "%s present | V %s  A %s  I %s  T %s",
-            boolStatusIcon(true),
-            boolStatusIcon(row.hasVideo),
-            boolStatusIcon(row.hasAudio),
-            boolStatusIcon(row.hasImage),
-            boolStatusIcon(row.hasText)
-        );
-    }
-
-    /** Render a compact summary for checksum availability in the details form. */
-    string checksumStatusSummary(const(BlobRow) row)
-    {
-        return format(
-            "MD5 %s  SHA1 %s  xxh64 %s",
-            boolStatusIcon(row.md5.length > 0),
-            boolStatusIcon(row.sha1.length > 0),
-            boolStatusIcon(row.xxh64.length > 0)
-        );
-    }
-
-    /** Render a compact summary for boolean metadata blocks in the details form. */
-    string metadataPresenceSummary(bool value)
-    {
-        return value ? format("%s present", boolStatusIcon(true)) : format("%s none", boolStatusIcon(
-                false));
-    }
 
     /** Format internal timing values for status labels. */
     string formatTimingValue(long valueMs)
@@ -747,7 +632,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         // pathEntry und btnLoad entfernt
         btnReload.setSensitive(!isLoading && hasCurrentDocument);
         btnCancelLoad.setSensitive(isLoading);
-        filterEntry.setSensitive(!isLoading && hasCurrentDocument);
+        filterEntry.setSensitive(!isLoading);
         filterVideo.setSensitive(!isLoading && hasCurrentDocument);
         filterAudio.setSensitive(!isLoading && hasCurrentDocument);
         filterImage.setSensitive(!isLoading && hasCurrentDocument);
@@ -767,7 +652,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto document = currentDocument();
         if (document is null)
         {
-            filterEntry.setText("");
             filterVideo.setActive(false);
             filterAudio.setActive(false);
             filterImage.setActive(false);
@@ -848,179 +732,31 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
     }
 
-    /** Refresh the performance summary label for a document tab. */
-    void updatePerfStatus(DocumentTab document)
+    /** Build the callback bundle required by the loading feedback helper. */
+    LoadingStatusCallbacks loadingStatusCallbacks()
     {
-        document.perfStatus.setText(format(
-                "Timings: load=%s ms | filter=%s ms | render=%s ms",
-                formatTimingValue(document.lastLoadElapsedMs),
-                formatTimingValue(document.lastFilterElapsedMs),
-                formatTimingValue(document.lastRenderElapsedMs)
-        ));
-    }
-
-    /** Refresh the metadata status label for a document tab. */
-    void updateFileMetaStatus(DocumentTab document)
-    {
-        auto dataVersionText = document.loadedDataVersion >= 0 ? to!string(
-            document.loadedDataVersion) : "-";
-        document.fileMetaStatus.setText(format(
-                "File metadata: version=%s | root=%s | keys=%s",
-                dataVersionText,
-                document.loadedRootShape,
-                document.loadedRootKeysSummary
-        ));
+        return LoadingStatusCallbacks(
+            () { return isLoading; },
+            (bool value) { isLoading = value; },
+            () { return busyDocument; },
+            (DocumentTab value) { busyDocument = value; },
+            () { return progressPulseTimer; },
+            (Timeout value) { progressPulseTimer = value; },
+            () { syncToolbarSensitivity(); },
+            (DocumentTab target, bool resizable) { setTableColumnsResizable(target, resizable); }
+        );
     }
 
     /** Publish a global busy state while a tab-specific worker is active. */
     void setLoadingState(DocumentTab document, bool loading, string message = "")
     {
-        isLoading = loading;
-        busyDocument = loading ? document : null;
-        syncToolbarSensitivity();
-
-        // Spalten bleiben nicht-resizable, damit die gemessenen Breiten stabil bleiben.
-        setTableColumnsResizable(document, false);
-
-        if (loading)
-        {
-            loadSpinner.setVisible(true);
-            loadSpinner.start();
-            progressBar.setVisible(true);
-            auto loadingText = message.length > 0 ? message : "Loading...";
-            progressBar.setText(loadingText);
-            progressBar.pulse();
-            if (progressPulseTimer is null)
-            {
-                progressPulseTimer = new Timeout(120, {
-                    if (!isLoading)
-                    {
-                        return false;
-                    }
-                    progressBar.pulse();
-                    return true;
-                });
-            }
-            if (document !is null)
-            {
-                document.status.setText(loadingText);
-                document.btnCopySha1.setSensitive(false);
-                document.btnCopyFile.setSensitive(false);
-                document.btnCopyDetails.setSensitive(false);
-            }
-            return;
-        }
-
-        loadSpinner.stop();
-        loadSpinner.setVisible(false);
-        if (progressPulseTimer !is null)
-        {
-            progressPulseTimer.stop();
-            progressPulseTimer = null;
-        }
-        progressBar.setVisible(false);
-        progressBar.setFraction(0.0);
-        progressBar.setText("Idle");
-
-        if (document !is null)
-        {
-            document.btnCopySha1.setSensitive(document.selectedSha1.length > 0);
-            document.btnCopyFile.setSensitive(document.selectedFileName.length > 0);
-            document.btnCopyDetails.setSensitive(document.selectedDetailsText.length > 0);
-            if (message.length > 0)
-            {
-                document.status.setText(message);
-            }
-        }
+        ui.loadingstatus.setLoadingState(loadingStatusCallbacks(), document, loading, loadSpinner, progressBar, message);
     }
 
     /** Publish a load phase update onto the GTK main loop for a single document tab. */
     void setLoadingPhase(DocumentTab document, ulong expectedRequestId, string phaseText)
     {
-        new Idle({
-            if (!isLoading || busyDocument !is document || expectedRequestId != document
-            .loadRequestId)
-            {
-                return false;
-            }
-
-            document.status.setText(phaseText);
-            progressBar.setText(phaseText);
-            return false;
-        });
-    }
-
-    /** Clear collected performance timings for the active document tab. */
-    void resetPerfMetrics()
-    {
-        auto document = currentDocument();
-        if (document is null)
-        {
-            return;
-        }
-        document.lastLoadElapsedMs = -1;
-        document.lastFilterElapsedMs = -1;
-        document.lastRenderElapsedMs = -1;
-        updatePerfStatus(document);
-        document.status.setText("Performance metrics reset.");
-    }
-
-    /** Reset selection-dependent detail fields to the empty placeholder state. */
-    void clearSelectionDetails(DocumentTab document)
-    {
-        document.selectedSha1 = "";
-        document.selectedFileName = "";
-        document.selectedDetailsText = "";
-        document.selectedPreviewPath = "";
-        document.selectedPreviewIsImage = false;
-        document.selectedPreviewIsVideo = false;
-        document.selectedPreviewCandidatePath = "";
-        document.selectedPreviewCandidateExists = false;
-        document.selectedPreviewSourcePath = "";
-        document.selectedPreviewSourcePixbuf = null;
-        setDetailEntry(document.detailSha1HexEntry, "");
-        setDetailEntry(document.detailMd5HexEntry, "");
-        setDetailEntry(document.detailXxh64HexEntry, "");
-        setDetailEntry(document.detailIndexEntry, "");
-        setDetailEntry(document.detailSizeEntry, "");
-        setMetadataStatusLabel(document.detailChecksumStatus, "Checksums", checksumStatusSummary(
-                BlobRow.init));
-        document.detailChecksumExpander.setSensitive(false);
-        document.detailChecksumExpander.setExpanded(false);
-        setMetadataStatusLabel(document.detailMediaInfoStatus, "MediaInfo", format("%s unavailable", boolStatusIcon(
-                false)));
-        setMetadataStatusLabel(document.detailFileTypeStatus, "File Type", format("%s unavailable", boolStatusIcon(
-                false)));
-        setMetadataStatusLabel(document.detailArchiveStatus, "Archive", format("%s unavailable", boolStatusIcon(
-                false)));
-        setMetadataStatusLabel(document.detailTorrentStatus, "Torrent", format("%s unavailable", boolStatusIcon(
-                false)));
-        setMetadataDetails(document.detailMediaInfoExpander, document.detailMediaInfoView, "MediaInfo", "");
-        setMetadataDetails(document.detailFileTypeExpander, document.detailFileTypeView, "File Type", "");
-        setMetadataDetails(document.detailArchiveExpander, document.detailArchiveView, "Archive", "");
-        setMetadataDetails(document.detailTorrentExpander, document.detailTorrentView, "Torrent", "");
-        setKnownFilesTable(document, BlobRow.init);
-        if (document.detailPreviewImage !is null)
-        {
-            document.detailPreviewImage.clear();
-        }
-        stopVideoPreview(document);
-        if (document.detailPreviewVideoFrame !is null)
-        {
-            document.detailPreviewVideoFrame.setVisible(false);
-        }
-        if (document.detailPreviewVideoControls !is null)
-        {
-            document.detailPreviewVideoControls.setVisible(false);
-        }
-        if (document.detailPreviewSummary !is null)
-        {
-            document.detailPreviewSummary.setText("No preview available.");
-        }
-        document.btnCopySha1.setSensitive(false);
-        document.btnCopyFile.setSensitive(false);
-        document.btnCopyDetails.setSensitive(false);
-        document.rowDetails.setText("Selection: none");
+        ui.loadingstatus.setLoadingPhase(loadingStatusCallbacks(), document, expectedRequestId, progressBar, phaseText);
     }
 
     /** Keep a document splitter divider within usable visible bounds. */
@@ -1189,6 +925,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     {
         auto document = new DocumentTab();
         document.filePath = filePath;
+        document.filterQuery = filterEntry.getText();
         document.previewScaleMode = previewScaleMode;
         document.previewVideoAutostart = previewVideoAutostart;
         document.previewVideoVolume = previewVideoVolume;
@@ -1232,306 +969,32 @@ int runMainWindow(string[] args, ref CliOptions cli)
         scroll.setHexpand(true);
         scroll.add(document.tableView);
 
-        auto previewBuilder = new Builder();
-        logLineVerbose("[ui] loading preview builder for ", filePath);
-        previewBuilder.addFromString(import("source/ui/detailpreview.ui"));
-        document.previewBuilder = previewBuilder;
-        logLineVerbose("[ui] preview builder loaded, objects=", previewBuilder.getObjects().length);
+        auto previewUi = loadDetailPreviewUi(document);
+        auto detailUi = loadDetailPaneUi(document);
+        auto pageUi = loadDocumentPageUi(document);
 
-        auto previewPane = builderObject!Box(previewBuilder, "preview", "previewPane");
-        document.detailPreviewTitle = builderObject!Label(previewBuilder, "preview", "detailPreviewTitle");
-        document.detailPreviewSummary = builderObject!Label(previewBuilder, "preview", "detailPreviewSummary");
-        document.detailPreviewImageControls = builderObject!Box(previewBuilder, "preview", "previewControls");
-        document.detailPreviewScroll = builderObject!ScrolledWindow(previewBuilder, "preview", "detailPreviewScroll");
-        document.detailPreviewImage = builderObject!Image(previewBuilder, "preview", "detailPreviewImage");
-        document.detailPreviewVideoFrame = builderObject!AspectFrame(previewBuilder, "preview", "detailPreviewVideoFrame");
-        document.detailPreviewVideoArea = builderObject!DrawingArea(previewBuilder, "preview", "detailPreviewVideoArea");
-        document.detailPreviewVideoControls = builderObject!Box(previewBuilder, "preview", "detailPreviewVideoControls");
-
-        document.detailPreviewAutostartButton = builderObject!CheckButton(previewBuilder, "preview", "detailPreviewAutostartButton");
-        document.detailPreviewJumpBackButton = builderObject!Button(previewBuilder, "preview", "detailPreviewJumpBackButton");
-        document.detailPreviewPlayButton = builderObject!Button(previewBuilder, "preview", "detailPreviewPlayButton");
-        document.detailPreviewJumpForwardButton = builderObject!Button(previewBuilder, "preview", "detailPreviewJumpForwardButton");
-        document.detailPreviewPositionLabel = builderObject!Label(previewBuilder, "preview", "detailPreviewPositionLabel");
-        document.detailPreviewPositionScale = builderObject!Scale(previewBuilder, "preview", "detailPreviewPositionScale");
-        document.detailPreviewVolumeScale = builderObject!Scale(previewBuilder, "preview", "detailPreviewVolumeScale");
-        document.detailPreviewTrackSelectorsRow = builderObject!Box(previewBuilder, "preview", "detailPreviewTrackSelectorsRow");
-        document.detailPreviewVideoTrackBox = builderObject!Box(previewBuilder, "preview", "detailPreviewVideoTrackBox");
-        document.detailPreviewAudioTrackBox = builderObject!Box(previewBuilder, "preview", "detailPreviewAudioTrackBox");
-        document.detailPreviewSubtitleTrackBox = builderObject!Box(previewBuilder, "preview", "detailPreviewSubtitleTrackBox");
-        document.detailPreviewVideoTrackCombo = builderObject!ComboBoxText(previewBuilder, "preview", "detailPreviewVideoTrackCombo");
-        document.detailPreviewAudioTrackCombo = builderObject!ComboBoxText(previewBuilder, "preview", "detailPreviewAudioTrackCombo");
-        document.detailPreviewSubtitleTrackCombo = builderObject!ComboBoxText(previewBuilder, "preview", "detailPreviewSubtitleTrackCombo");
-        document.detailPreviewContainButton = builderObject!ToggleButton(previewBuilder, "preview", "detailPreviewContainButton");
-        document.detailPreviewFitWidthButton = builderObject!ToggleButton(previewBuilder, "preview", "detailPreviewFitWidthButton");
-        document.detailPreviewFitHeightButton = builderObject!ToggleButton(previewBuilder, "preview", "detailPreviewFitHeightButton");
-        document.detailPreviewCenterButton = builderObject!ToggleButton(previewBuilder, "preview", "detailPreviewCenterButton");
-        document.detailPreviewCoverButton = builderObject!ToggleButton(previewBuilder, "preview", "detailPreviewCoverButton");
-
-        auto detailBuilder = new Builder();
-        logLineVerbose("[ui] loading detail builder for ", filePath);
-        detailBuilder.addFromString(import("source/ui/detailpane.ui"));
-        document.detailBuilder = detailBuilder;
-        logLineVerbose("[ui] detail builder loaded, objects=", detailBuilder.getObjects().length);
-
-        auto pageBuilder = new Builder();
-        logLineVerbose("[ui] loading page builder for ", filePath);
-        pageBuilder.addFromString(import("source/ui/documentpage.ui"));
-        document.pageBuilder = pageBuilder;
-        logLineVerbose("[ui] page builder loaded, objects=", pageBuilder.getObjects().length);
-
-        auto pageRoot = builderObject!Box(pageBuilder, "page", "pageRoot");
-        auto splitSlot = builderObject!Box(pageBuilder, "page", "splitSlot");
-        document.rowDetails = builderObject!Label(pageBuilder, "page", "rowDetails");
-        document.status = builderObject!Label(pageBuilder, "page", "status");
-        document.perfStatus = builderObject!Label(pageBuilder, "page", "perfStatus");
-        document.fileMetaStatus = builderObject!Label(pageBuilder, "page", "fileMetaStatus");
-
-        auto detailsPane = builderObject!Box(detailBuilder, "detail", "detailsPane");
-        auto detailsActions = builderObject!Box(detailBuilder, "detail", "detailsActions");
-        auto detailsContent = builderObject!Paned(detailBuilder, "detail", "detailsContent");
-        auto detailsBody = builderObject!Box(detailBuilder, "detail", "detailsBody");
-        auto detailVisuals = builderObject!Box(detailBuilder, "detail", "detailVisuals");
-        auto detailGrid = builderObject!Grid(detailBuilder, "detail", "detailGrid");
-        document.detailFileNamesLabel = builderObject!Label(detailBuilder, "detail", "detailFileNamesLabel");
-        auto detailsScroll = builderObject!ScrolledWindow(detailBuilder, "detail", "detailsScroll");
-        auto previewSlot = builderObject!Box(detailBuilder, "detail", "previewSlot");
-
-        document.btnCopySha1 = builderObject!Button(detailBuilder, "detail", "btnCopySha1");
-        document.btnCopyFile = builderObject!Button(detailBuilder, "detail", "btnCopyFile");
-        document.btnCopyDetails = builderObject!Button(detailBuilder, "detail", "btnCopyDetails");
-
-        document.detailPreviewAutostartButton.setActive(document.previewVideoAutostart);
-        document.detailPreviewAutostartButton.addOnToggled((ToggleButton button) {
-            if (isSyncingToolbarState)
-            {
-                return;
-            }
-
-            document.previewVideoAutostart = button.getActive();
-            previewVideoAutostart = document.previewVideoAutostart;
-
-            if (!document.selectedPreviewIsVideo)
-            {
-                return;
-            }
-
-            if (document.previewVideoAutostart)
-            {
-                playVideoPreview(document);
-            }
-            else
-            {
-                pauseVideoPreview(document);
-            }
-        });
-        document.detailPreviewJumpBackButton.addOnClicked((Button _) {
-            jumpVideoPreview(document, -10);
-        });
-
-        document.detailPreviewPlayButton.addOnClicked((Button _) {
-            if (document.previewVideoPlayer is null)
-            {
-                playVideoPreview(document);
-                return;
-            }
-
-            GstState state;
-            GstState pending;
-            auto stateResult = document.previewVideoPlayer.getState(state, pending, 0);
-            if (stateResult == GstStateChangeReturn.FAILURE || state == GstState.NULL)
-            {
-                playVideoPreview(document);
-                return;
-            }
-
-            if (state == GstState.PLAYING)
-            {
-                pauseVideoPreview(document);
-            }
-            else
-            {
-                playVideoPreview(document);
-            }
-        });
-
-        document.detailPreviewJumpForwardButton.addOnClicked((Button _) {
-            jumpVideoPreview(document, 10);
-        });
-
-        document.detailPreviewVideoTrackCombo.addOnChanged((ComboBoxText combo) {
-            if (isSyncingToolbarState || document.previewVideoTrackSyncing || document.previewVideoPlayer is null)
-            {
-                return;
-            }
-
-            auto active = combo.getActive();
-            if (active >= 0)
-            {
-                document.previewVideoPlayer.setProperty("current-video", new Value(active));
-            }
-        });
-        document.detailPreviewAudioTrackCombo.addOnChanged((ComboBoxText combo) {
-            if (isSyncingToolbarState || document.previewVideoTrackSyncing || document.previewVideoPlayer is null)
-            {
-                return;
-            }
-
-            auto active = combo.getActive();
-            if (active >= 0)
-            {
-                document.previewVideoPlayer.setProperty("current-audio", new Value(active));
-            }
-        });
-        document.detailPreviewSubtitleTrackCombo.addOnChanged((ComboBoxText combo) {
-            if (isSyncingToolbarState || document.previewVideoTrackSyncing || document.previewVideoPlayer is null)
-            {
-                return;
-            }
-
-            auto active = combo.getActive();
-            if (active >= 0)
-            {
-                document.previewVideoPlayer.setProperty("current-text", new Value(active - 1));
-            }
-        });
-
-        document.detailPreviewPositionScale.addOnValueChanged((Range range) {
-            if (isSyncingToolbarState || document.previewVideoPositionSyncing)
-            {
-                return;
-            }
-
-            if (!seekVideoPreview(document, range.getValue()))
-            {
-                return;
-            }
-
-            syncVideoPreviewPosition(document);
-        });
-
-        document.detailPreviewVolumeScale.setValue(document.previewVideoVolume);
-        document.detailPreviewVolumeScale.addOnValueChanged((Range range) {
-            if (isSyncingToolbarState)
-            {
-                return;
-            }
-
-            setVideoPreviewVolume(document, range.getValue());
-            previewVideoVolume = document.previewVideoVolume;
-        });
-
-        document.detailPreviewScroll.addOnSizeAllocate((allocation, Widget _) {
-            if (document.selectedPreviewPath.length == 0 || !document.selectedPreviewIsImage)
-            {
-                return;
-            }
-            refreshMediaPreview(document);
-        });
-
-        document.detailPreviewVideoArea.addOnRealize((Widget _) {
-            syncVideoPreviewWindow(document);
-            if (document.selectedPreviewIsVideo)
-            {
-                refreshMediaPreview(document);
-            }
-        });
-
-        document.detailPreviewVideoArea.addOnSizeAllocate((allocation, Widget _) {
-            if (document.selectedPreviewIsVideo)
-            {
-                syncVideoPreviewWindow(document, allocation.width, allocation.height);
-            }
-        });
-
-        document.detailPreviewContainButton.addOnToggled((ToggleButton button) {
-            if (isSyncingToolbarState || !button.getActive())
-            {
-                return;
-            }
-            setPreviewScaleMode(PreviewScaleMode.contain);
-            syncPreviewToolbarFromCurrentDocument();
-        });
-        document.detailPreviewFitWidthButton.addOnToggled((ToggleButton button) {
-            if (isSyncingToolbarState || !button.getActive())
-            {
-                return;
-            }
-            setPreviewScaleMode(PreviewScaleMode.fitWidth);
-            syncPreviewToolbarFromCurrentDocument();
-        });
-        document.detailPreviewFitHeightButton.addOnToggled((ToggleButton button) {
-            if (isSyncingToolbarState || !button.getActive())
-            {
-                return;
-            }
-            setPreviewScaleMode(PreviewScaleMode.fitHeight);
-            syncPreviewToolbarFromCurrentDocument();
-        });
-        document.detailPreviewCenterButton.addOnToggled((ToggleButton button) {
-            if (isSyncingToolbarState || !button.getActive())
-            {
-                return;
-            }
-            setPreviewScaleMode(PreviewScaleMode.center);
-            syncPreviewToolbarFromCurrentDocument();
-        });
-        document.detailPreviewCoverButton.addOnToggled((ToggleButton button) {
-            if (isSyncingToolbarState || !button.getActive())
-            {
-                return;
-            }
-            setPreviewScaleMode(PreviewScaleMode.cover);
-            syncPreviewToolbarFromCurrentDocument();
-        });
+        auto previewPane = previewUi.previewPane;
+        auto detailsPane = detailUi.detailsPane;
+        auto detailsContent = detailUi.detailsContent;
+        auto previewSlot = detailUi.previewSlot;
+        auto pageRoot = pageUi.pageRoot;
+        auto splitSlot = pageUi.splitSlot;
 
         syncPreviewToolbarFromDocument(document);
+        bindDetailPreviewSignals(document, DetailPreviewCallbacks(
+            () => isSyncingToolbarState,
+            (PreviewScaleMode mode) { setPreviewScaleMode(mode); },
+            () { syncPreviewToolbarFromCurrentDocument(); },
+            (bool value) { previewVideoAutostart = value; },
+            (double value) { previewVideoVolume = value; }
+        ));
 
-        document.detailChecksumExpander = builderObject!Expander(detailBuilder, "detail", "detailChecksumExpander");
-        document.detailChecksumStatus = builderObject!Label(detailBuilder, "detail", "detailChecksumStatus");
-        document.detailMediaInfoExpander = builderObject!Expander(detailBuilder, "detail", "detailMediaInfoExpander");
-        document.detailMediaInfoStatus = builderObject!Label(detailBuilder, "detail", "detailMediaInfoStatus");
-        document.detailMediaInfoView = builderObject!TextView(detailBuilder, "detail", "detailMediaInfoView");
-        document.detailFileTypeExpander = builderObject!Expander(detailBuilder, "detail", "detailFileTypeExpander");
-        document.detailFileTypeStatus = builderObject!Label(detailBuilder, "detail", "detailFileTypeStatus");
-        document.detailFileTypeView = builderObject!TextView(detailBuilder, "detail", "detailFileTypeView");
-        document.detailArchiveExpander = builderObject!Expander(detailBuilder, "detail", "detailArchiveExpander");
-        document.detailArchiveStatus = builderObject!Label(detailBuilder, "detail", "detailArchiveStatus");
-        document.detailArchiveView = builderObject!TextView(detailBuilder, "detail", "detailArchiveView");
-        document.detailTorrentExpander = builderObject!Expander(detailBuilder, "detail", "detailTorrentExpander");
-        document.detailTorrentStatus = builderObject!Label(detailBuilder, "detail", "detailTorrentStatus");
-        document.detailTorrentView = builderObject!TextView(detailBuilder, "detail", "detailTorrentView");
-        document.detailIndexEntry = builderObject!Entry(detailBuilder, "detail", "detailIndexEntry");
-        document.detailSizeEntry = builderObject!Entry(detailBuilder, "detail", "detailSizeEntry");
-        document.detailSha1HexEntry = builderObject!Entry(detailBuilder, "detail", "detailSha1HexEntry");
-        document.detailMd5HexEntry = builderObject!Entry(detailBuilder, "detail", "detailMd5HexEntry");
-        document.detailXxh64HexEntry = builderObject!Entry(detailBuilder, "detail", "detailXxh64HexEntry");
+        bindDetailPaneSignals(document, DetailPaneCallbacks(
+            (DocumentTab doc, string fileName) { openKnownFileExternally(doc, fileName); },
+            (string title, string text, DocumentTab doc) { copyTextToClipboard(title, text, doc); },
+            (DocumentTab doc) { updateSelectedRowDetails(doc); }
+        ));
 
-        document.detailFileNamesStore = new ListStore([
-            GType.STRING, GType.STRING
-        ]);
-        document.detailFileNamesView = new TreeView(document.detailFileNamesStore);
-        configureKnownFilesColumns(document.detailFileNamesView);
-        document.detailFileNamesView.addOnRowActivated((TreePath path, TreeViewColumn column, TreeView treeView) {
-            TreeModelIF model;
-            TreeIter iter;
-            auto selection = document.detailFileNamesView.getSelection();
-            if (!selection.getSelected(model, iter))
-            {
-                return;
-            }
-
-            auto knownFileName = model.getValueString(iter, 0);
-            if (knownFileName.length == 0)
-            {
-                return;
-            }
-
-            openKnownFileExternally(document, knownFileName);
-        });
-
-        logLineVerbose("[ui] populating known-files scroll for ", filePath);
-        detailsScroll.add(document.detailFileNamesView);
         logLineVerbose("[ui] populating preview slot for ", filePath);
         previewSlot.packStart(previewPane, true, true, 0);
         document.detailPreviewSplit = detailsContent;
@@ -1596,19 +1059,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         splitSlot.packStart(document.split, true, true, 0);
         document.pageRoot = pageRoot;
         document.pageRoot.showAll();
-
-        document.btnCopySha1.addOnClicked((Button _) {
-            copyTextToClipboard("SHA1", document.selectedSha1, document);
-        });
-        document.btnCopyFile.addOnClicked((Button _) {
-            copyTextToClipboard("file name", document.selectedFileName, document);
-        });
-        document.btnCopyDetails.addOnClicked((Button _) {
-            copyTextToClipboard("details", document.selectedDetailsText, document);
-        });
-        document.tableView.getSelection().addOnChanged((TreeSelection _) {
-            updateSelectedRowDetails(document);
-        });
 
         clearSelectionDetails(document);
         updatePerfStatus(document);
@@ -2074,16 +1524,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 notebook.setCurrentPage(pendingStartupSelectIndex);
             }
 
-            if (cli.selfTestMode && !selfTestQuitScheduled)
-            {
-                selfTestQuitScheduled = true;
-                logLine("[self-test] scheduling quit in ", cli.selfTestDelayMs, " ms");
-                selfTestQuitTimer = new Timeout(cli.selfTestDelayMs, {
-                    logLine("[self-test] quitting after startup delay");
-                    Main.quit();
-                    return false;
-                });
-            }
+            scheduleSelfTestQuit(cli.selfTestMode, selfTestQuitScheduled, cli.selfTestDelayMs, selfTestQuitTimer, () { Main.quit(); });
             return;
         }
     }
@@ -2285,6 +1726,35 @@ int runMainWindow(string[] args, ref CliOptions cli)
         worker.start();
     };
 
+    /** Rebuild the current tab's layout measurement after manual widget relayout. */
+    void relayoutCurrentDocument()
+    {
+        auto document = currentDocument();
+        if (document is null)
+        {
+            return;
+        }
+
+        logLineVerbose("[relayout] manual relayout requested for ", document.filePath);
+        document.pendingColumnMeasurement = true;
+        document.tableView.setModel(document.tableStore);
+        document.tableView.queueResize();
+    }
+
+    /** Clear all active toolbar filter state for the current document tab. */
+    void clearCurrentFilter()
+    {
+        auto document = currentDocument();
+        if (document is null)
+        {
+            return;
+        }
+
+        resetFilterState(document);
+        syncToolbarFromCurrentDocument();
+        renderRows(document, document.loadedRows);
+    }
+
     /** Load and normalize the JSON file for one open document tab.
      *
      * Params:
@@ -2436,46 +1906,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         worker.start();
     };
 
-    /** Open a file chooser and create or select the corresponding document tab. */
-    void chooseAndLoadPath()
-    {
-        if (isLoading)
-        {
-            auto document = currentDocument();
-            if (document !is null)
-            {
-                document.status.setText("A load is already in progress.");
-            }
-            return;
-        }
-
-        auto chooser = new FileChooserDialog(
-            "Open JSON",
-            window,
-            FileChooserAction.OPEN,
-            ["_Cancel", "_Open"],
-            [ResponseType.CANCEL, ResponseType.ACCEPT]
-        );
-
-        // pathEntry entfernt
-
-        auto response = chooser.run();
-        if (response == cast(int) ResponseType.ACCEPT)
-        {
-            auto selectedPath = chooser.getFilename();
-            if (selectedPath.length > 0)
-            {
-                auto document = openDocumentFromPath(selectedPath, true);
-                if (document.loadedRows.length == 0)
-                {
-                    loadDocument(document, true);
-                }
-            }
-        }
-
-        chooser.destroy();
-    }
-
     /** Cancel the currently active background request. */
     void cancelPendingLoad()
     {
@@ -2532,109 +1962,17 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     // Apply persisted splitter orientation/position to any tabs created later.
 
-    /** Show and apply user preferences that affect filtering and layout. */
-    void showPreferencesDialog()
-    {
-        auto dialog = new Dialog(
-            "Preferences",
+    auto fileOpen = new MenuItem((MenuItem _) {
+        chooseAndLoadPath(
             window,
-            DialogFlags.MODAL,
-            ["_Cancel", "_Save"],
-            [ResponseType.CANCEL, ResponseType.OK]
+            FileOpenDialogCallbacks(
+                () { return isLoading; },
+                () { return currentDocument(); },
+                (string filePath, bool selectTab) { return openDocumentFromPath(filePath, selectTab); },
+                (DocumentTab document, bool selectTab) { loadDocument(document, selectTab); }
+            )
         );
-
-        auto contentArea = dialog.getContentArea();
-        auto prefsBuilder = new Builder();
-        logLineVerbose("[ui] loading preferences builder");
-        prefsBuilder.addFromString(import("source/ui/preferencesdialog.ui"));
-        logLineVerbose("[ui] preferences builder loaded, objects=", prefsBuilder.getObjects().length);
-
-        auto prefsBox = builderObject!Box(prefsBuilder, "prefs", "prefsBox");
-        auto optAutoApply = builderObject!CheckButton(prefsBuilder, "prefs", "optAutoApply");
-        auto optCaseSensitive = builderObject!CheckButton(prefsBuilder, "prefs", "optCaseSensitive");
-        auto optDetailsBelow = builderObject!CheckButton(prefsBuilder, "prefs", "optDetailsBelow");
-        auto optRestoreOpenFiles = builderObject!CheckButton(prefsBuilder, "prefs", "optRestoreOpenFiles");
-        auto lblExternalOpenProgram = builderObject!Label(prefsBuilder, "prefs", "lblExternalOpenProgram");
-        auto entryExternalOpenProgram = builderObject!Entry(prefsBuilder, "prefs", "entryExternalOpenProgram");
-        auto optClearWindowGeometry = builderObject!CheckButton(prefsBuilder, "prefs", "optClearWindowGeometry");
-
-        prefsBox.setBorderWidth(8);
-        optAutoApply.setActive(prefAutoApplyFilter);
-        optCaseSensitive.setActive(prefCaseSensitiveFilter);
-        optDetailsBelow.setActive(prefDetailsBelow);
-        optRestoreOpenFiles.setActive(prefRestoreOpenFiles);
-        entryExternalOpenProgram.setText(externalOpenProgram);
-
-        contentArea.packStart(prefsBox, true, true, 0);
-
-        dialog.showAll();
-        auto response = dialog.run();
-
-        if (response == cast(int) ResponseType.OK)
-        {
-            prefAutoApplyFilter = optAutoApply.getActive();
-            prefCaseSensitiveFilter = optCaseSensitive.getActive();
-            prefRestoreOpenFiles = optRestoreOpenFiles.getActive();
-            auto oldDetailsBelow = prefDetailsBelow;
-            prefDetailsBelow = optDetailsBelow.getActive();
-            if (prefDetailsBelow != oldDetailsBelow)
-            {
-                applyDetailsPanePreferenceToAll();
-            }
-            auto newExternalOpenProgram = entryExternalOpenProgram.getText();
-            externalOpenProgram = newExternalOpenProgram.length > 0 ? newExternalOpenProgram : "xdg-open";
-            auto clearGeometry = optClearWindowGeometry.getActive();
-            clearSavedWindowGeometryOnExit = clearGeometry;
-            persistCurrentState(clearGeometry);
-            auto document = currentDocument();
-            if (document !is null)
-            {
-                document.status.setText(clearGeometry ? "Preferences saved. Stored window positions were deleted."
-                        : "Preferences saved.");
-            }
-        }
-
-        dialog.destroy();
-    }
-
-    /** Show the keyboard shortcut overview dialog. */
-    void showShortcutsHelp()
-    {
-        auto dialog = new MessageDialog(
-            window,
-            DialogFlags.MODAL,
-            MessageType.INFO,
-            ButtonsType.CLOSE,
-            "Keyboard Shortcuts\n\n" ~
-                "Ctrl+O  Open JSON\n" ~
-                "Ctrl+W  Close Current Tab\n" ~
-                "Ctrl+R  Reload\n" ~
-                "Ctrl+K  Cancel Current Operation\n" ~
-                "Ctrl+F  Apply Filter\n" ~
-                "Ctrl+L  Clear Filter\n" ~
-                "Ctrl+,  Preferences\n" ~
-                "Ctrl+Q  Quit"
-        );
-        dialog.run();
-        dialog.destroy();
-    }
-
-    /** Show the About dialog for the desktop frontend. */
-    void showAbout()
-    {
-        auto dialog = new AboutDialog();
-        dialog.setTransientFor(window);
-        dialog.setModal(true);
-        dialog.setLogoIconName("help-about");
-        dialog.setProgramName("DosierSkanilo GUI");
-        dialog.setVersion("0.1.0");
-        dialog.setComments("Desktop frontend for DosierSkanilo.");
-        dialog.setAuthors(["Carsten Schlote"]);
-        dialog.run();
-        dialog.destroy();
-    }
-
-    auto fileOpen = new MenuItem((MenuItem _) { chooseAndLoadPath(); }, "_Open JSON", "file.open", true, accelGroup, 'o');
+    }, "_Open JSON", "file.open", true, accelGroup, 'o');
 
     auto fileReload = new MenuItem((MenuItem _) { reloadCurrentDocument(); }, "_Reload", "file.reload", true, accelGroup, 'r');
 
@@ -2662,22 +2000,36 @@ int runMainWindow(string[] args, ref CliOptions cli)
         {
             return;
         }
-        document.filterQuery = "";
-        document.filterVideo = false;
-        document.filterAudio = false;
-        document.filterImage = false;
-        document.filterText = false;
-        document.filterMediaNegated = false;
-        document.filterFileType = false;
-        document.filterArchive = false;
-        document.filterTorrent = false;
+        resetFilterState(document);
         syncToolbarFromCurrentDocument();
         renderRows(document, document.loadedRows);
     }, "C_lear Filter", "edit.clearFilter", true, accelGroup, 'l');
 
-    auto editPreferences = new MenuItem((MenuItem _) { showPreferencesDialog(); }, "_Preferences", "edit.preferences", true, accelGroup, ',');
+    auto editPreferences = new MenuItem((MenuItem _) {
+        showPreferencesDialog(
+            window,
+            prefAutoApplyFilter,
+            prefCaseSensitiveFilter,
+            prefDetailsBelow,
+            prefRestoreOpenFiles,
+            externalOpenProgram,
+            clearSavedWindowGeometryOnExit,
+            PreferencesDialogCallbacks(
+                () { applyDetailsPanePreferenceToAll(); },
+                (bool clearGeometry) { persistCurrentState(clearGeometry); },
+                () { return currentDocument(); }
+            )
+        );
+    }, "_Preferences", "edit.preferences", true, accelGroup, ',');
 
-    auto editResetMetrics = new MenuItem((MenuItem _) { resetPerfMetrics(); }, "_Reset Metrics", "edit.resetMetrics", true, accelGroup, 'm');
+    auto editResetMetrics = new MenuItem((MenuItem _) {
+        auto document = currentDocument();
+        if (document is null)
+        {
+            return;
+        }
+        resetPerfMetrics(document);
+    }, "_Reset Metrics", "edit.resetMetrics", true, accelGroup, 'm');
 
     editMenu.append(editApplyFilter);
     editMenu.append(editClearFilter);
@@ -2685,9 +2037,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
     editMenu.append(editResetMetrics);
     editMenu.append(editPreferences);
 
-    auto helpShortcuts = new MenuItem((MenuItem _) { showShortcutsHelp(); }, "_Keyboard Shortcuts", true);
+    auto helpShortcuts = new MenuItem((MenuItem _) { showShortcutsHelp(window); }, "_Keyboard Shortcuts", true);
 
-    auto helpAbout = new MenuItem((MenuItem _) { showAbout(); }, "_About", true);
+    auto helpAbout = new MenuItem((MenuItem _) { showAbout(window); }, "_About", true);
 
     helpMenu.append(helpShortcuts);
     helpMenu.append(new SeparatorMenuItem());
@@ -2695,105 +2047,49 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     // btnLoad entfernt
 
-    btnReload.addOnClicked((Button _) { reloadCurrentDocument(); });
+    bindToolbarSignals(
+        btnReload,
+        btnRelayout,
+        btnCancelLoad,
+        btnApplyFilter,
+        btnClearFilter,
+        filterEntry,
+        filterVideo,
+        filterAudio,
+        filterImage,
+        filterText,
+        filterMediaNot,
+        filterFileType,
+        filterArchive,
+        filterTorrent,
+        ToolbarBindingsCallbacks(
+            () { reloadCurrentDocument(); },
+            () { relayoutCurrentDocument(); },
+            () { cancelPendingLoad(); },
+            () { applyFilterFromEntry(); },
+            () { clearCurrentFilter(); }
+        )
+    );
 
-    btnRelayout.addOnClicked((Button _) {
-        auto document = currentDocument();
-        if (document is null)
-        {
-            return;
-        }
-
-        logLineVerbose("[relayout] manual relayout requested for ", document.filePath);
-        document.pendingColumnMeasurement = true;
-        document.tableView.setModel(document.tableStore);
-        document.tableView.queueResize();
-    });
-
-    btnCancelLoad.addOnClicked((Button _) { cancelPendingLoad(); });
-
-    btnApplyFilter.addOnClicked((Button _) { applyFilterFromEntry(); });
-
-    btnClearFilter.addOnClicked((Button _) {
-        auto document = currentDocument();
-        if (document is null)
-        {
-            return;
-        }
-        document.filterQuery = "";
-        document.filterVideo = false;
-        document.filterAudio = false;
-        document.filterImage = false;
-        document.filterText = false;
-        document.filterMediaNegated = false;
-        document.filterFileType = false;
-        document.filterArchive = false;
-        document.filterTorrent = false;
-        syncToolbarFromCurrentDocument();
-        renderRows(document, document.loadedRows);
-    });
-
-    // pathEntry entfernt
-
-    filterEntry.addOnActivate((Entry _) { applyFilterFromEntry(); });
-
-    filterVideo.addOnToggled((ToggleButton _) { applyFilterFromEntry(); });
-
-    filterAudio.addOnToggled((ToggleButton _) { applyFilterFromEntry(); });
-
-    filterImage.addOnToggled((ToggleButton _) { applyFilterFromEntry(); });
-
-    filterText.addOnToggled((ToggleButton _) { applyFilterFromEntry(); });
-
-    filterMediaNot.addOnToggled((ToggleButton _) { applyFilterFromEntry(); });
-
-    filterFileType.addOnToggled((ToggleButton _) { applyFilterFromEntry(); });
-
-    filterArchive.addOnToggled((ToggleButton _) { applyFilterFromEntry(); });
-
-    filterTorrent.addOnToggled((ToggleButton _) { applyFilterFromEntry(); });
-
-    notebook.addOnSwitchPage((Widget pageWidget, uint pageNum, Notebook tabNotebook) {
-        syncToolbarFromCurrentDocument();
-        persistCurrentState(clearSavedWindowGeometryOnExit);
-    });
-
-    window.addOnDestroy((Widget _) {
-        persistCurrentState(clearSavedWindowGeometryOnExit);
-        Main.quit();
-    });
-
-    window.addOnConfigure((GdkEventConfigure* event, Widget _) {
-        if (event !is null && event.width >= MIN_VALID_WINDOW_WIDTH && event.height >= MIN_VALID_WINDOW_HEIGHT)
-        {
-            lastKnownWindowWidth = event.width;
-            lastKnownWindowHeight = event.height;
-        }
-        return false;
-    });
-
-    window.addOnSizeAllocate((allocation, Widget _) {
-        if (allocation.width >= MIN_VALID_WINDOW_WIDTH && allocation.height >= MIN_VALID_WINDOW_HEIGHT)
-        {
-            lastKnownWindowWidth = allocation.width;
-            lastKnownWindowHeight = allocation.height;
-
-            // Persist size shortly after resize settles, independent of quit path.
-            if (allowRuntimeStatePersistence)
-            {
-                if (windowSizePersistTimer !is null)
+    bindWindowLifecycleSignals(
+        notebook,
+        window,
+        WindowLifecycleCallbacks(
+            (bool clearGeometry) { persistCurrentState(clearGeometry); },
+            () { return clearSavedWindowGeometryOnExit; },
+            (int width, int height) {
+                if (width >= MIN_VALID_WINDOW_WIDTH && height >= MIN_VALID_WINDOW_HEIGHT)
                 {
-                    windowSizePersistTimer.stop();
-                    windowSizePersistTimer = null;
+                    lastKnownWindowWidth = width;
+                    lastKnownWindowHeight = height;
                 }
-                windowSizePersistTimer = new Timeout(350, {
-                    persistCurrentState(clearSavedWindowGeometryOnExit);
-                    windowSizePersistTimer = null;
-                    return false;
-                });
-            }
-        }
-    });
+            },
+            () { return allowRuntimeStatePersistence; },
+            (bool value) { allowRuntimeStatePersistence = value; },
+            () { return windowSizePersistTimer; },
+            (Timeout value) { windowSizePersistTimer = value; }
+        )
+    );
 
     window.showAll();
 
@@ -2865,50 +2161,29 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     syncToolbarFromCurrentDocument();
 
-    previewVideoProgressTimer = new Timeout(250, {
-        auto document = currentDocument();
-        if (document !is null && document.selectedPreviewIsVideo && document.previewVideoPlayer !is null)
-        {
-            syncVideoPreviewPosition(document);
-            syncVideoTrackSelectors(document);
+    previewVideoProgressTimer = startPreviewProgressTimer(
+        PreviewProgressCallbacks(
+            () { return currentDocument(); },
+            (DocumentTab document) { syncVideoPreviewPosition(document); },
+            (DocumentTab document) { syncVideoTrackSelectors(document); },
+            (DocumentTab document, bool playing) { syncVideoPlaybackButton(document, playing); }
+        )
+    );
 
-            GstState state;
-            GstState pending;
-            if (document.previewVideoPlayer.getState(state, pending, 0) != GstStateChangeReturn.FAILURE)
-            {
-                syncVideoPlaybackButton(document, state == GstState.PLAYING);
-            }
-        }
-        return true;
-    });
-
-    foreach (savedPath; loadedState.openFilePaths)
-    {
-        pendingStartupPaths ~= savedPath;
-    }
-    foreach (startupPath; cli.jsonPaths)
-    {
-        pendingStartupPaths ~= startupPath;
-    }
-
-    if (pendingStartupPaths.length > 0)
-    {
-        if (prefRestoreOpenFiles && loadedState.openFilePaths.length > 0)
-        {
-            pendingStartupSelectIndex = loadedState.activeTabIndex;
-        }
-        loadNextPendingStartupPath();
-    }
-    else if (cli.selfTestMode && !selfTestQuitScheduled)
-    {
-        selfTestQuitScheduled = true;
-        logLine("[self-test] scheduling quit in ", cli.selfTestDelayMs, " ms");
-        selfTestQuitTimer = new Timeout(cli.selfTestDelayMs, {
-            logLine("[self-test] quitting after startup delay");
-            Main.quit();
-            return false;
-        });
-    }
+    startStartupWorkflow(
+        pendingStartupPaths,
+        pendingStartupSelectIndex,
+        prefRestoreOpenFiles,
+        loadedState.openFilePaths,
+        cli.jsonPaths,
+        loadedState.activeTabIndex,
+        cli.selfTestMode,
+        selfTestQuitScheduled,
+        cli.selfTestDelayMs,
+        selfTestQuitTimer,
+        () { loadNextPendingStartupPath(); },
+        () { Main.quit(); }
+    );
 
     Main.run();
     return 0;

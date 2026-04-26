@@ -1185,7 +1185,7 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
     document.selectedPreviewSourcePath = "";
     document.selectedPreviewSourcePixbuf = null;
     document.selectedPreviewIsImage = isImagePreviewCandidate(row) && imagePreviewPath.length > 0;
-    document.selectedPreviewIsVideo = !document.selectedPreviewIsImage && isVideoPreviewCandidate(row) && imagePreviewPath.length > 0;
+    document.selectedPreviewIsVideo = !document.selectedPreviewIsImage && isVideoPreviewCandidate(row);
 
     if (document.selectedPreviewIsImage)
     {

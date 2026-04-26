@@ -67,13 +67,68 @@
             "label": "build-all",
             "type": "shell",
             "command": "./scripts/build-all.sh",
-            "group": {
+            "group": /* ““ */{
                 "kind": "build",
                 "isDefault": false
             },
             "problemMatcher": [
                 "$gcc"
             ]
+        },
+        {
+            "label": "open-ui:mainwindow",
+            "type": "shell",
+            "command": "glade",
+            "args": [
+                "source/ui/mainwindow.ui"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "open-ui:detailpane",
+            "type": "shell",
+            "command": "glade",
+            "args": [
+                "source/ui/detailpane.ui"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "open-ui:detailpreview",
+            "type": "shell",
+            "command": "glade",
+            "args": [
+                "source/ui/detailpreview.ui"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "open-ui:documentpage",
+            "type": "shell",
+            "command": "glade",
+            "args": [
+                "source/ui/documentpage.ui"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "open-ui:preferencesdialog",
+            "type": "shell",
+            "command": "glade",
+            "args": [
+                "source/ui/preferencesdialog.ui"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "open-ui:all",
+            "type": "shell",
+            "command": "sh",
+            "args": [
+                "-c",
+                "glade source/ui/*.ui"
+            ],
+            "problemMatcher": []
         },
         {
             "label": "rebuild",
