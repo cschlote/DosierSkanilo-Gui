@@ -21,7 +21,15 @@ struct WindowLifecycleCallbacks
     void delegate(Timeout) setWindowSizePersistTimer;
 }
 
-/** Bind notebook and window lifecycle handlers. */
+/** Bind notebook and window lifecycle handlers.
+ *
+ * Params:
+ *     notebook = Notebook that raises page-switch events.
+ *     window = Main application window that raises destroy and resize events.
+ *     callbacks = State persistence hooks used by the lifecycle handlers.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void bindWindowLifecycleSignals(
     Notebook notebook,
     Window window,

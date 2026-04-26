@@ -16,7 +16,14 @@ struct PreviewProgressCallbacks
     void delegate(DocumentTab, bool) syncVideoPlaybackButton;
 }
 
-/** Start the periodic preview progress timer used while the application is running. */
+/** Start the periodic preview progress timer used while the application is running.
+ *
+ * Params:
+ *     callbacks = Accessors used to query the current document and synchronize
+ *         preview playback state.
+ * Returns: A repeating GTK timeout that keeps the preview UI in sync.
+ * Throws: Timer creation failures may propagate.
+ */
 Timeout startPreviewProgressTimer(PreviewProgressCallbacks callbacks)
 {
     return new Timeout(250, {

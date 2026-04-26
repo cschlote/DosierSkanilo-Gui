@@ -6,7 +6,13 @@ import gtk.MessageDialog;
 import gtk.Window;
 import gtk.c.types : ButtonsType, DialogFlags, MessageType;
 
-/** Show the keyboard shortcut overview dialog. */
+/** Show the keyboard shortcut overview dialog.
+ *
+ * Params:
+ *     window = Parent window used to center and modalize the dialog.
+ * Returns: Nothing.
+ * Throws: GTK dialog construction or runtime errors are propagated.
+ */
 void showShortcutsHelp(Window window)
 {
     auto dialog = new MessageDialog(
@@ -28,7 +34,13 @@ void showShortcutsHelp(Window window)
     dialog.destroy();
 }
 
-/** Show the About dialog for the desktop frontend. */
+/** Show the About dialog for the desktop frontend.
+ *
+ * Params:
+ *     window = Parent window used to center and modalize the dialog.
+ * Returns: Nothing.
+ * Throws: GTK dialog construction or runtime errors are propagated.
+ */
 void showAbout(Window window)
 {
     auto dialog = new AboutDialog();

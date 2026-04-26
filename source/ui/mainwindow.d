@@ -86,6 +86,7 @@ import ui.detailswidgets : setDetailEntry,
     refreshMediaPreview, syncVideoPreviewWindow, setVideoPreviewVolume, playVideoPreview,
     pauseVideoPreview, jumpVideoPreview, stopVideoPreview, syncVideoPreviewPosition,
     seekVideoPreview, syncVideoPlaybackButton, syncVideoTrackSelectors;
+import ui.documentactions : DocumentActionCallbacks, closeCurrentDocument, reloadCurrentDocument;
 import ui.fileopendialog : FileOpenDialogCallbacks, chooseAndLoadPath;
 import ui.helpdialogs : showAbout, showShortcutsHelp;
 import ui.loadingstatus;
@@ -126,10 +127,18 @@ struct AsyncFilterResult
     long elapsedMs;
 }
 
+/** Smallest window width accepted when restoring geometry. */
 enum int MIN_VALID_WINDOW_WIDTH = 320;
+/** Smallest window height accepted when restoring geometry. */
 enum int MIN_VALID_WINDOW_HEIGHT = 240;
 
-/** Summarize checksum availability for the list view. */
+/** Summarize checksum availability for the list view.
+ *
+ * Params:
+ *     row = Blob row whose checksum fields should be summarized.
+ * Returns: none, partial, or full depending on checksum coverage.
+ * Throws: None.
+ */
 string checksumSetStatus(const(BlobRow) row)
 {
     auto present = 0;
@@ -157,7 +166,14 @@ string checksumSetStatus(const(BlobRow) row)
     return format("partial (%s/3)", present);
 }
 
-/** Summarize media subtype flags for the list view. */
+/** Summarize media subtype flags for the list view.
+ *
+ * Params:
+ *     row = Blob row whose media flags should be summarized.
+ * Returns: A compact media marker list or yes/dash when no individual type
+ *     markers apply.
+ * Throws: None.
+ */
 string mediaInfoSummary(const(BlobRow) row)
 {
     auto labels = appender!(string[])();
@@ -185,7 +201,14 @@ string mediaInfoSummary(const(BlobRow) row)
     return row.hasMedia ? "yes" : "-";
 }
 
-/** Estimate the natural width required for the blob table columns. */
+/** Estimate the natural width required for the blob table columns.
+ *
+ * Params:
+ *     document = Active document tab whose table should be measured.
+ *     columnLimit = Optional maximum column count to include in the sum.
+ * Returns: Estimated width in pixels for the visible table columns.
+ * Throws: None.
+ */
 int measureTableColumnsWidth(DocumentTab document, int columnLimit = -1)
 {
     auto columnCount = cast(int) document.tableView.getNColumns();
@@ -215,21 +238,40 @@ int measureTableColumnsWidth(DocumentTab document, int columnLimit = -1)
     return totalWidth;
 }
 
-/** Estimate or return the cached natural width of the blob table. */
+/** Estimate or return the cached natural width of the blob table.
+ *
+ * Params:
+ *     document = Active document tab whose cached width should be read.
+ * Returns: Cached natural width when available, otherwise a fresh estimate.
+ * Throws: None.
+ */
 int naturalListWidth(DocumentTab document)
 {
     return document.tableNaturalWidth > 0 ? document.tableNaturalWidth
         : measureTableColumnsWidth(document);
 }
 
-/** Estimate or return the cached minimum width that keeps the first two columns visible. */
+/** Estimate or return the cached minimum width that keeps the first two columns visible.
+ *
+ * Params:
+ *     document = Active document tab whose cached minimum width should be read.
+ * Returns: Cached minimum width when available, otherwise a fresh estimate for
+ *     the leading columns.
+ * Throws: None.
+ */
 int minimumListWidth(DocumentTab document)
 {
     return document.tableMinimumWidth > 0 ? document.tableMinimumWidth
         : measureTableColumnsWidth(document, 2);
 }
 
-/** Measure the table columns once and freeze them at their natural widths. */
+/** Measure the table columns once and freeze them at their natural widths.
+ *
+ * Params:
+ *     document = Active document tab whose blob table should be measured.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void lockMainTableColumnWidths(DocumentTab document)
 {
     if (document is null || document.tableView is null || document.tableNaturalWidth > 0)
@@ -300,7 +342,17 @@ void lockMainTableColumnWidths(DocumentTab document)
         ": total=", totalWidth, ", minimum=", minimumWidth);
 }
 
-/** Measure table widths after GTK has finished laying out the current model. */
+/** Measure table widths after GTK has finished laying out the current model.
+ *
+ * Params:
+ *     document = Active document tab whose table should be finalized.
+ *     fitHorizontalSplit = Callback used when the split should be fit to the
+ *         measured table width.
+ *     restoreSplit = Callback used when the previous split position should be
+ *         restored instead.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void finalizeTableColumnMeasurement(
     DocumentTab document,
     void delegate(DocumentTab) fitHorizontalSplit,
@@ -340,9 +392,9 @@ void finalizeTableColumnMeasurement(
 /** Count media subtype hits in the currently filtered row set.
  *
  * Params:
- *   rows = array of BlobRow to count media subtype hits
- * Returns:
- *   formatted string with counts of each media subtype
+ *     rows = Blob rows to count media subtype hits from.
+ * Returns: Formatted string with counts of each media subtype.
+ * Throws: None.
  */
 string mediaHitStats(const(BlobRow)[] rows)
 {
@@ -392,9 +444,10 @@ string mediaHitStats(const(BlobRow)[] rows)
 /** Convert a base64-encoded digest into lowercase hexadecimal text.
  *
  * Params:
- *   digest = base64-encoded digest string
- * Returns:
- *   lowercase hexadecimal representation of the digest, or an error placeholder if the input is invalid
+ *     digest = Base64-encoded digest string.
+ * Returns: Lowercase hexadecimal representation of the digest, or an error
+ *     placeholder when the input is invalid.
+ * Throws: None.
  */
 string digestBase64ToHex(string digest)
 {
@@ -422,9 +475,9 @@ string digestBase64ToHex(string digest)
 /** Program entry point.
  *
  * Params:
- *   args = process command-line arguments
- * Returns:
- *   exit code
+ *     args = Process command-line arguments.
+ * Returns: Exit code for the application process.
+ * Throws: Unexpected startup or runtime failures may propagate.
  */
 int runMainWindow(string[] args, ref CliOptions cli)
 {
@@ -1927,39 +1980,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         setLoadingState(busyDocument, false, "Operation cancelled. Background result will be discarded.");
     }
 
-    /** Reload the currently selected document tab from disk. */
-    void reloadCurrentDocument()
-    {
-        auto document = currentDocument();
-        if (document is null)
-        {
-            return;
-        }
-        logLineVerbose("[reload] ", document.filePath, ", split=", splitPositionHorizontal);
-        loadDocument(document, false);
-    }
-
-    /** Close the currently selected document tab and persist the remaining open set. */
-    void closeCurrentDocument()
-    {
-        auto pageIndex = notebook.getCurrentPage();
-        if (pageIndex < 0 || pageIndex >= documents.length)
-        {
-            return;
-        }
-        auto document = documents[pageIndex];
-        if (isLoading && busyDocument is document)
-        {
-            document.status.setText("Cannot close a tab while it is loading.");
-            return;
-        }
-
-        notebook.removePage(pageIndex);
-        documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $];
-        syncToolbarFromCurrentDocument();
-        persistCurrentState(clearSavedWindowGeometryOnExit);
-    }
-
     // Apply persisted splitter orientation/position to any tabs created later.
 
     auto fileOpen = new MenuItem((MenuItem _) {
@@ -1974,9 +1994,37 @@ int runMainWindow(string[] args, ref CliOptions cli)
         );
     }, "_Open JSON", "file.open", true, accelGroup, 'o');
 
-    auto fileReload = new MenuItem((MenuItem _) { reloadCurrentDocument(); }, "_Reload", "file.reload", true, accelGroup, 'r');
+    auto fileReload = new MenuItem((MenuItem _) {
+        reloadCurrentDocument(DocumentActionCallbacks(
+            () { return currentDocument(); },
+            () { return notebook.getCurrentPage(); },
+            () { return cast(int) documents.length; },
+            (int pageIndex) { return documents[pageIndex]; },
+            (int pageIndex) { notebook.removePage(pageIndex); },
+            () { syncToolbarFromCurrentDocument(); },
+            (bool clearGeometry) { persistCurrentState(clearGeometry); },
+            () { return isLoading; },
+            () { return busyDocument; },
+            () { return clearSavedWindowGeometryOnExit; },
+            (DocumentTab document, bool fitHorizontalSplitAfterLoad) { loadDocument(document, fitHorizontalSplitAfterLoad); }
+        ));
+    }, "_Reload", "file.reload", true, accelGroup, 'r');
 
-    auto fileClose = new MenuItem((MenuItem _) { closeCurrentDocument(); }, "_Close Current Tab", "file.close", true, accelGroup, 'w');
+    auto fileClose = new MenuItem((MenuItem _) {
+        closeCurrentDocument(DocumentActionCallbacks(
+            () { return currentDocument(); },
+            () { return notebook.getCurrentPage(); },
+            () { return cast(int) documents.length; },
+            (int pageIndex) { return documents[pageIndex]; },
+            (int pageIndex) { notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
+            () { syncToolbarFromCurrentDocument(); },
+            (bool clearGeometry) { persistCurrentState(clearGeometry); },
+            () { return isLoading; },
+            () { return busyDocument; },
+            () { return clearSavedWindowGeometryOnExit; },
+            (DocumentTab document, bool fitHorizontalSplitAfterLoad) { loadDocument(document, fitHorizontalSplitAfterLoad); }
+        ));
+    }, "_Close Current Tab", "file.close", true, accelGroup, 'w');
 
     auto fileCancelOperation = new MenuItem((MenuItem _) { cancelPendingLoad(); }, "_Cancel Current Operation", "file.cancelOperation", true, accelGroup, 'k');
 
@@ -2063,7 +2111,21 @@ int runMainWindow(string[] args, ref CliOptions cli)
         filterArchive,
         filterTorrent,
         ToolbarBindingsCallbacks(
-            () { reloadCurrentDocument(); },
+            () {
+                reloadCurrentDocument(DocumentActionCallbacks(
+                    () { return currentDocument(); },
+                    () { return notebook.getCurrentPage(); },
+                    () { return cast(int) documents.length; },
+                    (int pageIndex) { return documents[pageIndex]; },
+                    (int pageIndex) { notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
+                    () { syncToolbarFromCurrentDocument(); },
+                    (bool clearGeometry) { persistCurrentState(clearGeometry); },
+                    () { return isLoading; },
+                    () { return busyDocument; },
+                    () { return clearSavedWindowGeometryOnExit; },
+                    (DocumentTab document, bool fitHorizontalSplitAfterLoad) { loadDocument(document, fitHorizontalSplitAfterLoad); }
+                ));
+            },
             () { relayoutCurrentDocument(); },
             () { cancelPendingLoad(); },
             () { applyFilterFromEntry(); },

@@ -9,13 +9,25 @@ import ui.detailswidgets : setDetailEntry, setKnownFilesTable, setMetadataDetail
     setMetadataStatusLabel, stopVideoPreview;
 import ui.documenttab : DocumentTab;
 
-/** Render a compact status icon for boolean table cells. */
+/** Render a compact status icon for boolean table cells.
+ *
+ * Params:
+ *     value = Boolean state to visualize.
+ * Returns: A checked mark for true or an empty circle for false.
+ * Throws: None.
+ */
 string boolStatusIcon(bool value)
 {
     return value ? "✓" : "○";
 }
 
-/** Summarize checksum availability for the row details section. */
+/** Summarize checksum availability for the row details section.
+ *
+ * Params:
+ *     row = Blob row whose checksum fields should be summarized.
+ * Returns: One of none, partial, or full depending on checksum coverage.
+ * Throws: None.
+ */
 string checksumStatusSummary(const(BlobRow) row)
 {
     auto present = 0;
@@ -43,7 +55,14 @@ string checksumStatusSummary(const(BlobRow) row)
     return format("partial (%s/3)", present);
 }
 
-/** Summarize media availability for the row details section. */
+/** Summarize media availability for the row details section.
+ *
+ * Params:
+ *     row = Blob row whose media flags should be summarized.
+ * Returns: A compact availability summary that includes individual media-type
+ *     flags when media is present.
+ * Throws: None.
+ */
 string mediaInfoStatusSummary(const(BlobRow) row)
 {
     if (!row.hasMedia)
@@ -61,13 +80,26 @@ string mediaInfoStatusSummary(const(BlobRow) row)
     );
 }
 
-/** Summarize a simple boolean metadata block for the row details section. */
+/** Summarize a simple boolean metadata block for the row details section.
+ *
+ * Params:
+ *     value = Boolean metadata flag to summarize.
+ * Returns: Present or none, prefixed with a status icon.
+ * Throws: None.
+ */
 string metadataPresenceSummary(bool value)
 {
     return value ? format("%s present", boolStatusIcon(true)) : format("%s none", boolStatusIcon(false));
 }
 
-/** Refresh the performance summary label for a document tab. */
+/** Refresh the performance summary label for a document tab.
+ *
+ * Params:
+ *     document = Active document tab whose performance label should be
+ *         updated.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void updatePerfStatus(DocumentTab document)
 {
     document.perfStatus.setText(format(
@@ -78,7 +110,13 @@ void updatePerfStatus(DocumentTab document)
     ));
 }
 
-/** Refresh the metadata status label for a document tab. */
+/** Refresh the metadata status label for a document tab.
+ *
+ * Params:
+ *     document = Active document tab whose metadata label should be updated.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void updateFileMetaStatus(DocumentTab document)
 {
     auto dataVersionText = document.loadedDataVersion >= 0 ? to!string(document.loadedDataVersion) : "-";
@@ -90,7 +128,13 @@ void updateFileMetaStatus(DocumentTab document)
     ));
 }
 
-/** Clear all active filter flags and the filter query for a document tab. */
+/** Clear all active filter flags and the filter query for a document tab.
+ *
+ * Params:
+ *     document = Active document tab whose filter state should be reset.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void resetFilterState(DocumentTab document)
 {
     document.filterQuery = "";
@@ -104,7 +148,13 @@ void resetFilterState(DocumentTab document)
     document.filterTorrent = false;
 }
 
-/** Clear the timing counters shown in the performance status for a document tab. */
+/** Clear the timing counters shown in the performance status for a document tab.
+ *
+ * Params:
+ *     document = Active document tab whose timing counters should be cleared.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void resetPerfMetrics(DocumentTab document)
 {
     document.lastLoadElapsedMs = -1;
@@ -114,7 +164,13 @@ void resetPerfMetrics(DocumentTab document)
     document.status.setText("Performance metrics reset.");
 }
 
-/** Reset selection-dependent detail widgets to their placeholder state. */
+/** Reset selection-dependent detail widgets to their placeholder state.
+ *
+ * Params:
+ *     document = Active document tab whose detail pane should be cleared.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void clearSelectionDetails(DocumentTab document)
 {
     document.selectedSha1 = "";

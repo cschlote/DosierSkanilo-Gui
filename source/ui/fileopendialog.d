@@ -16,7 +16,15 @@ struct FileOpenDialogCallbacks
     void delegate(DocumentTab, bool) loadDocument;
 }
 
-/** Show an open-file dialog and start loading the selected JSON document. */
+/** Show an open-file dialog and start loading the selected JSON document.
+ *
+ * Params:
+ *     window = Parent window for the native file chooser.
+ *     callbacks = Accessors and actions used to open and load the selected
+ *         document.
+ * Returns: Nothing.
+ * Throws: GTK dialog construction or runtime errors are propagated.
+ */
 void chooseAndLoadPath(Window window, FileOpenDialogCallbacks callbacks)
 {
     if (callbacks.isLoading())

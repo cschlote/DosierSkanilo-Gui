@@ -1,3 +1,9 @@
+/** Shared helpers for rendering details, metadata, and media previews.
+ *
+ * This module contains the widget-level glue used by the document tab detail
+ * pane, including metadata labels, known-file tables, and image/video preview
+ * management.
+ */
 module ui.detailswidgets;
 
 import gtk.Entry;

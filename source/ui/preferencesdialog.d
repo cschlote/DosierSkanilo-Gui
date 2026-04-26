@@ -34,7 +34,12 @@ struct PreferencesDialogUi
     CheckButton optClearWindowGeometry;
 }
 
-/** Bind the preferences dialog layout. */
+/** Bind the preferences dialog layout.
+ *
+ * Returns: A struct with the widgets required to present the preferences
+ *     dialog.
+ * Throws: Any missing builder object or GtkBuilder parse failure is propagated.
+ */
 PreferencesDialogUi loadPreferencesDialogUi()
 {
     auto prefsBuilder = loadUiBuilder!"source/ui/preferencesdialog.ui"("preferences");
@@ -51,7 +56,21 @@ PreferencesDialogUi loadPreferencesDialogUi()
     return ui;
 }
 
-/** Show the preferences dialog and apply any accepted changes to the caller's state. */
+/** Show the preferences dialog and apply any accepted changes to the caller's state.
+ *
+ * Params:
+ *     window = Parent window for the modal preferences dialog.
+ *     prefAutoApplyFilter = In/out flag for automatic filter application.
+ *     prefCaseSensitiveFilter = In/out flag for case-sensitive filtering.
+ *     prefDetailsBelow = In/out flag that controls the details pane placement.
+ *     prefRestoreOpenFiles = In/out flag for restoring previously open files.
+ *     externalOpenProgram = In/out external program used for opening files.
+ *     clearSavedWindowGeometryOnExit = In/out flag that controls whether the
+ *         saved window geometry should be cleared on exit.
+ *     callbacks = Persistence and layout callbacks used when the user saves.
+ * Returns: Nothing.
+ * Throws: GTK dialog construction or runtime errors are propagated.
+ */
 void showPreferencesDialog(
     Window window,
     ref bool prefAutoApplyFilter,

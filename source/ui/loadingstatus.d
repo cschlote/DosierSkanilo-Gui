@@ -20,7 +20,18 @@ struct LoadingStatusCallbacks
     void delegate(DocumentTab, bool) setTableColumnsResizable;
 }
 
-/** Publish a global busy state while a tab-specific worker is active. */
+/** Publish a global busy state while a tab-specific worker is active.
+ *
+ * Params:
+ *     callbacks = Loader state hooks and UI setters.
+ *     document = Active document tab that owns the loading indicators.
+ *     loading = True when work is starting, false when it finished.
+ *     loadSpinner = Spinner widget shown during loading.
+ *     progressBar = Progress bar used to show loading progress.
+ *     message = Optional status text to show while loading or after finish.
+ * Returns: Nothing.
+ * Throws: GTK runtime errors or timer allocation failures may propagate.
+ */
 void setLoadingState(
     LoadingStatusCallbacks callbacks,
     DocumentTab document,
@@ -90,7 +101,18 @@ void setLoadingState(
     }
 }
 
-/** Publish a load phase update onto the GTK main loop for a single document tab. */
+/** Publish a load phase update onto the GTK main loop for a single document tab.
+ *
+ * Params:
+ *     callbacks = Loader state hooks and UI accessors.
+ *     document = Active document tab whose progress text should be updated.
+ *     expectedRequestId = Load request identifier that must still match the
+ *         document's current request.
+ *     progressBar = Progress bar that should mirror the current phase text.
+ *     phaseText = Human-readable phase description to display.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void setLoadingPhase(
     LoadingStatusCallbacks callbacks,
     DocumentTab document,

@@ -40,7 +40,13 @@ struct DetailPreviewCallbacks
     void delegate(double) setPreviewVideoVolume;
 }
 
-/** Bind the detail preview layout to a document tab. */
+/** Bind the detail preview layout to a document tab.
+ *
+ * Params:
+ *     document = Active document tab that receives the preview widgets.
+ * Returns: A struct with the preview pane widgets.
+ * Throws: Any missing builder object or GtkBuilder parse failure is propagated.
+ */
 DetailPreviewUi loadDetailPreviewUi(DocumentTab document)
 {
     auto previewBuilder = loadUiBuilder!"source/ui/detailpreview.ui"("preview");
@@ -82,7 +88,13 @@ DetailPreviewUi loadDetailPreviewUi(DocumentTab document)
     return ui;
 }
 
-/** Configure the preview volume slider and apply the document's current volume. */
+/** Configure the preview volume slider and apply the document's current volume.
+ *
+ * Params:
+ *     document = Active document tab whose volume widget should be initialized.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 private void initializeDetailPreviewVolume(DocumentTab document)
 {
     if (document.detailPreviewVolumeScale is null)
@@ -96,7 +108,14 @@ private void initializeDetailPreviewVolume(DocumentTab document)
     document.detailPreviewVolumeScale.setValue(document.previewVideoVolume);
 }
 
-/** Wire the preview controls and preview area behavior. */
+/** Wire the preview controls and preview area behavior.
+ *
+ * Params:
+ *     document = Active document tab that owns the preview widgets.
+ *     callbacks = Toolbar synchronization hooks used by the preview controls.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void bindDetailPreviewSignals(DocumentTab document, DetailPreviewCallbacks callbacks)
 {
     document.detailPreviewAutostartButton.setActive(document.previewVideoAutostart);

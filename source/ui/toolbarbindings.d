@@ -15,7 +15,27 @@ struct ToolbarBindingsCallbacks
     void delegate() clearCurrentFilter;
 }
 
-/** Bind toolbar buttons and filter controls to their handlers. */
+/** Bind toolbar buttons and filter controls to their handlers.
+ *
+ * Params:
+ *     btnReload = Reload button.
+ *     btnRelayout = Relayout button.
+ *     btnCancelLoad = Cancel-load button.
+ *     btnApplyFilter = Apply-filter button.
+ *     btnClearFilter = Clear-filter button.
+ *     filterEntry = Text entry used for free-form filtering.
+ *     filterVideo = Video filter toggle.
+ *     filterAudio = Audio filter toggle.
+ *     filterImage = Image filter toggle.
+ *     filterText = Text filter toggle.
+ *     filterMediaNot = Negated media filter toggle.
+ *     filterFileType = File-type filter toggle.
+ *     filterArchive = Archive filter toggle.
+ *     filterTorrent = Torrent filter toggle.
+ *     callbacks = Action callbacks for the toolbar controls.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void bindToolbarSignals(
     Button btnReload,
     Button btnRelayout,

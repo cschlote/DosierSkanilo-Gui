@@ -1,3 +1,8 @@
+/** TreeView column setup helpers for the main result table and detail tables.
+ *
+ * This module centralizes the GTK column layout so the rest of the UI can keep
+ * table construction and sizing logic in one place.
+ */
 module ui.tablecolumns;
 
 import gtk.CellRendererText;
@@ -6,13 +11,21 @@ import gtk.TreeView;
 import gtk.TreeViewColumn;
 import gtk.c.types : GtkTreeViewColumnSizing;
 
+/** Fixed width used for the compact boolean columns in the main table. */
 enum int MAIN_TABLE_FIXED_COLUMN_WIDTH = 44;
 
 import ui.documenttab : DocumentTab, COL_INDEX, COL_FILE_SIZE, COL_CHECKSUM_SET,
     COL_FILE_TYPE, COL_MEDIA_INFO, COL_HAS_ARCHIVE, COL_HAS_TORRENT,
     COL_INDEX_SORT, COL_FILE_SIZE_SORT;
 
-/** Setzt die Resizability aller Hauptspalten der Blob-Tabelle. */
+/** Toggle whether the primary blob-table columns may be resized by the user.
+ *
+ * Params:
+ *     document = Active document tab whose table columns should be updated.
+ *     resizable = True to allow manual resizing, false to lock them.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void setTableColumnsResizable(DocumentTab document, bool resizable)
 {
     if (document is null || document.tableView is null)
@@ -30,7 +43,13 @@ void setTableColumnsResizable(DocumentTab document, bool resizable)
     }
 }
 
-/** Configure columns for the main result table. */
+/** Configure columns for the main result table.
+ *
+ * Params:
+ *     treeView = Table widget that receives the standard blob columns.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void configureTableColumns(TreeView treeView)
 {
     void addTextColumn(string title, string tooltip, int modelColumn, int sortColumn = -1)
@@ -73,7 +92,13 @@ void configureTableColumns(TreeView treeView)
     treeView.setHeadersClickable(true);
 }
 
-/** Configure the known-files detail table with compact fixed columns. */
+/** Configure the known-files detail table with compact fixed columns.
+ *
+ * Params:
+ *     treeView = Table widget that receives the known-file columns.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void configureKnownFilesColumns(TreeView treeView)
 {
     void addColumn(string title, int modelColumn, bool expand)

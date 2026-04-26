@@ -40,7 +40,13 @@ struct DetailPaneCallbacks
     void delegate(DocumentTab) updateSelectedRowDetails;
 }
 
-/** Bind the detail pane layout to a document tab. */
+/** Bind the detail pane layout to a document tab.
+ *
+ * Params:
+ *     document = Active document tab that receives the detail widgets.
+ * Returns: A struct with the detail pane widgets.
+ * Throws: Any missing builder object or GtkBuilder parse failure is propagated.
+ */
 DetailPaneUi loadDetailPaneUi(DocumentTab document)
 {
     auto detailBuilder = loadUiBuilder!"source/ui/detailpane.ui"("detail");
@@ -91,7 +97,14 @@ DetailPaneUi loadDetailPaneUi(DocumentTab document)
     return ui;
 }
 
-/** Wire row actions and copy buttons for the detail pane. */
+/** Wire row actions and copy buttons for the detail pane.
+ *
+ * Params:
+ *     document = Active document tab that owns the detail pane widgets.
+ *     callbacks = Action hooks used to open files and copy text.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void bindDetailPaneSignals(DocumentTab document, DetailPaneCallbacks callbacks)
 {
     document.detailFileNamesView.addOnRowActivated((TreePath path, TreeViewColumn column, TreeView treeView) {
