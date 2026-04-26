@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Generated with glade 3.40.0 -->
 <interface>
-  <requires lib="gtk+" version="3.10"/>
+  <requires lib="gtk+" version="3.22"/>
   <object class="GtkBox" id="pageRoot">
     <property name="can-focus">False</property>
     <property name="hexpand">True</property>
@@ -24,6 +24,10 @@
       <object class="GtkLabel" id="rowDetails">
         <property name="can-focus">False</property>
         <property name="label">Selection: none</property>
+        <property name="xalign">0</property>
+        <style>
+          <class name="document-status-label"/>
+        </style>
         <attributes>
           <attribute name="gravity" value="west"/>
         </attributes>
@@ -38,6 +42,10 @@
       <object class="GtkLabel" id="status">
         <property name="can-focus">False</property>
         <property name="label">Ready: -</property>
+        <property name="xalign">0</property>
+        <style>
+          <class name="document-status-label"/>
+        </style>
       </object>
       <packing>
         <property name="expand">False</property>
@@ -49,6 +57,10 @@
       <object class="GtkLabel" id="perfStatus">
         <property name="can-focus">False</property>
         <property name="label">Timings: load=- ms | filter=- ms | render=- ms</property>
+        <property name="xalign">0</property>
+        <style>
+          <class name="document-status-label"/>
+        </style>
       </object>
       <packing>
         <property name="expand">False</property>
@@ -60,6 +72,10 @@
       <object class="GtkLabel" id="fileMetaStatus">
         <property name="can-focus">False</property>
         <property name="label">File metadata: version=- | root=- | keys=-</property>
+        <property name="xalign">0</property>
+        <style>
+          <class name="document-status-label"/>
+        </style>
       </object>
       <packing>
         <property name="expand">False</property>

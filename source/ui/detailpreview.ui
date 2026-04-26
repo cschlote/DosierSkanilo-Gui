@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Generated with glade 3.40.0 -->
 <interface>
-  <requires lib="gtk+" version="3.10"/>
+  <requires lib="gtk+" version="3.22"/>
   <object class="GtkBox" id="previewPane">
     <property name="can-focus">False</property>
     <property name="hexpand">True</property>
@@ -11,7 +11,10 @@
     <child>
       <object class="GtkLabel" id="detailPreviewTitle">
         <property name="can-focus">False</property>
-        <property name="label">MediaFile Preview </property>
+        <property name="label">MediaFile Preview</property>
+        <style>
+          <class name="preview-title"/>
+        </style>
       </object>
       <packing>
         <property name="expand">False</property>
@@ -25,6 +28,82 @@
         <property name="halign">start</property>
         <property name="hexpand">True</property>
         <property name="spacing">2</property>
+        <property name="visible">False</property>
+        <child>
+          <object class="GtkToggleButton" id="detailPreviewContainButton">
+            <property name="can-focus">False</property>
+            <property name="focus-on-click">False</property>
+            <property name="always-show-image">True</property>
+            <property name="relief">none</property>
+            <property name="tooltip-text">Contain: keep the whole image visible</property>
+            <child>
+              <object class="GtkImage">
+                <property name="icon-name">zoom-fit-best</property>
+                <property name="pixel-size">14</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkToggleButton" id="detailPreviewFitWidthButton">
+            <property name="can-focus">False</property>
+            <property name="focus-on-click">False</property>
+            <property name="always-show-image">True</property>
+            <property name="relief">none</property>
+            <property name="tooltip-text">Fit width: scale to the available width</property>
+            <child>
+              <object class="GtkImage">
+                <property name="icon-name">zoom-in</property>
+                <property name="pixel-size">14</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkToggleButton" id="detailPreviewFitHeightButton">
+            <property name="can-focus">False</property>
+            <property name="focus-on-click">False</property>
+            <property name="always-show-image">True</property>
+            <property name="relief">none</property>
+            <property name="tooltip-text">Fit height: scale to the available height</property>
+            <child>
+              <object class="GtkImage">
+                <property name="icon-name">zoom-out</property>
+                <property name="pixel-size">14</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkToggleButton" id="detailPreviewCenterButton">
+            <property name="can-focus">False</property>
+            <property name="focus-on-click">False</property>
+            <property name="always-show-image">True</property>
+            <property name="relief">none</property>
+            <property name="tooltip-text">Center: keep the original size and center it</property>
+            <child>
+              <object class="GtkImage">
+                <property name="icon-name">zoom-original</property>
+                <property name="pixel-size">14</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkToggleButton" id="detailPreviewCoverButton">
+            <property name="can-focus">False</property>
+            <property name="focus-on-click">False</property>
+            <property name="always-show-image">True</property>
+            <property name="relief">none</property>
+            <property name="tooltip-text">Cover: fill the area as much as possible</property>
+            <child>
+              <object class="GtkImage">
+                <property name="icon-name">view-fullscreen</property>
+                <property name="pixel-size">14</property>
+              </object>
+            </child>
+          </object>
+        </child>
       </object>
       <packing>
         <property name="expand">False</property>
@@ -43,8 +122,22 @@
             <property name="can-focus">False</property>
             <property name="hexpand">True</property>
             <property name="vexpand">True</property>
+            <property name="window-placement-set">False</property>
             <property name="min-content-width">120</property>
             <property name="min-content-height">120</property>
+            <property name="propagate-natural-width">False</property>
+            <property name="propagate-natural-height">False</property>
+            <property name="visible">False</property>
+            <child>
+              <object class="GtkImage" id="detailPreviewImage">
+                <property name="can-focus">False</property>
+                <property name="hexpand">True</property>
+                <property name="vexpand">True</property>
+                <property name="halign">center</property>
+                <property name="valign">center</property>
+                <property name="visible">True</property>
+              </object>
+            </child>
           </object>
           <packing>
             <property name="expand">True</property>
@@ -55,13 +148,13 @@
         <child>
           <object class="GtkAspectFrame" id="detailPreviewVideoFrame">
             <property name="can-focus">False</property>
-            <property name="double-buffered">False</property>
             <property name="hexpand">True</property>
             <property name="vexpand">True</property>
             <property name="label-xalign">0</property>
             <property name="shadow-type">none</property>
             <property name="ratio">1.7799999713897705</property>
             <property name="obey-child">False</property>
+            <property name="visible">False</property>
             <child>
               <object class="GtkDrawingArea" id="detailPreviewVideoArea">
                 <property name="width-request">320</property>
@@ -70,6 +163,8 @@
                 <property name="double-buffered">False</property>
                 <property name="hexpand">True</property>
                 <property name="vexpand">True</property>
+                <property name="halign">fill</property>
+                <property name="valign">fill</property>
               </object>
             </child>
           </object>
@@ -85,12 +180,67 @@
             <property name="hexpand">True</property>
             <property name="orientation">vertical</property>
             <property name="spacing">6</property>
+            <property name="visible">False</property>
             <child>
               <object class="GtkBox" id="previewButtonRow">
                 <property name="can-focus">False</property>
                 <property name="halign">start</property>
                 <property name="hexpand">True</property>
                 <property name="spacing">6</property>
+                <child>
+                  <object class="GtkCheckButton" id="detailPreviewAutostartButton">
+                    <property name="can-focus">False</property>
+                    <property name="focus-on-click">False</property>
+                    <property name="label">Autostart</property>
+                    <property name="active">False</property>
+                    <property name="tooltip-text">Video beim Laden automatisch starten</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="detailPreviewJumpBackButton">
+                    <property name="can-focus">False</property>
+                    <property name="focus-on-click">False</property>
+                    <property name="always-show-image">True</property>
+                    <property name="receives-default">False</property>
+                    <property name="tooltip-text">10 Sekunden zurück springen</property>
+                    <child>
+                      <object class="GtkImage">
+                        <property name="icon-name">media-seek-backward</property>
+                        <property name="pixel-size">16</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="detailPreviewPlayButton">
+                    <property name="can-focus">False</property>
+                    <property name="focus-on-click">False</property>
+                    <property name="always-show-image">True</property>
+                    <property name="receives-default">False</property>
+                    <property name="tooltip-text">Video starten</property>
+                    <child>
+                      <object class="GtkImage">
+                        <property name="icon-name">media-playback-start</property>
+                        <property name="pixel-size">16</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="detailPreviewJumpForwardButton">
+                    <property name="can-focus">False</property>
+                    <property name="focus-on-click">False</property>
+                    <property name="always-show-image">True</property>
+                    <property name="receives-default">False</property>
+                    <property name="tooltip-text">10 Sekunden vor springen</property>
+                    <child>
+                      <object class="GtkImage">
+                        <property name="icon-name">media-seek-forward</property>
+                        <property name="pixel-size">16</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
               </object>
               <packing>
                 <property name="expand">False</property>
@@ -99,10 +249,65 @@
               </packing>
             </child>
             <child>
-              <object class="GtkBox" id="previewPositionRow">
+              <object class="GtkBox" id="detailPreviewTrackSelectorsRow">
                 <property name="can-focus">False</property>
                 <property name="hexpand">True</property>
                 <property name="spacing">6</property>
+                <property name="visible">False</property>
+                <child>
+                  <object class="GtkBox" id="detailPreviewVideoTrackBox">
+                    <property name="can-focus">False</property>
+                    <property name="spacing">4</property>
+                    <child>
+                      <object class="GtkLabel">
+                        <property name="can-focus">False</property>
+                        <property name="label">Video</property>
+                        <property name="xalign">0</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkComboBoxText" id="detailPreviewVideoTrackCombo">
+                        <property name="can-focus">False</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkBox" id="detailPreviewAudioTrackBox">
+                    <property name="can-focus">False</property>
+                    <property name="spacing">4</property>
+                    <child>
+                      <object class="GtkLabel">
+                        <property name="can-focus">False</property>
+                        <property name="label">Audio</property>
+                        <property name="xalign">0</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkComboBoxText" id="detailPreviewAudioTrackCombo">
+                        <property name="can-focus">False</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkBox" id="detailPreviewSubtitleTrackBox">
+                    <property name="can-focus">False</property>
+                    <property name="spacing">4</property>
+                    <child>
+                      <object class="GtkLabel">
+                        <property name="can-focus">False</property>
+                        <property name="label">Subtitle</property>
+                        <property name="xalign">0</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkComboBoxText" id="detailPreviewSubtitleTrackCombo">
+                        <property name="can-focus">False</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
               </object>
               <packing>
                 <property name="expand">False</property>
@@ -111,15 +316,61 @@
               </packing>
             </child>
             <child>
-              <object class="GtkBox" id="previewVolumeRow">
+              <object class="GtkBox" id="previewPositionRow">
                 <property name="can-focus">False</property>
                 <property name="hexpand">True</property>
                 <property name="spacing">6</property>
+                <child>
+                  <object class="GtkLabel" id="detailPreviewPositionLabel">
+                    <property name="can-focus">False</property>
+                    <property name="label">Position 00:00 / --:--</property>
+                    <property name="xalign">0</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkScale" id="detailPreviewPositionScale">
+                    <property name="can-focus">False</property>
+                    <property name="hexpand">True</property>
+                    <property name="digits">1</property>
+                    <property name="draw-value">False</property>
+                    <property name="orientation">horizontal</property>
+                    <property name="tooltip-text">Wiedergabeposition</property>
+                  </object>
+                </child>
               </object>
               <packing>
                 <property name="expand">False</property>
                 <property name="fill">True</property>
                 <property name="position">2</property>
+              </packing>
+            </child>
+            <child>
+              <object class="GtkBox" id="previewVolumeRow">
+                <property name="can-focus">False</property>
+                <property name="hexpand">True</property>
+                <property name="spacing">6</property>
+                <child>
+                  <object class="GtkLabel" id="detailPreviewVolumeLabel">
+                    <property name="can-focus">False</property>
+                    <property name="label">Volume</property>
+                    <property name="xalign">0</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkScale" id="detailPreviewVolumeScale">
+                    <property name="can-focus">False</property>
+                    <property name="hexpand">True</property>
+                    <property name="digits">2</property>
+                    <property name="draw-value">True</property>
+                    <property name="orientation">horizontal</property>
+                    <property name="tooltip-text">Wiedergabe-Lautstärke</property>
+                  </object>
+                </child>
+              </object>
+              <packing>
+                <property name="expand">False</property>
+                <property name="fill">True</property>
+                <property name="position">3</property>
               </packing>
             </child>
           </object>
@@ -141,6 +392,10 @@
         <property name="can-focus">False</property>
         <property name="label">No preview available.</property>
         <property name="ellipsize">middle</property>
+            <property name="xalign">0</property>
+        <style>
+          <class name="preview-summary"/>
+        </style>
       </object>
       <packing>
         <property name="expand">False</property>

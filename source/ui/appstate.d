@@ -1,3 +1,9 @@
+/** UI state persistence for filters, layout, and startup preferences.
+ *
+ * This module stores and restores the desktop frontend state in the user's
+ * configuration directory so the application can reopen with the last-used
+ * layout, document list, and preview settings.
+ */
 module ui.appstate;
 
 import std.array : appender;
@@ -35,10 +41,17 @@ struct AppState
     int activeTabIndex;
 }
 
+/** Relative directory below $HOME that stores the persisted UI state. */
 enum string CONFIG_DIR_NAME = ".config/dosierskanilo-gui";
+/** File name used for the persisted UI state JSON document. */
 enum string CONFIG_FILE_NAME = "state.json";
 
-/** Resolve the application config directory. */
+/** Resolve the application config directory.
+ *
+ * Returns: Absolute config directory path when $HOME is available, or a
+ *     relative fallback below the current working directory otherwise.
+ * Throws: None.
+ */
 string configDirPath()
 {
     auto home = environment.get("HOME", "");
@@ -49,13 +62,26 @@ string configDirPath()
     return buildPath(home, CONFIG_DIR_NAME);
 }
 
-/** Resolve the JSON state file path. */
+/** Resolve the JSON state file path.
+ *
+ * Returns: Full path to the JSON state file inside the application config
+ *     directory.
+ * Throws: None.
+ */
 string configFilePath()
 {
     return buildPath(configDirPath(), CONFIG_FILE_NAME);
 }
 
-/** Convert a JSON scalar into a bool with fallback semantics. */
+/** Convert a JSON scalar into a bool with fallback semantics.
+ *
+ * Params:
+ *     value = JSON scalar to read.
+ *     fallback = Value to return when the JSON node is not a supported
+ *         boolean-like scalar.
+ * Returns: Parsed boolean value or the provided fallback.
+ * Throws: None.
+ */
 bool jsonToBool(JSONValue value, bool fallback = false)
 {
     switch (value.type)
@@ -73,7 +99,15 @@ bool jsonToBool(JSONValue value, bool fallback = false)
     }
 }
 
-/** Convert a JSON scalar into an int with fallback semantics. */
+/** Convert a JSON scalar into an int with fallback semantics.
+ *
+ * Params:
+ *     value = JSON scalar to read.
+ *     fallback = Value to return when the JSON node is not a supported
+ *         integer-like scalar.
+ * Returns: Parsed integer value or the provided fallback.
+ * Throws: None.
+ */
 int jsonToInt(JSONValue value, int fallback = 0)
 {
     switch (value.type)
@@ -89,7 +123,14 @@ int jsonToInt(JSONValue value, int fallback = 0)
     }
 }
 
-/** Convert a JSON array of strings into a D string array. */
+/** Convert a JSON array of strings into a D string array.
+ *
+ * Params:
+ *     value = JSON node to read.
+ * Returns: All string entries stored in the array, or an empty array when the
+ *     value is not a JSON array.
+ * Throws: None.
+ */
 string[] jsonToStringArray(JSONValue value)
 {
     string[] result;
@@ -108,7 +149,13 @@ string[] jsonToStringArray(JSONValue value)
     return result;
 }
 
-/** Escape a string for manual JSON serialization. */
+/** Escape a string for manual JSON serialization.
+ *
+ * Params:
+ *     value = Raw text to encode for JSON output.
+ * Returns: JSON-safe string content without surrounding quotes.
+ * Throws: None.
+ */
 string jsonEscapeString(string value)
 {
     auto escaped = appender!string();
@@ -152,7 +199,13 @@ string jsonEscapeString(string value)
     return escaped.data;
 }
 
-/** Load persisted preferences, splitter state, and window geometry hints. */
+/** Load persisted preferences, splitter state, and window geometry hints.
+ *
+ * Returns: The stored UI state, or the default state when no readable state
+ *     file is available.
+ * Throws: Invalid, unreadable, or malformed state files are swallowed and
+ *     replaced with defaults; only unexpected runtime failures may escape.
+ */
 AppState loadAppState()
 {
     AppState state;
@@ -269,7 +322,13 @@ AppState loadAppState()
     return state;
 }
 
-/** Write the current application state to the JSON config file. */
+/** Write the current application state to the JSON config file.
+ *
+ * Params:
+ *     state = UI state snapshot to persist.
+ * Returns: Nothing.
+ * Throws: File system errors from directory creation or writing are propagated.
+ */
 void saveAppState(const(AppState) state)
 {
     auto dirPath = configDirPath();

@@ -7,6 +7,13 @@
 
 ## TODO
 
+- Follow up the GTK 3.22 UI baseline by replacing `overrideFont`-based monospace styling with CSS classes and a shared `CssProvider`.
+- Remove the legacy `double-buffered` properties from the Glade preview widgets and rely on GTK's default rendering path.
+- Rework embedded video preview sink selection so Wayland/X11 setups prefer a GTK-friendly sink such as `gtksink`, with `ximagesink` only as a fallback.
+- Move more visual UI tuning from D code and per-widget properties into GTK style classes so the Builder layouts can drive appearance more consistently.
+- Evaluate whether any repeated detail subtrees should become Builder templates or composite widgets.
+- Keep expanding default widget state in Glade so D only mutates values when the runtime state actually changes.
+
 ## Next
 
 - Add export actions (CSV/JSON subset)

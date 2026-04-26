@@ -1,76 +1,56 @@
+/** Shared helpers for rendering details, metadata, and media previews.
+ *
+ * This module contains the widget-level glue used by the document tab detail
+ * pane, including metadata labels, known-file tables, and image/video preview
+ * management.
+ */
 module ui.detailswidgets;
 
 import gtk.Entry;
 import gtk.Expander;
+import gtk.Container;
 import gtk.DrawingArea;
 import gtk.Image;
 import gtk.Label;
+import gtk.ComboBoxText;
+import gtk.Box;
 import gtk.TextView;
 import gtk.TreeIter;
+import gtk.Widget;
+import gtk.StyleContext;
 import gtk.c.types : GtkWrapMode;
 import gdkpixbuf.Pixbuf;
 import gdkpixbuf.c.types : GdkInterpType;
 import gdk.X11 : getXid;
+import gobject.ObjectG;
 import gobject.Value;
 import gstreamer.Bus;
 import gstreamer.Element;
 import gstreamer.ElementFactory;
 import gstreamer.GStreamer;
 import gstreamer.Message;
+import gstreamer.Stream;
+import gstreamer.StreamCollection;
 import gstreamer.Structure;
-import gstreamer.c.types : GstBusSyncReply, GstFormat, GstMessageType, GstSeekFlags, GstState;
+import gstreamer.TagList;
+import gstreamer.c.types : GstBusSyncReply, GstFormat, GstMessageType, GstSeekFlags, GstState, GstStreamType;
 import gstinterfaces.VideoOverlay;
-import pango.PgFontDescription;
 import pango.c.types : PangoEllipsizeMode;
 
 import std.file : exists;
 import std.format : format;
 import std.path : absolutePath, buildNormalizedPath, dirName, extension, isAbsolute;
-import std.string : startsWith, toLower;
+import std.string : join, startsWith, toLower;
 import std.exception : enforce;
 import std.uri : encode;
 
 import model.blobrow : BlobRow;
 import ui.documenttab : DocumentTab, PreviewScaleMode;
 
-/** Build a read-only single-line field for the details form. */
-Entry createDetailEntry(int widthChars = 18)
-{
-    auto entry = new Entry();
-    entry.setEditable(false);
-    entry.setWidthChars(widthChars);
-    entry.setHexpand(true);
-    return entry;
-}
-
-/** Build a read-only multiline viewer for expanded metadata details. */
-TextView createDetailTextView(bool monospace = false)
-{
-    auto view = new TextView();
-    view.setEditable(false);
-    view.setWrapMode(GtkWrapMode.WORD_CHAR);
-    view.setMonospace(monospace);
-    return view;
-}
-
-/** Build a left-aligned caption label for the details form. */
-Label createDetailCaption(string text)
-{
-    auto label = new Label(text);
-    label.setXalign(0.0f);
-    return label;
-}
-
 /** Normalize empty field values in the details form. */
 void setDetailEntry(Entry entry, string value)
 {
     entry.setText(value.length > 0 ? value : "-");
-}
-
-/** Apply a monospace font to one entry widget. */
-void setEntryMonospace(Entry entry)
-{
-    entry.overrideFont(PgFontDescription.fromString("Monospace 10"));
 }
 
 /** Write compact status text with a bold title into one metadata label. */
@@ -229,6 +209,34 @@ private string toFileUri(string path)
     return "file://" ~ encode(absolutePath(path));
 }
 
+/** Load or reuse the source pixbuf for the current image preview. */
+private bool ensureImagePreviewSource(DocumentTab document)
+{
+    if (document.selectedPreviewPath.length == 0 || !document.selectedPreviewIsImage)
+    {
+        return false;
+    }
+
+    if (document.selectedPreviewSourcePixbuf !is null
+        && document.selectedPreviewSourcePath == document.selectedPreviewPath)
+    {
+        return true;
+    }
+
+    try
+    {
+        document.selectedPreviewSourcePixbuf = new Pixbuf(document.selectedPreviewPath);
+        document.selectedPreviewSourcePath = document.selectedPreviewPath;
+        return true;
+    }
+    catch (Exception)
+    {
+        document.selectedPreviewSourcePixbuf = null;
+        document.selectedPreviewSourcePath = "";
+        return false;
+    }
+}
+
 /** Stop the embedded video player. */
 void stopVideoPreview(DocumentTab document)
 {
@@ -236,6 +244,91 @@ void stopVideoPreview(DocumentTab document)
     {
         document.previewVideoPlayer.setState(GstState.NULL);
     }
+}
+
+/** Resolve the GtkWidget exposed by gtksink. */
+private Widget resolveGtkVideoSinkWidget(Element sink)
+{
+    if (sink is null)
+    {
+        return null;
+    }
+
+    auto value = new Value();
+    sink.getProperty("widget", value);
+    auto object = value.getObject();
+    if (object is null)
+    {
+        return null;
+    }
+
+    return ObjectG.getDObject!(Widget)(cast(GtkWidget*) object.getObjectGStruct());
+}
+
+/** Replace the overlay drawing area with the widget provided by gtksink. */
+private bool attachGtkVideoSinkWidget(DocumentTab document, Element sink)
+{
+    if (document is null || document.detailPreviewVideoFrame is null)
+    {
+        return false;
+    }
+
+    auto widget = resolveGtkVideoSinkWidget(sink);
+    if (widget is null)
+    {
+        return false;
+    }
+
+    auto currentChild = document.detailPreviewVideoFrame.getChild();
+    if (currentChild !is null && currentChild !is widget)
+    {
+        document.detailPreviewVideoFrame.remove(currentChild);
+    }
+
+    auto parent = widget.getParent();
+    if (parent !is null && parent !is document.detailPreviewVideoFrame)
+    {
+        auto parentContainer = cast(Container) parent;
+        if (parentContainer !is null)
+        {
+            parentContainer.remove(widget);
+        }
+    }
+
+    if (widget.getParent() is null)
+    {
+        document.detailPreviewVideoFrame.add(widget);
+    }
+
+    widget.setHexpand(true);
+    widget.setVexpand(true);
+    widget.showAll();
+    document.detailPreviewVideoSinkWidget = widget;
+    document.previewVideoOverlay = null;
+    return true;
+}
+
+/** Restore the original drawing area used by overlay-based sinks. */
+private void restoreOverlayVideoArea(DocumentTab document)
+{
+    if (document is null || document.detailPreviewVideoFrame is null || document.detailPreviewVideoArea is null)
+    {
+        return;
+    }
+
+    auto currentChild = document.detailPreviewVideoFrame.getChild();
+    if (currentChild !is null && currentChild !is document.detailPreviewVideoArea)
+    {
+        document.detailPreviewVideoFrame.remove(currentChild);
+    }
+
+    if (document.detailPreviewVideoArea.getParent() is null)
+    {
+        document.detailPreviewVideoFrame.add(document.detailPreviewVideoArea);
+    }
+
+    document.detailPreviewVideoArea.show();
+    document.detailPreviewVideoSinkWidget = null;
 }
 
 /** Attach the embedded video sink to the realized preview widget. */
@@ -246,16 +339,15 @@ bool syncVideoPreviewWindow(DocumentTab document, int renderWidth = -1, int rend
         return false;
     }
 
+    if (document.previewVideoOverlay is null)
+    {
+        return document.detailPreviewVideoSinkWidget !is null;
+    }
+
     auto window = document.detailPreviewVideoArea.getWindow();
     if (window is null || !window.ensureNative())
     {
         return false;
-    }
-
-    if (document.previewVideoOverlay is null)
-    {
-        document.previewVideoOverlay = new VideoOverlay(document.previewVideoSink);
-        document.previewVideoOverlay.handleEvents(false);
     }
 
     document.previewVideoOverlay.setWindowHandle(getXid(window));
@@ -282,38 +374,68 @@ private bool ensureVideoPreviewPlayer(DocumentTab document)
     }
 
     auto player = ElementFactory.make("playbin", "preview-playbin");
-    auto sink = ElementFactory.make("ximagesink", "preview-videosink");
-    if (player is null || sink is null)
+    if (player is null)
     {
         return false;
     }
 
+    auto sink = ElementFactory.make("gtksink", "preview-videosink");
+    auto usesOverlay = false;
+    if (sink is null || !attachGtkVideoSinkWidget(document, sink))
+    {
+        sink = ElementFactory.make("ximagesink", "preview-videosink");
+        if (sink is null)
+        {
+            return false;
+        }
+
+        restoreOverlayVideoArea(document);
+        document.previewVideoOverlay = new VideoOverlay(sink);
+        document.previewVideoOverlay.handleEvents(false);
+        usesOverlay = true;
+    }
+
     player.setProperty("video-sink", new Value(sink));
+    if (usesOverlay)
+    {
+        auto bus = player.getBus();
+        bus.setSyncHandler((Message msg) {
+            if (msg.type() != GstMessageType.ELEMENT)
+            {
+                return GstBusSyncReply.PASS;
+            }
+
+            auto structure = msg.getStructure();
+            if (structure is null || !structure.hasName("prepare-window-handle"))
+            {
+                return GstBusSyncReply.PASS;
+            }
+
+            if (syncVideoPreviewWindow(document))
+            {
+                return GstBusSyncReply.DROP;
+            }
+
+            return GstBusSyncReply.PASS;
+        });
+    }
+
     auto bus = player.getBus();
-    bus.setSyncHandler((Message msg) {
-        if (msg.type() != GstMessageType.ELEMENT)
+    bus.addSignalWatch();
+    bus.addOnMessage((Message msg, Bus _) {
+        if (msg.type() != GstMessageType.STREAM_COLLECTION)
         {
-            return GstBusSyncReply.PASS;
+            return;
         }
 
-        auto structure = msg.getStructure();
-        if (structure is null || !structure.hasName("prepare-window-handle"))
-        {
-            return GstBusSyncReply.PASS;
-        }
-
-        if (syncVideoPreviewWindow(document))
-        {
-            return GstBusSyncReply.DROP;
-        }
-
-        return GstBusSyncReply.PASS;
+        StreamCollection collection;
+        msg.parseStreamCollection(collection);
+        updateTrackLabelsFromStreamCollection(document, collection);
+        syncVideoTrackSelectors(document);
     });
 
     document.previewVideoPlayer = player;
     document.previewVideoSink = sink;
-    document.previewVideoOverlay = new VideoOverlay(sink);
-    document.previewVideoOverlay.handleEvents(false);
     return true;
 }
 
@@ -424,9 +546,330 @@ void syncVideoPlaybackButton(DocumentTab document, bool playing)
         return;
     }
 
-    document.detailPreviewPlayButton.setLabel(playing ? "Pause" : "Play");
+    auto icon = new Image();
+    icon.setFromIconName(playing ? "media-playback-pause" : "media-playback-start", GtkIconSize.BUTTON);
+    icon.show();
+    document.detailPreviewPlayButton.setImage(icon);
+    document.detailPreviewPlayButton.setLabel("");
+    document.detailPreviewPlayButton.setTooltipText(playing ? "Video pausieren" : "Video starten");
 }
 
+private int getElementIntProperty(Element element, string propertyName, int fallback = -1)
+{
+    if (element is null)
+    {
+        return fallback;
+    }
+
+    auto value = new Value(0);
+    element.getProperty(propertyName, value);
+    return value.getInt();
+}
+
+private void setElementIntProperty(Element element, string propertyName, int propertyValue)
+{
+    if (element is null)
+    {
+        return;
+    }
+
+    element.setProperty(propertyName, new Value(propertyValue));
+}
+
+private void clearTrackSelector(ComboBoxText combo, Box row)
+{
+    if (combo !is null)
+    {
+        combo.removeAll();
+        combo.setActive(-1);
+    }
+    if (row !is null)
+    {
+        row.setVisible(false);
+    }
+}
+
+private bool tryGetTrackTagString(TagList tags, string tagName, out string value)
+{
+    value = "";
+    if (tags is null)
+    {
+        return false;
+    }
+
+    return tags.getString(tagName, value) && value.length > 0;
+}
+
+private string buildStreamDisplayLabel(string prefix, size_t index, Stream stream)
+{
+    auto fallback = format("%s %s", prefix, index + 1);
+    if (stream is null)
+    {
+        return fallback;
+    }
+
+    auto tags = stream.getTags();
+    string title;
+    string language;
+    string codec;
+    string[] fragments;
+
+    if (tryGetTrackTagString(tags, "title", title))
+    {
+        fragments ~= title;
+    }
+    if (tryGetTrackTagString(tags, "language-code", language))
+    {
+        fragments ~= language;
+    }
+    if (tryGetTrackTagString(tags, "codec", codec)
+        || tryGetTrackTagString(tags, "audio-codec", codec)
+        || tryGetTrackTagString(tags, "video-codec", codec))
+    {
+        fragments ~= codec;
+    }
+
+    if (fragments.length == 0)
+    {
+        auto streamId = stream.getStreamId();
+        if (streamId.length > 0)
+        {
+            return fallback ~ " [" ~ streamId ~ "]";
+        }
+        return fallback;
+    }
+
+    return fallback ~ ": " ~ fragments.join(" | ");
+}
+
+private void updateTrackLabelsFromStreamCollection(DocumentTab document, StreamCollection collection)
+{
+    if (document is null)
+    {
+        return;
+    }
+
+    document.previewVideoTrackLabels = null;
+    document.previewAudioTrackLabels = null;
+    document.previewSubtitleTrackLabels = null;
+
+    if (collection is null)
+    {
+        document.previewVideoTrackSignature = "";
+        document.previewAudioTrackSignature = "";
+        document.previewSubtitleTrackSignature = "";
+        return;
+    }
+
+    size_t videoIndex = 0;
+    size_t audioIndex = 0;
+    size_t subtitleIndex = 0;
+    foreach (collectionIndex; 0 .. collection.getSize())
+    {
+        auto stream = collection.getStream(collectionIndex);
+        if (stream is null)
+        {
+            continue;
+        }
+
+        auto streamType = stream.getStreamType();
+        if ((streamType & GstStreamType.VIDEO) == GstStreamType.VIDEO)
+        {
+            document.previewVideoTrackLabels ~= buildStreamDisplayLabel("Video", videoIndex, stream);
+            ++videoIndex;
+        }
+        else if ((streamType & GstStreamType.AUDIO) == GstStreamType.AUDIO)
+        {
+            document.previewAudioTrackLabels ~= buildStreamDisplayLabel("Audio", audioIndex, stream);
+            ++audioIndex;
+        }
+        else if ((streamType & GstStreamType.TEXT) == GstStreamType.TEXT)
+        {
+            document.previewSubtitleTrackLabels ~= buildStreamDisplayLabel("Subtitle", subtitleIndex, stream);
+            ++subtitleIndex;
+        }
+    }
+
+    document.previewVideoTrackSignature = document.previewVideoTrackLabels.join("\n");
+    document.previewAudioTrackSignature = document.previewAudioTrackLabels.join("\n");
+    document.previewSubtitleTrackSignature = document.previewSubtitleTrackLabels.join("\n");
+}
+
+private void showTrackSelectorPlaceholder(ComboBoxText combo, Box row, string text)
+{
+    if (combo is null || row is null)
+    {
+        return;
+    }
+
+    row.setVisible(true);
+    combo.removeAll();
+    combo.appendText(text);
+    combo.setActive(0);
+    combo.setSensitive(false);
+}
+
+private void syncIndexedTrackSelector(
+    ComboBoxText combo,
+    Box row,
+    string prefix,
+    int trackCount,
+    int currentIndex,
+    string[] labels,
+    ref int cachedCount,
+    ref string cachedSignature)
+{
+    if (combo is null || row is null)
+    {
+        return;
+    }
+
+    if (trackCount <= 0)
+    {
+        showTrackSelectorPlaceholder(combo, row, prefix ~ " lädt...");
+        cachedCount = trackCount;
+        cachedSignature = prefix ~ " lädt...";
+        return;
+    }
+
+    row.setVisible(true);
+    string[] displayLabels;
+    if (labels.length == trackCount)
+    {
+        displayLabels = labels.dup;
+    }
+    else
+    {
+        foreach (index; 0 .. trackCount)
+        {
+            displayLabels ~= format("%s %s", prefix, index + 1);
+        }
+    }
+
+    auto signature = displayLabels.join("\n");
+    if (cachedCount != trackCount || cachedSignature != signature)
+    {
+        combo.removeAll();
+        foreach (label; displayLabels)
+        {
+            combo.appendText(label);
+        }
+        cachedCount = trackCount;
+        cachedSignature = signature;
+    }
+
+    combo.setSensitive(trackCount > 1);
+
+    if (currentIndex >= 0 && combo.getActive() != currentIndex)
+    {
+        combo.setActive(currentIndex);
+    }
+}
+
+private void syncSubtitleTrackSelector(DocumentTab document, int trackCount, int currentIndex)
+{
+    auto combo = document.detailPreviewSubtitleTrackCombo;
+    auto row = document.detailPreviewSubtitleTrackBox;
+    if (combo is null || row is null)
+    {
+        return;
+    }
+
+    if (trackCount <= 0)
+    {
+        showTrackSelectorPlaceholder(combo, row, "Keine Untertitel");
+        document.previewSubtitleTrackCount = trackCount;
+        document.previewSubtitleTrackSignature = "Keine Untertitel";
+        return;
+    }
+
+    row.setVisible(true);
+    string[] displayLabels = ["Off"];
+    if (document.previewSubtitleTrackLabels.length == trackCount)
+    {
+        displayLabels ~= document.previewSubtitleTrackLabels;
+    }
+    else
+    {
+        foreach (index; 0 .. trackCount)
+        {
+            displayLabels ~= format("Subtitle %s", index + 1);
+        }
+    }
+
+    auto signature = displayLabels.join("\n");
+    if (document.previewSubtitleTrackCount != trackCount || document.previewSubtitleTrackSignature != signature)
+    {
+        combo.removeAll();
+        foreach (label; displayLabels)
+        {
+            combo.appendText(label);
+        }
+        document.previewSubtitleTrackCount = trackCount;
+        document.previewSubtitleTrackSignature = signature;
+    }
+
+    combo.setSensitive(trackCount > 0);
+
+    auto activeIndex = currentIndex >= 0 ? currentIndex + 1 : 0;
+    if (combo.getActive() != activeIndex)
+    {
+        combo.setActive(activeIndex);
+    }
+}
+
+void syncVideoTrackSelectors(DocumentTab document)
+{
+    if (document is null)
+    {
+        return;
+    }
+
+    if (!document.selectedPreviewIsVideo || document.previewVideoPlayer is null)
+    {
+        clearTrackSelector(document.detailPreviewVideoTrackCombo, document.detailPreviewVideoTrackBox);
+        clearTrackSelector(document.detailPreviewAudioTrackCombo, document.detailPreviewAudioTrackBox);
+        clearTrackSelector(document.detailPreviewSubtitleTrackCombo, document.detailPreviewSubtitleTrackBox);
+        document.previewVideoTrackCount = -1;
+        document.previewAudioTrackCount = -1;
+        document.previewSubtitleTrackCount = -1;
+        document.previewVideoTrackLabels = null;
+        document.previewAudioTrackLabels = null;
+        document.previewSubtitleTrackLabels = null;
+        document.previewVideoTrackSignature = "";
+        document.previewAudioTrackSignature = "";
+        document.previewSubtitleTrackSignature = "";
+        return;
+    }
+
+    document.previewVideoTrackSyncing = true;
+    scope(exit) document.previewVideoTrackSyncing = false;
+
+    syncIndexedTrackSelector(
+        document.detailPreviewVideoTrackCombo,
+        document.detailPreviewVideoTrackBox,
+        "Video",
+        getElementIntProperty(document.previewVideoPlayer, "n-video", 0),
+        getElementIntProperty(document.previewVideoPlayer, "current-video", 0),
+        document.previewVideoTrackLabels,
+        document.previewVideoTrackCount,
+        document.previewVideoTrackSignature);
+
+    syncIndexedTrackSelector(
+        document.detailPreviewAudioTrackCombo,
+        document.detailPreviewAudioTrackBox,
+        "Audio",
+        getElementIntProperty(document.previewVideoPlayer, "n-audio", 0),
+        getElementIntProperty(document.previewVideoPlayer, "current-audio", 0),
+        document.previewAudioTrackLabels,
+        document.previewAudioTrackCount,
+        document.previewAudioTrackSignature);
+
+    syncSubtitleTrackSelector(
+        document,
+        getElementIntProperty(document.previewVideoPlayer, "n-text", 0),
+        getElementIntProperty(document.previewVideoPlayer, "current-text", -1));
+}
 /** Start video playback for the active preview. */
 void playVideoPreview(DocumentTab document)
 {
@@ -519,6 +962,7 @@ private void updatePreviewVideo(DocumentTab document)
     if (!syncVideoPreviewWindow(document))
     {
         document.previewVideoPlayer.setState(GstState.READY);
+        syncVideoTrackSelectors(document);
         return;
     }
 
@@ -533,6 +977,7 @@ private void updatePreviewVideo(DocumentTab document)
         syncVideoPlaybackButton(document, false);
     }
 
+    syncVideoTrackSelectors(document);
     cast(void) syncVideoPreviewPosition(document);
 }
 
@@ -551,6 +996,13 @@ private void updatePreviewImage(DocumentTab document)
 
     try
     {
+        if (!ensureImagePreviewSource(document))
+        {
+            document.detailPreviewImage.clear();
+            return;
+        }
+
+        auto source = document.selectedPreviewSourcePixbuf;
         Pixbuf pixbuf;
         auto previewWidth = document.detailPreviewScroll !is null
             ? document.detailPreviewScroll.getAllocatedWidth() : 0;
@@ -570,7 +1022,6 @@ private void updatePreviewImage(DocumentTab document)
         {
         case PreviewScaleMode.contain:
         {
-            auto source = new Pixbuf(document.selectedPreviewPath);
             auto sourceWidth = source.getWidth();
             auto sourceHeight = source.getHeight();
             auto widthScale = cast(double) previewWidth / sourceWidth;
@@ -592,17 +1043,40 @@ private void updatePreviewImage(DocumentTab document)
             break;
         }
         case PreviewScaleMode.fitWidth:
-            pixbuf = new Pixbuf(document.selectedPreviewPath, previewWidth, -1, true);
+        {
+            auto sourceWidth = source.getWidth();
+            auto sourceHeight = source.getHeight();
+            auto scale = cast(double) previewWidth / sourceWidth;
+            auto destHeight = cast(int) (sourceHeight * scale);
+            if (destHeight < 1)
+            {
+                destHeight = 1;
+            }
+            pixbuf = previewWidth == sourceWidth
+                ? source
+                : source.scaleSimple(previewWidth, destHeight, GdkInterpType.BILINEAR);
             break;
+        }
         case PreviewScaleMode.fitHeight:
-            pixbuf = new Pixbuf(document.selectedPreviewPath, -1, previewHeight, true);
+        {
+            auto sourceWidth = source.getWidth();
+            auto sourceHeight = source.getHeight();
+            auto scale = cast(double) previewHeight / sourceHeight;
+            auto destWidth = cast(int) (sourceWidth * scale);
+            if (destWidth < 1)
+            {
+                destWidth = 1;
+            }
+            pixbuf = previewHeight == sourceHeight
+                ? source
+                : source.scaleSimple(destWidth, previewHeight, GdkInterpType.BILINEAR);
             break;
+        }
         case PreviewScaleMode.center:
-            pixbuf = new Pixbuf(document.selectedPreviewPath);
+            pixbuf = source;
             break;
         case PreviewScaleMode.cover:
         {
-            auto source = new Pixbuf(document.selectedPreviewPath);
             auto sourceWidth = source.getWidth();
             auto sourceHeight = source.getHeight();
             auto widthScale = cast(double) previewWidth / sourceWidth;
@@ -638,6 +1112,10 @@ void refreshMediaPreview(DocumentTab document)
 {
     if (document.selectedPreviewIsVideo)
     {
+        if (document.detailPreviewImageControls !is null)
+        {
+            document.detailPreviewImageControls.setVisible(false);
+        }
         if (document.detailPreviewScroll !is null)
         {
             document.detailPreviewScroll.setVisible(false);
@@ -660,9 +1138,14 @@ void refreshMediaPreview(DocumentTab document)
     {
         document.detailPreviewVideoControls.setVisible(false);
     }
+    syncVideoTrackSelectors(document);
 
     if (document.selectedPreviewIsImage)
     {
+        if (document.detailPreviewImageControls !is null)
+        {
+            document.detailPreviewImageControls.setVisible(true);
+        }
         if (document.detailPreviewScroll !is null)
         {
             document.detailPreviewScroll.setVisible(true);
@@ -675,6 +1158,10 @@ void refreshMediaPreview(DocumentTab document)
     {
         document.detailPreviewScroll.setVisible(false);
     }
+    if (document.detailPreviewImageControls !is null)
+    {
+        document.detailPreviewImageControls.setVisible(false);
+    }
     document.detailPreviewImage.clear();
 }
 
@@ -685,11 +1172,26 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
     auto fileName = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
     auto mediaSummary = row.mediaInfoDetails.length > 0 ? row.mediaInfoDetails : "No media metadata available.";
     auto previewPath = resolvePreviewPath(document, row);
-    auto imagePreviewPath = previewPath.length > 0 && exists(previewPath) ? previewPath : "";
+    auto imagePreviewPath = "";
+    if (previewPath.length > 0)
+    {
+        if (previewPath != document.selectedPreviewCandidatePath)
+        {
+            document.selectedPreviewCandidatePath = previewPath;
+            document.selectedPreviewCandidateExists = exists(previewPath);
+        }
+
+        if (document.selectedPreviewCandidateExists)
+        {
+            imagePreviewPath = previewPath;
+        }
+    }
 
     document.selectedPreviewPath = imagePreviewPath;
+    document.selectedPreviewSourcePath = "";
+    document.selectedPreviewSourcePixbuf = null;
     document.selectedPreviewIsImage = isImagePreviewCandidate(row) && imagePreviewPath.length > 0;
-    document.selectedPreviewIsVideo = !document.selectedPreviewIsImage && isVideoPreviewCandidate(row) && imagePreviewPath.length > 0;
+    document.selectedPreviewIsVideo = !document.selectedPreviewIsImage && isVideoPreviewCandidate(row);
 
     if (document.selectedPreviewIsImage)
     {

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated with glade 3.40.0 -->
+<interface>
+  <requires lib="gtk+" version="3.22"/>
+  <object class="GtkBox" id="prefsBox">
+    <property name="can-focus">False</property>
+    <property name="orientation">vertical</property>
+    <property name="spacing">8</property>
+    <child>
+      <object class="GtkCheckButton" id="optAutoApply">
+        <property name="label">Auto-apply filter after load/reload</property>
+        <property name="can-focus">False</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkCheckButton" id="optCaseSensitive">
+        <property name="label">Case-sensitive text filtering</property>
+        <property name="can-focus">False</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkCheckButton" id="optDetailsBelow">
+        <property name="label">Show details below list (instead of on the right)</property>
+        <property name="can-focus">False</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkCheckButton" id="optRestoreOpenFiles">
+        <property name="label">Reopen previously open data files on startup</property>
+        <property name="can-focus">False</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkLabel" id="lblExternalOpenProgram">
+        <property name="can-focus">False</property>
+        <property name="label">External opener program</property>
+        <property name="xalign">0</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkEntry" id="entryExternalOpenProgram">
+        <property name="can-focus">False</property>
+        <property name="placeholder-text">xdg-open</property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkCheckButton" id="optClearWindowGeometry">
+        <property name="label">Delete saved window positions on save</property>
+        <property name="can-focus">False</property>
+        <property name="active">False</property>
+      </object>
+    </child>
+  </object>
+</interface>

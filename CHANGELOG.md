@@ -4,7 +4,31 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
-- ...
+- Moved the periodic video preview progress timer into `source/ui/previewprogress.d` so the main window entry point no longer owns the live preview heartbeat.
+- Moved the startup tab-restoration and self-test shutdown workflow into `source/ui/startupworkflow.d` so the main window entry point no longer owns the startup queue wiring.
+- Moved the notebook/window lifecycle signal wiring into `source/ui/windowlifecycle.d` so startup and shutdown hooks are grouped separately from the main window actions.
+- Moved the toolbar and filter signal wiring into `source/ui/toolbarbindings.d` so `mainwindow.d` keeps the action implementations but no longer owns the hookup boilerplate.
+- Moved the duplicated filter-reset state cleanup into `source/ui/selectionstatus.d` so the toolbar and menu actions share one helper.
+- Moved the performance-metrics reset helper into `source/ui/selectionstatus.d` so status-related UI actions stay grouped together.
+- Moved the shared GTK application CSS bootstrap into `source/ui/styles.d` so the main window module no longer owns style provider setup.
+- Moved the open-JSON file chooser into `source/ui/fileopendialog.d` so `mainwindow.d` now only passes the load callbacks into the dialog helper.
+- Moved the keyboard shortcuts and About dialogs into `source/ui/helpdialogs.d` so `mainwindow.d` now only routes the menu actions to dedicated UI helpers.
+- Updated the About dialog version to match the current 0.6.x release line instead of the stale placeholder.
+- Raised the Glade/GTK Builder UI minimum requirement from GTK 3.10 to GTK 3.22 across the UI definition files.
+- Moved the top-level window shell, shared toolbar, and notebook layout into a GtkBuilder UI file so the startup code now binds the static structure instead of constructing it manually.
+- Moved the main menu bar container into the GtkBuilder shell so the top-level layout now owns the menu placement while D keeps the action wiring.
+- Moved the static File/Edit/Help menu shells into the GtkBuilder shell so the menu hierarchy now lives with the rest of the layout and D only appends runtime actions.
+- Moved the Preferences dialog form into a GtkBuilder UI file so the dialog layout and its default widget state now live alongside the other UI definitions.
+- Moved the remaining video preview rendering default into the GtkBuilder UI file so the preview widget setup no longer needs a D-side special case.
+- Fixed the main Builder startup warning by letting the window keep the root widget from Glade instead of adding it again, and removed the unsupported GtkScale value property from the preview UI.
+- Moved static detail and preview widget defaults from D setup code into the GtkBuilder UI files so the runtime code now mainly wires behavior and state changes.
+- Continued the UI refactor by moving the detail preview, detail pane, and selection/status helpers into dedicated `source/ui/` modules so `mainwindow.d` keeps shrinking toward pure orchestration.
+- Fixed the video preview control visibility so the volume slider remains available for video rows even when the preview path cannot be resolved immediately.
+- Continued the UI refactor by moving the Preferences dialog orchestration into `source/ui/preferencesdialog.d` so `mainwindow.d` only passes state and callbacks.
+- Fixed the video preview volume slider initialization by explicitly setting a 0-1 range and syncing it to the active document volume.
+- Compact the BinaryBlob table header labels, keep the full column names in header tooltips, show image scaling buttons only for image previews, and add icon-based video controls plus preview track selectors.
+- Populate the video preview track selectors from GStreamer stream metadata when available and align the video/audio/subtitle dropdowns side by side.
+- Cache the loaded image preview pixbuf so resize-driven preview refreshes no longer reopen the same file on every layout pass.
 
 ## Release 0.6.0 - 2026-04-19
 

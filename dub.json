@@ -12,7 +12,9 @@
     "silly": "~>1.2.0-dev.2",
     "gtk-d:gstreamer": "*",
     "gtk-d:gtkd": "~>3.11.0",
-     "dosierskanilo": "~>26"
+    "dosierskanilo": {
+      "path": "../DosierSkanilo"
+    }
   },
   "dflags": [
     "-J.", "-J../DosierSkanilo"

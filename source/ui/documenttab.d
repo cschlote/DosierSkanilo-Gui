@@ -1,3 +1,9 @@
+/** Per-document UI state, bindings, and preview state for one open tab.
+ *
+ * The document tab keeps the table model, detail widgets, preview widgets, and
+ * filter state for a single loaded JSON document together so the UI layer can
+ * update it consistently.
+ */
 module ui.documenttab;
 
 import gtk.AspectFrame;
@@ -17,20 +23,33 @@ import gtk.TreeView;
 import gtk.ToggleButton;
 import gtk.Scale;
 import gtk.CheckButton;
+import gtk.ComboBoxText;
+import gtk.Widget;
 
+import gdkpixbuf.Pixbuf;
 import gstreamer.Element;
 import gstinterfaces.VideoOverlay;
 import model.blobrow : BlobRow;
 
+/** Column index for the row number in the main table model. */
 enum int COL_INDEX = 0;
+/** Column index for the formatted file size in the main table model. */
 enum int COL_FILE_SIZE = 1;
+/** Column index for the checksum summary in the main table model. */
 enum int COL_CHECKSUM_SET = 2;
+/** Column index for the file type summary in the main table model. */
 enum int COL_FILE_TYPE = 3;
+/** Column index for the media summary in the main table model. */
 enum int COL_MEDIA_INFO = 4;
+/** Column index for the archive marker in the main table model. */
 enum int COL_HAS_ARCHIVE = 5;
+/** Column index for the torrent marker in the main table model. */
 enum int COL_HAS_TORRENT = 6;
+/** Sort column index for the row number column. */
 enum int COL_INDEX_SORT = 7;
+/** Sort column index for the file size column. */
 enum int COL_FILE_SIZE_SORT = 8;
+/** Total number of columns in the main table model. */
 enum int COL_COUNT = 9;
 
 enum PreviewScaleMode : int
@@ -42,6 +61,14 @@ enum PreviewScaleMode : int
     cover = 4,
 }
 
+/** Clamp an integer preview scale mode to a valid enum value.
+ *
+ * Params:
+ *     value = Raw preview scale mode read from persisted state or settings.
+ * Returns: The matching preview mode, or contain when the input is out of
+ *     range.
+ * Throws: None.
+ */
 PreviewScaleMode clampPreviewScaleMode(int value)
 {
     if (value < cast(int) PreviewScaleMode.contain || value > cast(int) PreviewScaleMode.cover)
@@ -97,16 +124,25 @@ class DocumentTab
     ToggleButton detailPreviewFitHeightButton;
     ToggleButton detailPreviewCenterButton;
     ToggleButton detailPreviewCoverButton;
+    Box detailPreviewImageControls;
     CheckButton detailPreviewAutostartButton;
     Button detailPreviewPlayButton;
     Button detailPreviewJumpBackButton;
     Button detailPreviewJumpForwardButton;
+    Box detailPreviewTrackSelectorsRow;
+    Box detailPreviewVideoTrackBox;
+    Box detailPreviewAudioTrackBox;
+    Box detailPreviewSubtitleTrackBox;
+    ComboBoxText detailPreviewVideoTrackCombo;
+    ComboBoxText detailPreviewAudioTrackCombo;
+    ComboBoxText detailPreviewSubtitleTrackCombo;
     Label detailPreviewPositionLabel;
     Scale detailPreviewPositionScale;
     Scale detailPreviewVolumeScale;
     Image detailPreviewImage;
     AspectFrame detailPreviewVideoFrame;
     DrawingArea detailPreviewVideoArea;
+    Widget detailPreviewVideoSinkWidget;
     Box detailPreviewVideoControls;
     ScrolledWindow detailPreviewScroll;
     TextView detailMediaInfoView;
@@ -131,6 +167,20 @@ class DocumentTab
     bool previewVideoAutostart;
     double previewVideoVolume = 0.5;
     bool previewVideoPositionSyncing;
+    bool previewVideoTrackSyncing;
+    int previewVideoTrackCount = -1;
+    int previewAudioTrackCount = -1;
+    int previewSubtitleTrackCount = -1;
+    string[] previewVideoTrackLabels;
+    string[] previewAudioTrackLabels;
+    string[] previewSubtitleTrackLabels;
+    string previewVideoTrackSignature;
+    string previewAudioTrackSignature;
+    string previewSubtitleTrackSignature;
+    string selectedPreviewCandidatePath = "";
+    bool selectedPreviewCandidateExists;
+    string selectedPreviewSourcePath = "";
+    Pixbuf selectedPreviewSourcePixbuf;
 
     BlobRow[] loadedRows;
     BlobRow[] visibleRows;
