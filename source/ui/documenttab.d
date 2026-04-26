@@ -206,3 +206,15 @@ class DocumentTab
     long lastFilterElapsedMs = -1;
     long lastRenderElapsedMs = -1;
 }
+
+@("DocumentTab preview scale mode clamping")
+unittest
+{
+    assert(clampPreviewScaleMode(cast(int) PreviewScaleMode.contain) == PreviewScaleMode.contain);
+    assert(clampPreviewScaleMode(cast(int) PreviewScaleMode.fitWidth) == PreviewScaleMode.fitWidth);
+    assert(clampPreviewScaleMode(cast(int) PreviewScaleMode.fitHeight) == PreviewScaleMode.fitHeight);
+    assert(clampPreviewScaleMode(cast(int) PreviewScaleMode.center) == PreviewScaleMode.center);
+    assert(clampPreviewScaleMode(cast(int) PreviewScaleMode.cover) == PreviewScaleMode.cover);
+    assert(clampPreviewScaleMode(-1) == PreviewScaleMode.contain);
+    assert(clampPreviewScaleMode(999) == PreviewScaleMode.contain);
+}

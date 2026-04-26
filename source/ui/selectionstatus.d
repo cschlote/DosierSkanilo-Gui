@@ -227,3 +227,34 @@ void clearSelectionDetails(DocumentTab document)
     document.btnCopyDetails.setSensitive(false);
     document.rowDetails.setText("Selection: none");
 }
+
+@("Selection status summary helpers")
+unittest
+{
+    import std.algorithm.searching : canFind;
+    import std.datetime.systime : SysTime;
+    import dosierskanilo.metadata.mediainfosig : MediaInfoSig, MediaInfoVideo;
+    import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob;
+
+    assert(boolStatusIcon(true) == "✓");
+    assert(boolStatusIcon(false) == "○");
+
+    auto checksumRow = BlobRow.init;
+    assert(checksumStatusSummary(checksumRow) == "none");
+    checksumRow.md5 = "md5";
+    assert(checksumStatusSummary(checksumRow) == "partial (1/3)");
+    checksumRow.sha1 = "sha1";
+    checksumRow.xxh64 = "xxh64";
+    assert(checksumStatusSummary(checksumRow) == "full");
+
+    auto mediaBlob = new NamedBinaryBlob("media.mp4", 1, SysTime(0));
+    mediaBlob.mediaInfoSig = new MediaInfoSig();
+    mediaBlob.mediaInfoSig.videoStreams ~= new MediaInfoVideo(0, "en", "H264", 1920, 1080, 25.0);
+    auto mediaRow = BlobRow.init;
+    mediaRow.sourceBlob = mediaBlob;
+    assert(mediaInfoStatusSummary(mediaRow).canFind("present"));
+    assert(mediaInfoStatusSummary(mediaRow).canFind("V ✓"));
+
+    assert(metadataPresenceSummary(true) == "✓ present");
+    assert(metadataPresenceSummary(false) == "○ none");
+}

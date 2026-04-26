@@ -119,3 +119,11 @@ void configureKnownFilesColumns(TreeView treeView)
     addColumn("Last modified", 1, false);
     treeView.setHeadersClickable(false);
 }
+
+@("Table column helpers accept null documents")
+unittest
+{
+    setTableColumnsResizable(null, true);
+    setTableColumnsResizable(null, false);
+    assert(MAIN_TABLE_FIXED_COLUMN_WIDTH > 0);
+}

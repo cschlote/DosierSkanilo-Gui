@@ -10,7 +10,7 @@ import std.array : appender;
 import std.file : exists, readText, write, mkdirRecurse;
 import std.format : format;
 import std.json : parseJSON, JSONType, JSONValue;
-import std.path : buildPath;
+import std.path : buildPath, dirName;
 import std.process : environment;
 
 /** Persisted UI state stored below the user's config directory. */
@@ -54,7 +54,11 @@ enum string CONFIG_FILE_NAME = "state.json";
  */
 string configDirPath()
 {
-    auto home = environment.get("HOME", "");
+    return resolveConfigDirPath(environment.get("HOME", ""));
+}
+
+private string resolveConfigDirPath(string home)
+{
     if (home.length == 0)
     {
         return "./" ~ CONFIG_DIR_NAME;
@@ -70,7 +74,12 @@ string configDirPath()
  */
 string configFilePath()
 {
-    return buildPath(configDirPath(), CONFIG_FILE_NAME);
+    return resolveConfigFilePath(environment.get("HOME", ""));
+}
+
+private string resolveConfigFilePath(string home)
+{
+    return buildPath(resolveConfigDirPath(home), CONFIG_FILE_NAME);
 }
 
 /** Convert a JSON scalar into a bool with fallback semantics.
@@ -206,10 +215,9 @@ string jsonEscapeString(string value)
  * Throws: Invalid, unreadable, or malformed state files are swallowed and
  *     replaced with defaults; only unexpected runtime failures may escape.
  */
-AppState loadAppState()
+private AppState loadAppStateFromPath(string path)
 {
     AppState state;
-    auto path = configFilePath();
     if (!exists(path))
     {
         return state;
@@ -322,6 +330,11 @@ AppState loadAppState()
     return state;
 }
 
+AppState loadAppState()
+{
+    return loadAppStateFromPath(configFilePath());
+}
+
 /** Write the current application state to the JSON config file.
  *
  * Params:
@@ -329,10 +342,9 @@ AppState loadAppState()
  * Returns: Nothing.
  * Throws: File system errors from directory creation or writing are propagated.
  */
-void saveAppState(const(AppState) state)
+private void saveAppStateToPath(const(AppState) state, string path)
 {
-    auto dirPath = configDirPath();
-    auto filePath = configFilePath();
+    auto dirPath = dirName(path);
     mkdirRecurse(dirPath);
     auto openFileJson = appender!string();
     openFileJson.put("[");
@@ -395,5 +407,93 @@ void saveAppState(const(AppState) state)
         state.activeTabIndex
     );
 
-    write(filePath, payload);
+    write(path, payload);
+}
+
+void saveAppState(const(AppState) state)
+{
+    saveAppStateToPath(state, configFilePath());
+}
+
+@("AppState JSON conversion helpers")
+unittest
+{
+    assert(jsonToBool(JSONValue(true)));
+    assert(!jsonToBool(JSONValue(false)));
+    assert(jsonToBool(JSONValue(1)));
+    assert(!jsonToBool(JSONValue(0)));
+    assert(jsonToBool(JSONValue(7u)));
+    assert(jsonToBool(JSONValue("ignored"), true));
+
+    assert(jsonToInt(JSONValue(12)) == 12);
+    assert(jsonToInt(JSONValue(12u)) == 12);
+    assert(jsonToInt(JSONValue(12.75)) == 12);
+    assert(jsonToInt(JSONValue("ignored"), 99) == 99);
+
+    auto strings = JSONValue([JSONValue("alpha"), JSONValue(1), JSONValue("beta")]);
+    auto stringArray = jsonToStringArray(strings);
+    assert(stringArray == ["alpha", "beta"]);
+    assert(jsonToStringArray(JSONValue(1)).length == 0);
+
+    assert(jsonEscapeString("a\"b\\c\n") == "a\\\"b\\\\c\\n");
+    assert(resolveConfigDirPath("") == "./" ~ CONFIG_DIR_NAME);
+    assert(resolveConfigDirPath("/tmp/dosierskanilo-gui-ui-tests")
+        == buildPath("/tmp/dosierskanilo-gui-ui-tests", CONFIG_DIR_NAME));
+    assert(resolveConfigFilePath("/tmp/dosierskanilo-gui-ui-tests")
+        == buildPath("/tmp/dosierskanilo-gui-ui-tests", CONFIG_DIR_NAME, CONFIG_FILE_NAME));
+}
+
+@("AppState save/load roundtrip")
+unittest
+{
+    auto testStateFile = "/tmp/dosierskanilo-gui-ui-tests-roundtrip/.config/dosierskanilo-gui/state.json";
+    mkdirRecurse(dirName(testStateFile));
+
+    AppState expected;
+    expected.prefAutoApplyFilter = false;
+    expected.prefCaseSensitiveFilter = true;
+    expected.prefDetailsBelow = true;
+    expected.prefRestoreOpenFiles = false;
+    expected.splitPositionHorizontal = 111;
+    expected.splitPositionVertical = 222;
+    expected.splitPositionPreview = 333;
+    expected.hasSplitPositionPreview = true;
+    expected.previewScaleMode = 4;
+    expected.externalOpenProgram = "custom tool";
+    expected.previewVideoAutostart = true;
+    expected.previewVideoVolume = 0.75;
+    expected.hasWindowGeometry = true;
+    expected.windowX = 12;
+    expected.windowY = 34;
+    expected.hasWindowSize = true;
+    expected.windowWidth = 800;
+    expected.windowHeight = 600;
+    expected.windowMonitorIndex = 2;
+    expected.openFilePaths = ["one.json", "two path.json"];
+    expected.activeTabIndex = 7;
+
+    saveAppStateToPath(expected, testStateFile);
+    auto loaded = loadAppStateFromPath(testStateFile);
+
+    assert(loaded.prefAutoApplyFilter == expected.prefAutoApplyFilter);
+    assert(loaded.prefCaseSensitiveFilter == expected.prefCaseSensitiveFilter);
+    assert(loaded.prefDetailsBelow == expected.prefDetailsBelow);
+    assert(loaded.prefRestoreOpenFiles == expected.prefRestoreOpenFiles);
+    assert(loaded.splitPositionHorizontal == expected.splitPositionHorizontal);
+    assert(loaded.splitPositionVertical == expected.splitPositionVertical);
+    assert(loaded.splitPositionPreview == expected.splitPositionPreview);
+    assert(loaded.hasSplitPositionPreview == expected.hasSplitPositionPreview);
+    assert(loaded.previewScaleMode == expected.previewScaleMode);
+    assert(loaded.externalOpenProgram == expected.externalOpenProgram);
+    assert(loaded.previewVideoAutostart == expected.previewVideoAutostart);
+    assert(loaded.previewVideoVolume == expected.previewVideoVolume);
+    assert(loaded.hasWindowGeometry == expected.hasWindowGeometry);
+    assert(loaded.windowX == expected.windowX);
+    assert(loaded.windowY == expected.windowY);
+    assert(loaded.hasWindowSize == expected.hasWindowSize);
+    assert(loaded.windowWidth == expected.windowWidth);
+    assert(loaded.windowHeight == expected.windowHeight);
+    assert(loaded.windowMonitorIndex == expected.windowMonitorIndex);
+    assert(loaded.openFilePaths == expected.openFilePaths);
+    assert(loaded.activeTabIndex == expected.activeTabIndex);
 }
