@@ -747,6 +747,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailPreviewFitHeightButton.setActive(document.previewScaleMode == PreviewScaleMode.fitHeight);
         document.detailPreviewCenterButton.setActive(document.previewScaleMode == PreviewScaleMode.center);
         document.detailPreviewCoverButton.setActive(document.previewScaleMode == PreviewScaleMode.cover);
+        if (document.detailPreviewVolumeScale !is null)
+        {
+            document.detailPreviewVolumeScale.setValue(document.previewVideoVolume);
+        }
         isSyncingToolbarState = false;
     }
 
@@ -759,6 +763,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailPreviewFitHeightButton.setActive(document.previewScaleMode == PreviewScaleMode.fitHeight);
         document.detailPreviewCenterButton.setActive(document.previewScaleMode == PreviewScaleMode.center);
         document.detailPreviewCoverButton.setActive(document.previewScaleMode == PreviewScaleMode.cover);
+        if (document.detailPreviewVolumeScale !is null)
+        {
+            document.detailPreviewVolumeScale.setValue(document.previewVideoVolume);
+        }
         isSyncingToolbarState = false;
     }
 
