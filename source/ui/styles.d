@@ -8,7 +8,12 @@ import gtk.c.types : GTK_STYLE_PROVIDER_PRIORITY_APPLICATION;
 
 private __gshared CssProvider applicationCssProvider;
 
-/** Install the shared CSS classes used by the application. */
+/** Install the shared CSS classes used by the application.
+ *
+ * Params: None.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void installApplicationCss()
 {
     if (applicationCssProvider !is null)

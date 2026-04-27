@@ -48,13 +48,28 @@ import dosierskanilo.metadata.mediainfosig : MediaInfoAudio, MediaInfoSig, Media
 import model.blobrow : BlobRow;
 import ui.documenttab : DocumentTab, PreviewScaleMode;
 
-/** Normalize empty field values in the details form. */
+/** Normalize empty field values in the details form.
+ *
+ * Params:
+ *     entry = Text entry widget to update.
+ *     value = Text value to show, or an empty string for the placeholder.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void setDetailEntry(Entry entry, string value)
 {
     entry.setText(value.length > 0 ? value : "-");
 }
 
-/** Write compact status text with a bold title into one metadata label. */
+/** Write compact status text with a bold title into one metadata label.
+ *
+ * Params:
+ *     label = Target label to update.
+ *     title = Short heading to emphasize in the label.
+ *     summary = Summary text to display next to the heading.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void setMetadataStatusLabel(Label label, string title, string summary)
 {
     label.setEllipsize(PangoEllipsizeMode.MIDDLE);
@@ -62,7 +77,17 @@ void setMetadataStatusLabel(Label label, string title, string summary)
     label.setMarkup(format("<b>%s</b>  %s", title, summary));
 }
 
-/** Populate one expander-backed metadata details section. */
+/** Populate one expander-backed metadata details section.
+ *
+ * Params:
+ *     expander = Expander that gates the details block.
+ *     view = Text view that renders the long-form details.
+ *     title = Human-readable section title used by the caller.
+ *     detailsText = Raw details text to display, or an empty string to show
+ *         the placeholder message.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void setMetadataDetails(Expander expander, TextView view, string title, string detailsText)
 {
     auto hasDetails = detailsText.length > 0;
@@ -79,6 +104,8 @@ void setMetadataDetails(Expander expander, TextView view, string title, string d
  *   row = current row whose source file specs should be rendered
  * Returns:
  *   nothing
+ * Throws:
+ *   EnforceError when the known-file label has not been initialized yet.
  */
 void setKnownFilesTable(DocumentTab document, const(BlobRow) row)
 {
@@ -238,7 +265,13 @@ private bool ensureImagePreviewSource(DocumentTab document)
     }
 }
 
-/** Stop the embedded video player. */
+/** Stop the embedded video player.
+ *
+ * Params:
+ *     document = Active document tab whose preview player should stop.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void stopVideoPreview(DocumentTab document)
 {
     if (document.previewVideoPlayer !is null)
@@ -332,7 +365,15 @@ private void restoreOverlayVideoArea(DocumentTab document)
     document.detailPreviewVideoSinkWidget = null;
 }
 
-/** Attach the embedded video sink to the realized preview widget. */
+/** Attach the embedded video sink to the realized preview widget.
+ *
+ * Params:
+ *     document = Active document tab that owns the preview widget.
+ *     renderWidth = Current render width, or a fallback when unavailable.
+ *     renderHeight = Current render height, or a fallback when unavailable.
+ * Returns: True when the video overlay could be attached, false otherwise.
+ * Throws: None.
+ */
 bool syncVideoPreviewWindow(DocumentTab document, int renderWidth = -1, int renderHeight = -1)
 {
     if (document is null || document.detailPreviewVideoArea is null || document.previewVideoSink is null)
@@ -475,7 +516,14 @@ private string formatVideoPreviewTime(long nanoseconds)
     return format("%02d:%02d", minutes, seconds);
 }
 
-/** Apply the current UI volume to the underlying player. */
+/** Apply the current UI volume to the underlying player.
+ *
+ * Params:
+ *     document = Active document tab whose player should receive the volume.
+ *     volume = Requested volume in the inclusive range 0.0 to 1.0.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void setVideoPreviewVolume(DocumentTab document, double volume)
 {
     document.previewVideoVolume = clampVideoPreviewVolume(volume);
@@ -485,7 +533,14 @@ void setVideoPreviewVolume(DocumentTab document, double volume)
     }
 }
 
-/** Seek the preview to an absolute position in seconds. */
+/** Seek the preview to an absolute position in seconds.
+ *
+ * Params:
+ *     document = Active document tab whose preview should seek.
+ *     positionSeconds = Target playback position in seconds.
+ * Returns: True when the seek request was accepted, false if no player exists.
+ * Throws: None.
+ */
 bool seekVideoPreview(DocumentTab document, double positionSeconds)
 {
     if (document.previewVideoPlayer is null)
@@ -502,7 +557,13 @@ bool seekVideoPreview(DocumentTab document, double positionSeconds)
     return document.previewVideoPlayer.seekSimple(GstFormat.TIME, GstSeekFlags.FLUSH | GstSeekFlags.KEY_UNIT, targetPosition);
 }
 
-/** Synchronize the playback slider and duration label with the player state. */
+/** Synchronize the playback slider and duration label with the player state.
+ *
+ * Params:
+ *     document = Active document tab whose preview controls should be updated.
+ * Returns: True when the player position could be queried, false otherwise.
+ * Throws: None.
+ */
 bool syncVideoPreviewPosition(DocumentTab document)
 {
     if (document.detailPreviewPositionScale is null || document.previewVideoPlayer is null)
@@ -539,7 +600,14 @@ bool syncVideoPreviewPosition(DocumentTab document)
     return true;
 }
 
-/** Update the play button label to reflect the current player state. */
+/** Update the play button label to reflect the current player state.
+ *
+ * Params:
+ *     document = Active document tab whose play button should be updated.
+ *     playing = True when the player is currently in play mode.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void syncVideoPlaybackButton(DocumentTab document, bool playing)
 {
     if (document.detailPreviewPlayButton is null)
@@ -567,6 +635,15 @@ private int getElementIntProperty(Element element, string propertyName, int fall
     return value.getInt();
 }
 
+/** Set an integer property on a GStreamer element.
+ *
+ * Params:
+ *     element = Target GStreamer element.
+ *     propertyName = Name of the integer property to write.
+ *     propertyValue = Value to store in the property.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void setElementIntProperty(Element element, string propertyName, int propertyValue)
 {
     if (element is null)
@@ -944,6 +1021,13 @@ private void syncSubtitleTrackSelector(DocumentTab document, int trackCount, int
     }
 }
 
+/** Synchronize the preview track dropdowns with the current player state.
+ *
+ * Params:
+ *     document = Active document tab whose track selectors should be updated.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void syncVideoTrackSelectors(DocumentTab document)
 {
     if (document is null)
@@ -996,7 +1080,13 @@ void syncVideoTrackSelectors(DocumentTab document)
         getElementIntProperty(document.previewVideoPlayer, "n-text", 0),
         getElementIntProperty(document.previewVideoPlayer, "current-text", -1));
 }
-/** Start video playback for the active preview. */
+/** Start video playback for the active preview.
+ *
+ * Params:
+ *     document = Active document tab whose preview should start.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void playVideoPreview(DocumentTab document)
 {
     if (!ensureVideoPreviewPlayer(document))
@@ -1008,7 +1098,13 @@ void playVideoPreview(DocumentTab document)
     syncVideoPlaybackButton(document, true);
 }
 
-/** Pause video playback for the active preview. */
+/** Pause video playback for the active preview.
+ *
+ * Params:
+ *     document = Active document tab whose preview should pause.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void pauseVideoPreview(DocumentTab document)
 {
     if (document.previewVideoPlayer is null)
@@ -1020,7 +1116,14 @@ void pauseVideoPreview(DocumentTab document)
     syncVideoPlaybackButton(document, false);
 }
 
-/** Seek the current preview relative to its current play position. */
+/** Seek the current preview relative to its current play position.
+ *
+ * Params:
+ *     document = Active document tab whose preview should jump.
+ *     deltaSeconds = Signed offset in seconds, positive or negative.
+ * Returns: True when the seek request was accepted, false if no player exists.
+ * Throws: None.
+ */
 bool jumpVideoPreview(DocumentTab document, long deltaSeconds)
 {
     if (document.previewVideoPlayer is null)
@@ -1233,7 +1336,13 @@ private void updatePreviewImage(DocumentTab document)
     }
 }
 
-/** Refresh the current preview image after a resize or layout change. */
+/** Refresh the current preview image after a resize or layout change.
+ *
+ * Params:
+ *     document = Active document tab whose preview should be refreshed.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void refreshMediaPreview(DocumentTab document)
 {
     if (document.selectedPreviewIsVideo)
@@ -1291,6 +1400,14 @@ void refreshMediaPreview(DocumentTab document)
     document.detailPreviewImage.clear();
 }
 
+/** Populate the preview pane from the selected row.
+ *
+ * Params:
+ *     document = Active document tab that owns the preview pane.
+ *     row = Selected row whose media and preview metadata should be shown.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void setMediaPreview(DocumentTab document, const(BlobRow) row)
 {
     document.detailPreviewTitle.setText("Preview");
