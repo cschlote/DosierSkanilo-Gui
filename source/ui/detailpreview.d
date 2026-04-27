@@ -21,8 +21,8 @@ import gstreamer.c.types : GstState, GstStateChangeReturn;
 import ui.builderutils : builderObject, loadUiBuilder;
 import ui.documenttab : DocumentTab, PreviewScaleMode;
 import ui.detailswidgets : jumpVideoPreview, pauseVideoPreview, playVideoPreview,
-    refreshMediaPreview, seekVideoPreview, setVideoPreviewVolume, syncVideoPreviewPosition,
-    syncVideoPreviewWindow;
+    refreshMediaPreview, seekVideoPreview, setElementIntProperty, setVideoPreviewVolume,
+    syncVideoPreviewPosition, syncVideoPreviewWindow;
 
 /** Widgets from the detail preview layout. */
 struct DetailPreviewUi
@@ -209,7 +209,7 @@ void bindDetailPreviewSignals(DocumentTab document, DetailPreviewCallbacks callb
         auto active = combo.getActive();
         if (active >= 0)
         {
-            document.previewVideoPlayer.setProperty("current-text", new Value(active - 1));
+            setElementIntProperty(document.previewVideoPlayer, "current-text", active - 1);
         }
     });
 

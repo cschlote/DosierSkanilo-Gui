@@ -566,7 +566,7 @@ private int getElementIntProperty(Element element, string propertyName, int fall
     return value.getInt();
 }
 
-private void setElementIntProperty(Element element, string propertyName, int propertyValue)
+void setElementIntProperty(Element element, string propertyName, int propertyValue)
 {
     if (element is null)
     {
@@ -611,6 +611,8 @@ private string buildStreamDisplayLabel(string prefix, size_t index, Stream strea
     auto tags = stream.getTags();
     string title;
     string language;
+    string subtitleLanguage;
+    string description;
     string codec;
     string[] fragments;
 
@@ -618,9 +620,18 @@ private string buildStreamDisplayLabel(string prefix, size_t index, Stream strea
     {
         fragments ~= title;
     }
-    if (tryGetTrackTagString(tags, "language-code", language))
+    if (tryGetTrackTagString(tags, "language", language)
+        || tryGetTrackTagString(tags, "language-code", language))
     {
         fragments ~= language;
+    }
+    if (tryGetTrackTagString(tags, "subtitle-language", subtitleLanguage))
+    {
+        fragments ~= subtitleLanguage;
+    }
+    if (tryGetTrackTagString(tags, "description", description))
+    {
+        fragments ~= description;
     }
     if (tryGetTrackTagString(tags, "codec", codec)
         || tryGetTrackTagString(tags, "audio-codec", codec)
