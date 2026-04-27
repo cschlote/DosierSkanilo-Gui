@@ -44,6 +44,7 @@ import std.string : join, startsWith, toLower;
 import std.exception : enforce;
 import std.uri : encode;
 
+import dosierskanilo.metadata.mediainfosig : MediaInfoAudio, MediaInfoSig, MediaInfoText, MediaInfoVideo;
 import model.blobrow : BlobRow;
 import ui.documenttab : DocumentTab, PreviewScaleMode;
 
@@ -653,7 +654,82 @@ private string buildStreamDisplayLabel(string prefix, size_t index, Stream strea
     return fallback ~ ": " ~ fragments.join(" | ");
 }
 
-private void updateTrackLabelsFromStreamCollection(DocumentTab document, StreamCollection collection)
+private string buildTrackDisplayLabel(string prefix, size_t index, string[] fragments)
+{
+    auto fallback = format("%s %s", prefix, index + 1);
+    string[] visibleFragments;
+    foreach (fragment; fragments)
+    {
+        if (fragment.length > 0)
+        {
+            visibleFragments ~= fragment;
+        }
+    }
+
+    if (visibleFragments.length == 0)
+    {
+        return fallback;
+    }
+
+    return fallback ~ ": " ~ visibleFragments.join(" | ");
+}
+
+private string buildVideoTrackLabel(const(MediaInfoVideo) stream)
+{
+    if (stream is null)
+    {
+        return "";
+    }
+
+    string[] fragments;
+    fragments ~= stream.language;
+    fragments ~= stream.format;
+    if (stream.width > 0 && stream.height > 0)
+    {
+        fragments ~= format("%ux%u", stream.width, stream.height);
+    }
+    if (stream.frameRate > 0.0)
+    {
+        fragments ~= format("%.2ffps", stream.frameRate);
+    }
+    return buildTrackDisplayLabel("Video", cast(size_t) stream.index, fragments);
+}
+
+private string buildAudioTrackLabel(const(MediaInfoAudio) stream)
+{
+    if (stream is null)
+    {
+        return "";
+    }
+
+    string[] fragments;
+    fragments ~= stream.language;
+    fragments ~= stream.format;
+    if (stream.channels > 0)
+    {
+        fragments ~= format("%u ch.", stream.channels);
+    }
+    return buildTrackDisplayLabel("Audio", cast(size_t) stream.index, fragments);
+}
+
+private string buildTextTrackLabel(const(MediaInfoText) stream)
+{
+    if (stream is null)
+    {
+        return "";
+    }
+
+    string[] fragments;
+    fragments ~= stream.language;
+    fragments ~= stream.format;
+    if (stream.frameRate > 0.0)
+    {
+        fragments ~= format("%.2ffps", stream.frameRate);
+    }
+    return buildTrackDisplayLabel("Subtitle", cast(size_t) stream.index, fragments);
+}
+
+private void updateTrackLabelsFromMediaInfo(DocumentTab document, const(BlobRow) row)
 {
     if (document is null)
     {
@@ -664,11 +740,41 @@ private void updateTrackLabelsFromStreamCollection(DocumentTab document, StreamC
     document.previewAudioTrackLabels = null;
     document.previewSubtitleTrackLabels = null;
 
-    if (collection is null)
+    if (row.sourceBlob is null || row.sourceBlob.mediaInfoSig is null || row.sourceBlob.mediaInfoSig.empty)
     {
         document.previewVideoTrackSignature = "";
         document.previewAudioTrackSignature = "";
         document.previewSubtitleTrackSignature = "";
+        return;
+    }
+
+    foreach (stream; row.sourceBlob.mediaInfoSig.videoStreams)
+    {
+        document.previewVideoTrackLabels ~= buildVideoTrackLabel(stream);
+    }
+    foreach (stream; row.sourceBlob.mediaInfoSig.audioStreams)
+    {
+        document.previewAudioTrackLabels ~= buildAudioTrackLabel(stream);
+    }
+    foreach (stream; row.sourceBlob.mediaInfoSig.textStreams)
+    {
+        document.previewSubtitleTrackLabels ~= buildTextTrackLabel(stream);
+    }
+
+    document.previewVideoTrackSignature = document.previewVideoTrackLabels.join("\n");
+    document.previewAudioTrackSignature = document.previewAudioTrackLabels.join("\n");
+    document.previewSubtitleTrackSignature = document.previewSubtitleTrackLabels.join("\n");
+}
+
+private void updateTrackLabelsFromStreamCollection(DocumentTab document, StreamCollection collection)
+{
+    if (document is null)
+    {
+        return;
+    }
+
+    if (collection is null)
+    {
         return;
     }
 
@@ -701,9 +807,18 @@ private void updateTrackLabelsFromStreamCollection(DocumentTab document, StreamC
         }
     }
 
-    document.previewVideoTrackSignature = document.previewVideoTrackLabels.join("\n");
-    document.previewAudioTrackSignature = document.previewAudioTrackLabels.join("\n");
-    document.previewSubtitleTrackSignature = document.previewSubtitleTrackLabels.join("\n");
+    if (document.previewVideoTrackLabels.length == 0)
+    {
+        document.previewVideoTrackLabels = null;
+    }
+    if (document.previewAudioTrackLabels.length == 0)
+    {
+        document.previewAudioTrackLabels = null;
+    }
+    if (document.previewSubtitleTrackLabels.length == 0)
+    {
+        document.previewSubtitleTrackLabels = null;
+    }
 }
 
 private void showTrackSelectorPlaceholder(ComboBoxText combo, Box row, string text)
@@ -1203,6 +1318,20 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
     document.selectedPreviewSourcePixbuf = null;
     document.selectedPreviewIsImage = isImagePreviewCandidate(row) && imagePreviewPath.length > 0;
     document.selectedPreviewIsVideo = !document.selectedPreviewIsImage && isVideoPreviewCandidate(row);
+
+    if (document.selectedPreviewIsVideo)
+    {
+        updateTrackLabelsFromMediaInfo(document, row);
+    }
+    else
+    {
+        document.previewVideoTrackLabels = null;
+        document.previewAudioTrackLabels = null;
+        document.previewSubtitleTrackLabels = null;
+        document.previewVideoTrackSignature = "";
+        document.previewAudioTrackSignature = "";
+        document.previewSubtitleTrackSignature = "";
+    }
 
     if (document.selectedPreviewIsImage)
     {

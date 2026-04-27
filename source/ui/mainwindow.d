@@ -1135,7 +1135,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
         state.hasSplitPositionPreview = splitPositionPreview > 0;
 
         auto document = currentDocument();
-        state.previewVideoVolume = document is null ? previewVideoVolume : document.previewVideoVolume;
+        state.previewVideoVolume = document is null
+            ? previewVideoVolume
+            : document.detailPreviewVolumeScale is null
+                ? document.previewVideoVolume
+                : document.detailPreviewVolumeScale.getValue();
         if (document !is null)
         {
             auto currentOrientation = document.split.getOrientation();
