@@ -4,6 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Improved the video preview track labels by using additional stream metadata where available, and fixed the subtitle track selector so selecting Off no longer snaps back to the active subtitle.
 - Moved the periodic video preview progress timer into `source/ui/previewprogress.d` so the main window entry point no longer owns the live preview heartbeat.
 - Moved the startup tab-restoration and self-test shutdown workflow into `source/ui/startupworkflow.d` so the main window entry point no longer owns the startup queue wiring.
 - Moved the notebook/window lifecycle signal wiring into `source/ui/windowlifecycle.d` so startup and shutdown hooks are grouped separately from the main window actions.

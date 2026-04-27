@@ -1131,11 +1131,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
         state.externalOpenProgram = externalOpenProgram;
         state.previewScaleMode = cast(int) previewScaleMode;
         state.previewVideoAutostart = previewVideoAutostart;
-        state.previewVideoVolume = previewVideoVolume;
         state.splitPositionPreview = splitPositionPreview;
         state.hasSplitPositionPreview = splitPositionPreview > 0;
 
         auto document = currentDocument();
+        state.previewVideoVolume = document is null ? previewVideoVolume : document.previewVideoVolume;
         if (document !is null)
         {
             auto currentOrientation = document.split.getOrientation();
