@@ -4,6 +4,7 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Moved the File/Edit/Help menu entries into the GtkBuilder main window layout so the menus are now static UI and only their callbacks, ghosting, and keyboard shortcuts are wired in D.
 - Moved the shared filter entry, toggle buttons, and apply/clear controls into `source/ui/filterbar.ui` and `source/ui/filterbar.d` so the main window toolbar now embeds the filter block as its own UI unit.
 - Improved the video preview track labels by using additional stream metadata where available, and fixed the subtitle track selector so selecting Off no longer snaps back to the active subtitle.
 - Moved the periodic video preview progress timer into `source/ui/previewprogress.d` so the main window entry point no longer owns the live preview heartbeat.

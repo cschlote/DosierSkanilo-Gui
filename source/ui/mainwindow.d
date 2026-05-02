@@ -22,6 +22,7 @@ import gtk.Box;
 import gtk.Button;
 import gtk.AspectFrame;
 import gtk.c.types : Orientation;
+import gtk.c.types : GtkAccelFlags;
 import gtk.CheckButton;
 import gtk.Clipboard;
 import gtk.ComboBoxText;
@@ -44,7 +45,6 @@ import gtk.Range;
 import gtk.Scale;
 import gtk.ScrolledWindow;
 import gtk.Separator;
-import gtk.SeparatorMenuItem;
 import gtk.Spinner;
 import gtk.TextView;
 import gtk.ToggleButton;
@@ -57,6 +57,7 @@ import gtk.TreeViewColumn;
 import gtk.Widget;
 import gtk.Window;
 import gtk.c.types : GtkAlign, GtkIconSize, GtkReliefStyle, GtkShadowType, GtkTreeViewColumnSizing;
+import gdk.c.types : GdkModifierType;
 
 import core.thread : Thread;
 import core.time : MonoTime;
@@ -508,6 +509,17 @@ int runMainWindow(string[] args, ref CliOptions cli)
     auto content = builderObject!Box(mainBuilder, "main", "content");
     auto separator = builderObject!Separator(mainBuilder, "main", "separator");
     auto toolbar = builderObject!Box(mainBuilder, "main", "toolbar");
+    auto fileOpenMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileOpenMenuItem");
+    auto fileCloseMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileCloseMenuItem");
+    auto fileReloadMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileReloadMenuItem");
+    auto fileCancelOperationMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileCancelOperationMenuItem");
+    auto fileQuitMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileQuitMenuItem");
+    auto editApplyFilterMenuItem = builderObject!MenuItem(mainBuilder, "main", "editApplyFilterMenuItem");
+    auto editClearFilterMenuItem = builderObject!MenuItem(mainBuilder, "main", "editClearFilterMenuItem");
+    auto editResetMetricsMenuItem = builderObject!MenuItem(mainBuilder, "main", "editResetMetricsMenuItem");
+    auto editPreferencesMenuItem = builderObject!MenuItem(mainBuilder, "main", "editPreferencesMenuItem");
+    auto helpShortcutsMenuItem = builderObject!MenuItem(mainBuilder, "main", "helpShortcutsMenuItem");
+    auto helpAboutMenuItem = builderObject!MenuItem(mainBuilder, "main", "helpAboutMenuItem");
     auto btnReload = builderObject!Button(mainBuilder, "main", "btnReload");
     auto btnRelayout = builderObject!Button(mainBuilder, "main", "btnRelayout");
     auto btnCancelLoad = builderObject!Button(mainBuilder, "main", "btnCancelLoad");
@@ -609,6 +621,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
         return -1;
     }
 
+    /** Attach a standard application accelerator to one menu item. */
+    void attachMenuAccelerator(MenuItem menuItem, char accelKey, GdkModifierType accelMods = GdkModifierType.CONTROL_MASK)
+    {
+        menuItem.addAccelerator("activate", accelGroup, accelKey, accelMods, GtkAccelFlags.VISIBLE);
+    }
+
     /** Normalize a path so duplicate startup entries map to the same document tab. */
     string normalizeDocumentPath(string filePath)
     {
@@ -687,7 +705,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto hasCurrentDocument = currentDocument() !is null;
         // pathEntry und btnLoad entfernt
         btnReload.setSensitive(!isLoading && hasCurrentDocument);
+        fileReloadMenuItem.setSensitive(!isLoading && hasCurrentDocument);
         btnCancelLoad.setSensitive(isLoading);
+        fileCancelOperationMenuItem.setSensitive(isLoading);
+        fileCloseMenuItem.setSensitive(!isLoading && hasCurrentDocument);
+        fileOpenMenuItem.setSensitive(!isLoading);
+        fileQuitMenuItem.setSensitive(true);
         filterEntry.setSensitive(!isLoading);
         filterVideo.setSensitive(!isLoading && hasCurrentDocument);
         filterAudio.setSensitive(!isLoading && hasCurrentDocument);
@@ -698,7 +721,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
         filterArchive.setSensitive(!isLoading && hasCurrentDocument);
         filterTorrent.setSensitive(!isLoading && hasCurrentDocument);
         btnApplyFilter.setSensitive(!isLoading && hasCurrentDocument);
+        editApplyFilterMenuItem.setSensitive(!isLoading && hasCurrentDocument);
         btnClearFilter.setSensitive(!isLoading && hasCurrentDocument);
+        editClearFilterMenuItem.setSensitive(!isLoading && hasCurrentDocument);
+        editPreferencesMenuItem.setSensitive(!isLoading);
+        editResetMetricsMenuItem.setSensitive(hasCurrentDocument);
+        helpShortcutsMenuItem.setSensitive(true);
+        helpAboutMenuItem.setSensitive(true);
     }
 
     /** Mirror the active tab's path and filter settings back into the shared toolbar. */
@@ -1995,9 +2024,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         setLoadingState(busyDocument, false, "Operation cancelled. Background result will be discarded.");
     }
 
-    // Apply persisted splitter orientation/position to any tabs created later.
-
-    auto fileOpen = new MenuItem((MenuItem _) {
+    fileOpenMenuItem.addOnActivate((MenuItem _) {
         chooseAndLoadPath(
             window,
             FileOpenDialogCallbacks(
@@ -2007,9 +2034,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 (DocumentTab document, bool selectTab) { loadDocument(document, selectTab); }
             )
         );
-    }, "_Open JSON", "file.open", true, accelGroup, 'o');
+    });
 
-    auto fileReload = new MenuItem((MenuItem _) {
+    fileReloadMenuItem.addOnActivate((MenuItem _) {
         reloadCurrentDocument(DocumentActionCallbacks(
             () { return currentDocument(); },
             () { return notebook.getCurrentPage(); },
@@ -2023,9 +2050,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
             () { return clearSavedWindowGeometryOnExit; },
             (DocumentTab document, bool fitHorizontalSplitAfterLoad) { loadDocument(document, fitHorizontalSplitAfterLoad); }
         ));
-    }, "_Reload", "file.reload", true, accelGroup, 'r');
+    });
 
-    auto fileClose = new MenuItem((MenuItem _) {
+    fileCloseMenuItem.addOnActivate((MenuItem _) {
         closeCurrentDocument(DocumentActionCallbacks(
             () { return currentDocument(); },
             () { return notebook.getCurrentPage(); },
@@ -2039,25 +2066,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
             () { return clearSavedWindowGeometryOnExit; },
             (DocumentTab document, bool fitHorizontalSplitAfterLoad) { loadDocument(document, fitHorizontalSplitAfterLoad); }
         ));
-    }, "_Close Current Tab", "file.close", true, accelGroup, 'w');
+    });
 
-    auto fileCancelOperation = new MenuItem((MenuItem _) { cancelPendingLoad(); }, "_Cancel Current Operation", "file.cancelOperation", true, accelGroup, 'k');
+    fileCancelOperationMenuItem.addOnActivate((MenuItem _) { cancelPendingLoad(); });
 
-    auto fileQuit = new MenuItem((MenuItem _) {
+    fileQuitMenuItem.addOnActivate((MenuItem _) {
         persistCurrentState(clearSavedWindowGeometryOnExit);
         Main.quit();
-    }, "_Quit", "file.quit", true, accelGroup, 'q');
+    });
 
-    fileMenu.append(fileOpen);
-    fileMenu.append(fileClose);
-    fileMenu.append(fileReload);
-    fileMenu.append(fileCancelOperation);
-    fileMenu.append(new SeparatorMenuItem());
-    fileMenu.append(fileQuit);
+    editApplyFilterMenuItem.addOnActivate((MenuItem _) { applyFilterFromEntry(); });
 
-    auto editApplyFilter = new MenuItem((MenuItem _) { applyFilterFromEntry(); }, "_Apply Filter", "edit.applyFilter", true, accelGroup, 'f');
-
-    auto editClearFilter = new MenuItem((MenuItem _) {
+    editClearFilterMenuItem.addOnActivate((MenuItem _) {
         auto document = currentDocument();
         if (document is null)
         {
@@ -2066,9 +2086,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
         resetFilterState(document);
         syncToolbarFromCurrentDocument();
         renderRows(document, document.loadedRows);
-    }, "C_lear Filter", "edit.clearFilter", true, accelGroup, 'l');
+    });
 
-    auto editPreferences = new MenuItem((MenuItem _) {
+    editPreferencesMenuItem.addOnActivate((MenuItem _) {
         showPreferencesDialog(
             window,
             prefAutoApplyFilter,
@@ -2083,32 +2103,31 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 () { return currentDocument(); }
             )
         );
-    }, "_Preferences", "edit.preferences", true, accelGroup, ',');
+    });
 
-    auto editResetMetrics = new MenuItem((MenuItem _) {
+    editResetMetricsMenuItem.addOnActivate((MenuItem _) {
         auto document = currentDocument();
         if (document is null)
         {
             return;
         }
         resetPerfMetrics(document);
-    }, "_Reset Metrics", "edit.resetMetrics", true, accelGroup, 'm');
+    });
 
-    editMenu.append(editApplyFilter);
-    editMenu.append(editClearFilter);
-    editMenu.append(new SeparatorMenuItem());
-    editMenu.append(editResetMetrics);
-    editMenu.append(editPreferences);
+    helpShortcutsMenuItem.addOnActivate((MenuItem _) { showShortcutsHelp(window); });
+    helpAboutMenuItem.addOnActivate((MenuItem _) { showAbout(window); });
 
-    auto helpShortcuts = new MenuItem((MenuItem _) { showShortcutsHelp(window); }, "_Keyboard Shortcuts", true);
+    attachMenuAccelerator(fileOpenMenuItem, 'o');
+    attachMenuAccelerator(fileReloadMenuItem, 'r');
+    attachMenuAccelerator(fileCloseMenuItem, 'w');
+    attachMenuAccelerator(fileCancelOperationMenuItem, 'k');
+    attachMenuAccelerator(fileQuitMenuItem, 'q');
+    attachMenuAccelerator(editApplyFilterMenuItem, 'f');
+    attachMenuAccelerator(editClearFilterMenuItem, 'l');
+    attachMenuAccelerator(editPreferencesMenuItem, ',', GdkModifierType.CONTROL_MASK);
+    attachMenuAccelerator(editResetMetricsMenuItem, 'm');
 
-    auto helpAbout = new MenuItem((MenuItem _) { showAbout(window); }, "_About", true);
-
-    helpMenu.append(helpShortcuts);
-    helpMenu.append(new SeparatorMenuItem());
-    helpMenu.append(helpAbout);
-
-    // btnLoad entfernt
+    // Apply persisted splitter orientation/position to any tabs created later.
 
     bindToolbarSignals(
         btnReload,

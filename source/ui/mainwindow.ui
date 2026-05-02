@@ -21,7 +21,41 @@
                     <property name="label">_File</property>
                     <property name="use-underline">True</property>
                     <child type="submenu">
-                      <object class="GtkMenu" id="fileMenu"/>
+                      <object class="GtkMenu" id="fileMenu">
+                        <child>
+                          <object class="GtkMenuItem" id="fileOpenMenuItem">
+                            <property name="label">_Open JSON</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="fileCloseMenuItem">
+                            <property name="label">_Close Current Tab</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="fileReloadMenuItem">
+                            <property name="label">_Reload</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="fileCancelOperationMenuItem">
+                            <property name="label">_Cancel Current Operation</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkSeparatorMenuItem" id="fileSeparator"/>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="fileQuitMenuItem">
+                            <property name="label">_Quit</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                      </object>
                     </child>
                   </object>
                 </child>
@@ -30,7 +64,35 @@
                     <property name="label">_Edit</property>
                     <property name="use-underline">True</property>
                     <child type="submenu">
-                      <object class="GtkMenu" id="editMenu"/>
+                      <object class="GtkMenu" id="editMenu">
+                        <child>
+                          <object class="GtkMenuItem" id="editApplyFilterMenuItem">
+                            <property name="label">_Apply Filter</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="editClearFilterMenuItem">
+                            <property name="label">C_lear Filter</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkSeparatorMenuItem" id="editSeparator"/>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="editResetMetricsMenuItem">
+                            <property name="label">_Reset Metrics</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="editPreferencesMenuItem">
+                            <property name="label">_Preferences</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                      </object>
                     </child>
                   </object>
                 </child>
@@ -39,7 +101,23 @@
                     <property name="label">_Help</property>
                     <property name="use-underline">True</property>
                     <child type="submenu">
-                      <object class="GtkMenu" id="helpMenu"/>
+                      <object class="GtkMenu" id="helpMenu">
+                        <child>
+                          <object class="GtkMenuItem" id="helpShortcutsMenuItem">
+                            <property name="label">_Keyboard Shortcuts</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkSeparatorMenuItem" id="helpSeparator"/>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="helpAboutMenuItem">
+                            <property name="label">_About</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                      </object>
                     </child>
                   </object>
                 </child>
