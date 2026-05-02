@@ -103,80 +103,10 @@
                   </object>
                 </child>
                 <child>
-                  <object class="GtkEntry" id="filterEntry">
-                    <property name="can-focus">True</property>
+                  <object class="GtkBox" id="filterSlot">
+                    <property name="can-focus">False</property>
                     <property name="hexpand">True</property>
-                    <property name="placeholder-text">Filter by filename or SHA1...</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="filterVideo">
-                    <property name="label">V</property>
-                    <property name="can-focus">False</property>
-                    <property name="tooltip-text">Filter to rows with video media metadata</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="filterAudio">
-                    <property name="label">A</property>
-                    <property name="can-focus">False</property>
-                    <property name="tooltip-text">Filter to rows with audio media metadata</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="filterImage">
-                    <property name="label">I</property>
-                    <property name="can-focus">False</property>
-                    <property name="tooltip-text">Filter to rows with image media metadata</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="filterText">
-                    <property name="label">T</property>
-                    <property name="can-focus">False</property>
-                    <property name="tooltip-text">Filter to rows with text/subtitle media metadata</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="filterMediaNot">
-                    <property name="label">NOT</property>
-                    <property name="can-focus">False</property>
-                    <property name="tooltip-text">Invert the selected media-type filters</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="filterFileType">
-                    <property name="label">FT</property>
-                    <property name="can-focus">False</property>
-                    <property name="tooltip-text">Filter to rows with file type signature metadata</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="filterArchive">
-                    <property name="label">AR</property>
-                    <property name="can-focus">False</property>
-                    <property name="tooltip-text">Filter to rows with file archives.</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="filterTorrent">
-                    <property name="label">TO</property>
-                    <property name="can-focus">False</property>
-                    <property name="tooltip-text">Filter to rows with torrent files.</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkButton" id="btnApplyFilter">
-                    <property name="label">Apply Filter</property>
-                    <property name="can-focus">False</property>
-                    <property name="receives-default">False</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkButton" id="btnClearFilter">
-                    <property name="label">Clear Filter</property>
-                    <property name="can-focus">False</property>
-                    <property name="receives-default">False</property>
+                    <property name="orientation">horizontal</property>
                   </object>
                 </child>
                 <child>
