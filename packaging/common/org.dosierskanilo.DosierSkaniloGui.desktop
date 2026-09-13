@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=DosierSkanilo GUI
+Comment=Browse DosierSkanilo JSON data files
+Exec=dosierskanilo-gui %U
+Terminal=false
+Type=Application
+Categories=Utility;GTK;
+MimeType=application/json;

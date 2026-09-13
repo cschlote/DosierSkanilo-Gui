@@ -12,7 +12,7 @@ struct FileOpenDialogCallbacks
 {
     bool delegate() isLoading;
     DocumentTab delegate() currentDocument;
-    DocumentTab delegate(string, bool) openDocumentFromPath;
+    DocumentTab delegate(string, bool, bool) openDocumentFromPath;
     void delegate(DocumentTab, bool) loadDocument;
 }
 
@@ -51,7 +51,7 @@ void chooseAndLoadPath(Window window, FileOpenDialogCallbacks callbacks)
         auto selectedPath = chooser.getFilename();
         if (selectedPath.length > 0)
         {
-            auto document = callbacks.openDocumentFromPath(selectedPath, true);
+            auto document = callbacks.openDocumentFromPath(selectedPath, true, true);
             if (document.loadedRows.length == 0)
             {
                 callbacks.loadDocument(document, true);

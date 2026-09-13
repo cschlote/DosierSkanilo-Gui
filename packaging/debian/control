@@ -1,0 +1,13 @@
+Source: dosierskanilo-gui
+Section: utils
+Priority: optional
+Maintainer: Carsten Schlote <schlote@vahanus.net>
+Build-Depends: debhelper-compat (= 13), ldc, dub, libgtk3-dev, libgstreamer1.0-dev
+Standards-Version: 4.7.0
+Homepage: https://gitlab.vahanus.net/dlang/dosierskanilo-gui
+
+Package: dosierskanilo-gui
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libgtk-3-0, libgstreamer1.0-0
+Description: GTK desktop frontend for DosierSkanilo
+ Browse and filter precomputed DosierSkanilo JSON index files.

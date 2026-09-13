@@ -22,6 +22,7 @@ import gtk.Box;
 import gtk.Button;
 import gtk.AspectFrame;
 import gtk.c.types : Orientation;
+import gtk.c.types : GtkAccelFlags;
 import gtk.CheckButton;
 import gtk.Clipboard;
 import gtk.ComboBoxText;
@@ -44,7 +45,6 @@ import gtk.Range;
 import gtk.Scale;
 import gtk.ScrolledWindow;
 import gtk.Separator;
-import gtk.SeparatorMenuItem;
 import gtk.Spinner;
 import gtk.TextView;
 import gtk.ToggleButton;
@@ -57,6 +57,7 @@ import gtk.TreeViewColumn;
 import gtk.Widget;
 import gtk.Window;
 import gtk.c.types : GtkAlign, GtkIconSize, GtkReliefStyle, GtkShadowType, GtkTreeViewColumnSizing;
+import gdk.c.types : GdkModifierType;
 
 import core.thread : Thread;
 import core.time : MonoTime;
@@ -77,6 +78,7 @@ import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
 import ui.appstate : AppState, loadAppState, saveAppState;
 import ui.builderutils : builderObject;
+import ui.filterbar : loadFilterBarUi;
 import ui.detailpane : DetailPaneCallbacks, bindDetailPaneSignals, loadDetailPaneUi;
 import ui.detailpreview : DetailPreviewCallbacks, bindDetailPreviewSignals, loadDetailPreviewUi;
 import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL_FILE_TYPE, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_INDEX, COL_INDEX_SORT, COL_MEDIA_INFO, DocumentTab, PreviewScaleMode, clampPreviewScaleMode;
@@ -504,24 +506,38 @@ int runMainWindow(string[] args, ref CliOptions cli)
     auto fileMenu = builderObject!Menu(mainBuilder, "main", "fileMenu");
     auto editMenu = builderObject!Menu(mainBuilder, "main", "editMenu");
     auto helpMenu = builderObject!Menu(mainBuilder, "main", "helpMenu");
+    auto recentFilesMenuItem = builderObject!MenuItem(mainBuilder, "main", "recentFilesMenuItem");
     auto content = builderObject!Box(mainBuilder, "main", "content");
     auto separator = builderObject!Separator(mainBuilder, "main", "separator");
     auto toolbar = builderObject!Box(mainBuilder, "main", "toolbar");
+    auto fileOpenMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileOpenMenuItem");
+    auto fileCloseMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileCloseMenuItem");
+    auto fileReloadMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileReloadMenuItem");
+    auto fileCancelOperationMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileCancelOperationMenuItem");
+    auto fileQuitMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileQuitMenuItem");
+    auto editApplyFilterMenuItem = builderObject!MenuItem(mainBuilder, "main", "editApplyFilterMenuItem");
+    auto editClearFilterMenuItem = builderObject!MenuItem(mainBuilder, "main", "editClearFilterMenuItem");
+    auto editResetMetricsMenuItem = builderObject!MenuItem(mainBuilder, "main", "editResetMetricsMenuItem");
+    auto editPreferencesMenuItem = builderObject!MenuItem(mainBuilder, "main", "editPreferencesMenuItem");
+    auto helpShortcutsMenuItem = builderObject!MenuItem(mainBuilder, "main", "helpShortcutsMenuItem");
+    auto helpAboutMenuItem = builderObject!MenuItem(mainBuilder, "main", "helpAboutMenuItem");
     auto btnReload = builderObject!Button(mainBuilder, "main", "btnReload");
     auto btnRelayout = builderObject!Button(mainBuilder, "main", "btnRelayout");
     auto btnCancelLoad = builderObject!Button(mainBuilder, "main", "btnCancelLoad");
     auto loadSpinner = builderObject!Spinner(mainBuilder, "main", "loadSpinner");
-    auto filterEntry = builderObject!Entry(mainBuilder, "main", "filterEntry");
-    auto filterMediaNot = builderObject!CheckButton(mainBuilder, "main", "filterMediaNot");
-    auto filterVideo = builderObject!CheckButton(mainBuilder, "main", "filterVideo");
-    auto filterAudio = builderObject!CheckButton(mainBuilder, "main", "filterAudio");
-    auto filterImage = builderObject!CheckButton(mainBuilder, "main", "filterImage");
-    auto filterText = builderObject!CheckButton(mainBuilder, "main", "filterText");
-    auto filterFileType = builderObject!CheckButton(mainBuilder, "main", "filterFileType");
-    auto filterArchive = builderObject!CheckButton(mainBuilder, "main", "filterArchive");
-    auto filterTorrent = builderObject!CheckButton(mainBuilder, "main", "filterTorrent");
-    auto btnApplyFilter = builderObject!Button(mainBuilder, "main", "btnApplyFilter");
-    auto btnClearFilter = builderObject!Button(mainBuilder, "main", "btnClearFilter");
+    auto filterSlot = builderObject!Box(mainBuilder, "main", "filterSlot");
+    auto filterUi = loadFilterBarUi(filterSlot);
+    auto filterEntry = filterUi.filterEntry;
+    auto filterMediaNot = filterUi.filterMediaNot;
+    auto filterVideo = filterUi.filterVideo;
+    auto filterAudio = filterUi.filterAudio;
+    auto filterImage = filterUi.filterImage;
+    auto filterText = filterUi.filterText;
+    auto filterFileType = filterUi.filterFileType;
+    auto filterArchive = filterUi.filterArchive;
+    auto filterTorrent = filterUi.filterTorrent;
+    auto btnApplyFilter = filterUi.btnApplyFilter;
+    auto btnClearFilter = filterUi.btnClearFilter;
     auto progressBar = builderObject!ProgressBar(mainBuilder, "main", "progressBar");
     auto notebook = builderObject!Notebook(mainBuilder, "main", "notebook");
 
@@ -533,10 +549,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
     bool prefCaseSensitiveFilter = loadedState.prefCaseSensitiveFilter;
     bool prefDetailsBelow = loadedState.prefDetailsBelow;
     bool prefRestoreOpenFiles = loadedState.prefRestoreOpenFiles;
+    string[] recentFilePaths = loadedState.recentFilePaths.dup;
     string externalOpenProgram = loadedState.externalOpenProgram.length > 0 ? loadedState.externalOpenProgram : "xdg-open";
     bool previewVideoAutostart = loadedState.previewVideoAutostart;
     double previewVideoVolume = loadedState.previewVideoVolume < 0.0 ? 0.5
         : loadedState.previewVideoVolume > 1.0 ? 1.0 : loadedState.previewVideoVolume;
+    int recentFileLimit = loadedState.maxRecentFileCount;
+    if (recentFileLimit < 0)
+    {
+        recentFileLimit = 10;
+    }
     bool clearSavedWindowGeometryOnExit;
     bool allowRuntimeStatePersistence = !loadedState.hasWindowSize;
     bool isSyncingToolbarState;
@@ -604,6 +626,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
         }
         return -1;
+    }
+
+    /** Attach a standard application accelerator to one menu item. */
+    void attachMenuAccelerator(MenuItem menuItem, char accelKey, GdkModifierType accelMods = GdkModifierType.CONTROL_MASK)
+    {
+        menuItem.addAccelerator("activate", accelGroup, accelKey, accelMods, GtkAccelFlags.VISIBLE);
     }
 
     /** Normalize a path so duplicate startup entries map to the same document tab. */
@@ -684,7 +712,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto hasCurrentDocument = currentDocument() !is null;
         // pathEntry und btnLoad entfernt
         btnReload.setSensitive(!isLoading && hasCurrentDocument);
+        fileReloadMenuItem.setSensitive(!isLoading && hasCurrentDocument);
         btnCancelLoad.setSensitive(isLoading);
+        fileCancelOperationMenuItem.setSensitive(isLoading);
+        fileCloseMenuItem.setSensitive(!isLoading && hasCurrentDocument);
+        fileOpenMenuItem.setSensitive(!isLoading);
+        fileQuitMenuItem.setSensitive(true);
+        recentFilesMenuItem.setSensitive(!isLoading && recentFilePaths.length > 0);
         filterEntry.setSensitive(!isLoading);
         filterVideo.setSensitive(!isLoading && hasCurrentDocument);
         filterAudio.setSensitive(!isLoading && hasCurrentDocument);
@@ -695,7 +729,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
         filterArchive.setSensitive(!isLoading && hasCurrentDocument);
         filterTorrent.setSensitive(!isLoading && hasCurrentDocument);
         btnApplyFilter.setSensitive(!isLoading && hasCurrentDocument);
+        editApplyFilterMenuItem.setSensitive(!isLoading && hasCurrentDocument);
         btnClearFilter.setSensitive(!isLoading && hasCurrentDocument);
+        editClearFilterMenuItem.setSensitive(!isLoading && hasCurrentDocument);
+        editPreferencesMenuItem.setSensitive(!isLoading);
+        editResetMetricsMenuItem.setSensitive(hasCurrentDocument);
+        helpShortcutsMenuItem.setSensitive(true);
+        helpAboutMenuItem.setSensitive(true);
     }
 
     /** Mirror the active tab's path and filter settings back into the shared toolbar. */
@@ -747,6 +787,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailPreviewFitHeightButton.setActive(document.previewScaleMode == PreviewScaleMode.fitHeight);
         document.detailPreviewCenterButton.setActive(document.previewScaleMode == PreviewScaleMode.center);
         document.detailPreviewCoverButton.setActive(document.previewScaleMode == PreviewScaleMode.cover);
+        if (document.detailPreviewVolumeScale !is null)
+        {
+            document.detailPreviewVolumeScale.setValue(document.previewVideoVolume);
+        }
         isSyncingToolbarState = false;
     }
 
@@ -759,6 +803,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.detailPreviewFitHeightButton.setActive(document.previewScaleMode == PreviewScaleMode.fitHeight);
         document.detailPreviewCenterButton.setActive(document.previewScaleMode == PreviewScaleMode.center);
         document.detailPreviewCoverButton.setActive(document.previewScaleMode == PreviewScaleMode.cover);
+        if (document.detailPreviewVolumeScale !is null)
+        {
+            document.detailPreviewVolumeScale.setValue(document.previewVideoVolume);
+        }
         isSyncingToolbarState = false;
     }
 
@@ -799,6 +847,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             (DocumentTab target, bool resizable) { setTableColumnsResizable(target, resizable); }
         );
     }
+
 
     /** Publish a global busy state while a tab-specific worker is active. */
     void setLoadingState(DocumentTab document, bool loading, string message = "")
@@ -969,7 +1018,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     void delegate(DocumentTab) updateSelectedRowDetails;
     void delegate(string, string, DocumentTab) copyTextToClipboard;
-    DocumentTab delegate(string, bool) openDocumentFromPath;
+    DocumentTab delegate(string, bool, bool) openDocumentFromPath;
     void delegate(DocumentTab) applyFilterForDocument;
     void delegate(DocumentTab, bool) loadDocument;
 
@@ -1131,11 +1180,17 @@ int runMainWindow(string[] args, ref CliOptions cli)
         state.externalOpenProgram = externalOpenProgram;
         state.previewScaleMode = cast(int) previewScaleMode;
         state.previewVideoAutostart = previewVideoAutostart;
-        state.previewVideoVolume = previewVideoVolume;
+        state.recentFilePaths = recentFilePaths;
+        state.maxRecentFileCount = recentFileLimit;
         state.splitPositionPreview = splitPositionPreview;
         state.hasSplitPositionPreview = splitPositionPreview > 0;
 
         auto document = currentDocument();
+        state.previewVideoVolume = document is null
+            ? previewVideoVolume
+            : document.detailPreviewVolumeScale is null
+                ? document.previewVideoVolume
+                : document.detailPreviewVolumeScale.getValue();
         if (document !is null)
         {
             auto currentOrientation = document.split.getOrientation();
@@ -1224,6 +1279,83 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.status.setText(format("Failed to persist app state: %s", ex.msg));
             }
         }
+    }
+
+    /** Keep the in-memory recent-files list within the configured size limit. */
+    void enforceRecentFileLimit()
+    {
+        if (recentFileLimit <= 0)
+        {
+            recentFilePaths.length = 0;
+            return;
+        }
+
+        if (recentFilePaths.length > recentFileLimit)
+        {
+            recentFilePaths = recentFilePaths[0 .. recentFileLimit];
+        }
+    }
+
+    /** Rebuild the recent-files submenu from the current in-memory list. */
+    void refreshRecentFilesMenu()
+    {
+        auto menu = new Menu();
+        if (recentFilePaths.length == 0)
+        {
+            auto emptyItem = new MenuItem("No recently used files", false);
+            emptyItem.setSensitive(false);
+            menu.append(emptyItem);
+        }
+        else
+        {
+            foreach (idx, path; recentFilePaths)
+            {
+                auto recentPath = path;
+                auto label = format("%s. %s", idx + 1, recentPath);
+                menu.append(new MenuItem((MenuItem _) {
+                    auto document = openDocumentFromPath(recentPath, true, true);
+                    if (document.loadedRows.length == 0)
+                    {
+                        loadDocument(document, true);
+                    }
+                }, label, false));
+            }
+        }
+
+        recentFilesMenuItem.setSubmenu(menu);
+        recentFilesMenuItem.setSensitive(!isLoading && recentFilePaths.length > 0);
+    }
+
+    /** Move one file path to the top of the recent-files list and persist it. */
+    void noteRecentFile(string filePath)
+    {
+        auto normalizedPath = normalizeDocumentPath(filePath);
+        if (normalizedPath.length == 0)
+        {
+            return;
+        }
+
+        foreach (idx, existingPath; recentFilePaths)
+        {
+            if (existingPath == normalizedPath)
+            {
+                recentFilePaths = recentFilePaths[0 .. idx] ~ recentFilePaths[idx + 1 .. $];
+                break;
+            }
+        }
+
+        recentFilePaths = [normalizedPath] ~ recentFilePaths;
+        enforceRecentFileLimit();
+        refreshRecentFilesMenu();
+        persistCurrentState(clearSavedWindowGeometryOnExit);
+    }
+
+    /** Clear the recent-files list, rebuild the menu, and save the change. */
+    void clearRecentFiles()
+    {
+        recentFilePaths.length = 0;
+        refreshRecentFilesMenu();
+        persistCurrentState(clearSavedWindowGeometryOnExit);
     }
 
     /** Re-render one document's row set into its list model in GTK-friendly batches. */
@@ -1565,7 +1697,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 continue;
             }
 
-            auto document = openDocumentFromPath(nextPath, false);
+            auto document = openDocumentFromPath(nextPath, false, false);
             loadDocument(document, true);
             return;
         }
@@ -1583,7 +1715,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     }
 
     /** Open a document in a tab, selecting it optionally, without forcing a reload. */
-    openDocumentFromPath = (string filePath, bool selectTab) {
+    openDocumentFromPath = (string filePath, bool selectTab, bool addToRecent) {
         auto normalizedPath = normalizeDocumentPath(filePath);
         auto document = findDocumentByPath(normalizedPath);
         if (document is null)
@@ -1601,6 +1733,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
         else if (selectTab)
         {
             notebook.setCurrentPage(indexOfDocument(document));
+        }
+
+        if (addToRecent)
+        {
+            noteRecentFile(normalizedPath);
         }
 
         syncToolbarFromCurrentDocument();
@@ -1724,7 +1861,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         matchesMediaInfo = negateMediaFilter ? !matchesMediaInfo : matchesMediaInfo;
                         auto matchesArchive = (requireArchive && row.hasArchive);
                         auto matchesTorrent = (requireTorrent && row.hasTorrent);
-                        auto keepRow = matchesFileType || matchesMediaInfo || matchesArchive || matchesTorrent;
+                        auto hasMediaRequirements = requireVideo || requireAudio || requireImage || requireText;
+                        auto hasOtherRequirements = requireFileType || requireArchive || requireTorrent;
+                        auto matchesOtherRequirements = matchesFileType || matchesArchive || matchesTorrent;
+                        auto keepRow =
+                            (!hasMediaRequirements || matchesMediaInfo) &&
+                            (!hasOtherRequirements || matchesOtherRequirements);
                         if (keepRow)
                         {
                             mediaFiltered.put(row);
@@ -1980,21 +2122,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
         setLoadingState(busyDocument, false, "Operation cancelled. Background result will be discarded.");
     }
 
-    // Apply persisted splitter orientation/position to any tabs created later.
-
-    auto fileOpen = new MenuItem((MenuItem _) {
+    fileOpenMenuItem.addOnActivate((MenuItem _) {
         chooseAndLoadPath(
             window,
             FileOpenDialogCallbacks(
                 () { return isLoading; },
                 () { return currentDocument(); },
-                (string filePath, bool selectTab) { return openDocumentFromPath(filePath, selectTab); },
+                (string filePath, bool selectTab, bool addToRecent) { return openDocumentFromPath(filePath, selectTab, addToRecent); },
                 (DocumentTab document, bool selectTab) { loadDocument(document, selectTab); }
             )
         );
-    }, "_Open JSON", "file.open", true, accelGroup, 'o');
+    });
 
-    auto fileReload = new MenuItem((MenuItem _) {
+    fileReloadMenuItem.addOnActivate((MenuItem _) {
         reloadCurrentDocument(DocumentActionCallbacks(
             () { return currentDocument(); },
             () { return notebook.getCurrentPage(); },
@@ -2008,9 +2148,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
             () { return clearSavedWindowGeometryOnExit; },
             (DocumentTab document, bool fitHorizontalSplitAfterLoad) { loadDocument(document, fitHorizontalSplitAfterLoad); }
         ));
-    }, "_Reload", "file.reload", true, accelGroup, 'r');
+    });
 
-    auto fileClose = new MenuItem((MenuItem _) {
+    fileCloseMenuItem.addOnActivate((MenuItem _) {
         closeCurrentDocument(DocumentActionCallbacks(
             () { return currentDocument(); },
             () { return notebook.getCurrentPage(); },
@@ -2024,25 +2164,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
             () { return clearSavedWindowGeometryOnExit; },
             (DocumentTab document, bool fitHorizontalSplitAfterLoad) { loadDocument(document, fitHorizontalSplitAfterLoad); }
         ));
-    }, "_Close Current Tab", "file.close", true, accelGroup, 'w');
+    });
 
-    auto fileCancelOperation = new MenuItem((MenuItem _) { cancelPendingLoad(); }, "_Cancel Current Operation", "file.cancelOperation", true, accelGroup, 'k');
+    fileCancelOperationMenuItem.addOnActivate((MenuItem _) { cancelPendingLoad(); });
 
-    auto fileQuit = new MenuItem((MenuItem _) {
+    fileQuitMenuItem.addOnActivate((MenuItem _) {
         persistCurrentState(clearSavedWindowGeometryOnExit);
         Main.quit();
-    }, "_Quit", "file.quit", true, accelGroup, 'q');
+    });
 
-    fileMenu.append(fileOpen);
-    fileMenu.append(fileClose);
-    fileMenu.append(fileReload);
-    fileMenu.append(fileCancelOperation);
-    fileMenu.append(new SeparatorMenuItem());
-    fileMenu.append(fileQuit);
+    editApplyFilterMenuItem.addOnActivate((MenuItem _) { applyFilterFromEntry(); });
 
-    auto editApplyFilter = new MenuItem((MenuItem _) { applyFilterFromEntry(); }, "_Apply Filter", "edit.applyFilter", true, accelGroup, 'f');
-
-    auto editClearFilter = new MenuItem((MenuItem _) {
+    editClearFilterMenuItem.addOnActivate((MenuItem _) {
         auto document = currentDocument();
         if (document is null)
         {
@@ -2051,49 +2184,53 @@ int runMainWindow(string[] args, ref CliOptions cli)
         resetFilterState(document);
         syncToolbarFromCurrentDocument();
         renderRows(document, document.loadedRows);
-    }, "C_lear Filter", "edit.clearFilter", true, accelGroup, 'l');
+    });
 
-    auto editPreferences = new MenuItem((MenuItem _) {
+    editPreferencesMenuItem.addOnActivate((MenuItem _) {
         showPreferencesDialog(
             window,
             prefAutoApplyFilter,
             prefCaseSensitiveFilter,
             prefDetailsBelow,
             prefRestoreOpenFiles,
+            recentFileLimit,
             externalOpenProgram,
             clearSavedWindowGeometryOnExit,
             PreferencesDialogCallbacks(
                 () { applyDetailsPanePreferenceToAll(); },
                 (bool clearGeometry) { persistCurrentState(clearGeometry); },
-                () { return currentDocument(); }
+                () { return currentDocument(); },
+                () { clearRecentFiles(); }
             )
         );
-    }, "_Preferences", "edit.preferences", true, accelGroup, ',');
+    });
 
-    auto editResetMetrics = new MenuItem((MenuItem _) {
+    editResetMetricsMenuItem.addOnActivate((MenuItem _) {
         auto document = currentDocument();
         if (document is null)
         {
             return;
         }
         resetPerfMetrics(document);
-    }, "_Reset Metrics", "edit.resetMetrics", true, accelGroup, 'm');
+    });
 
-    editMenu.append(editApplyFilter);
-    editMenu.append(editClearFilter);
-    editMenu.append(new SeparatorMenuItem());
-    editMenu.append(editResetMetrics);
-    editMenu.append(editPreferences);
+    helpShortcutsMenuItem.addOnActivate((MenuItem _) { showShortcutsHelp(window); });
+    helpAboutMenuItem.addOnActivate((MenuItem _) { showAbout(window); });
 
-    auto helpShortcuts = new MenuItem((MenuItem _) { showShortcutsHelp(window); }, "_Keyboard Shortcuts", true);
+    attachMenuAccelerator(fileOpenMenuItem, 'o');
+    attachMenuAccelerator(fileReloadMenuItem, 'r');
+    attachMenuAccelerator(fileCloseMenuItem, 'w');
+    attachMenuAccelerator(fileCancelOperationMenuItem, 'k');
+    attachMenuAccelerator(fileQuitMenuItem, 'q');
+    attachMenuAccelerator(editApplyFilterMenuItem, 'f');
+    attachMenuAccelerator(editClearFilterMenuItem, 'l');
+    attachMenuAccelerator(editPreferencesMenuItem, ',', GdkModifierType.CONTROL_MASK);
+    attachMenuAccelerator(editResetMetricsMenuItem, 'm');
 
-    auto helpAbout = new MenuItem((MenuItem _) { showAbout(window); }, "_About", true);
+    enforceRecentFileLimit();
+    refreshRecentFilesMenu();
 
-    helpMenu.append(helpShortcuts);
-    helpMenu.append(new SeparatorMenuItem());
-    helpMenu.append(helpAbout);
-
-    // btnLoad entfernt
+    // Apply persisted splitter orientation/position to any tabs created later.
 
     bindToolbarSignals(
         btnReload,

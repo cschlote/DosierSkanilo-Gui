@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.dosierskanilo.DosierSkaniloGui</id>
+  <name>DosierSkanilo GUI</name>
+  <summary>Browse DosierSkanilo JSON data files</summary>
+  <metadata_license>CC-BY-4.0</metadata_license>
+  <project_license>CC-BY-NC-SA-4.0</project_license>
+  <url type="homepage">https://gitlab.vahanus.net/dlang/dosierskanilo-gui</url>
+  <description><p>GTK desktop frontend for browsing and filtering DosierSkanilo JSON indexes.</p></description>
+  <launchable type="desktop-id">org.dosierskanilo.DosierSkaniloGui.desktop</launchable>
+</component>

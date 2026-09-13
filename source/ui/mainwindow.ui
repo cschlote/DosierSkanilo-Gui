@@ -21,7 +21,50 @@
                     <property name="label">_File</property>
                     <property name="use-underline">True</property>
                     <child type="submenu">
-                      <object class="GtkMenu" id="fileMenu"/>
+                      <object class="GtkMenu" id="fileMenu">
+                        <child>
+                          <object class="GtkMenuItem" id="fileOpenMenuItem">
+                            <property name="label">_Open JSON</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="fileCloseMenuItem">
+                            <property name="label">_Close Current Tab</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="fileReloadMenuItem">
+                            <property name="label">_Reload</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="fileCancelOperationMenuItem">
+                            <property name="label">_Cancel Current Operation</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkSeparatorMenuItem" id="fileSeparator"/>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="recentFilesMenuItem">
+                            <property name="label">_Recently Used Files</property>
+                            <property name="use-underline">True</property>
+                            <child type="submenu">
+                              <object class="GtkMenu" id="recentFilesMenu"/>
+                            </child>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="fileQuitMenuItem">
+                            <property name="label">_Quit</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                      </object>
                     </child>
                   </object>
                 </child>
@@ -30,7 +73,35 @@
                     <property name="label">_Edit</property>
                     <property name="use-underline">True</property>
                     <child type="submenu">
-                      <object class="GtkMenu" id="editMenu"/>
+                      <object class="GtkMenu" id="editMenu">
+                        <child>
+                          <object class="GtkMenuItem" id="editApplyFilterMenuItem">
+                            <property name="label">_Apply Filter</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="editClearFilterMenuItem">
+                            <property name="label">C_lear Filter</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkSeparatorMenuItem" id="editSeparator"/>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="editResetMetricsMenuItem">
+                            <property name="label">_Reset Metrics</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="editPreferencesMenuItem">
+                            <property name="label">_Preferences</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                      </object>
                     </child>
                   </object>
                 </child>
@@ -39,7 +110,23 @@
                     <property name="label">_Help</property>
                     <property name="use-underline">True</property>
                     <child type="submenu">
-                      <object class="GtkMenu" id="helpMenu"/>
+                      <object class="GtkMenu" id="helpMenu">
+                        <child>
+                          <object class="GtkMenuItem" id="helpShortcutsMenuItem">
+                            <property name="label">_Keyboard Shortcuts</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkSeparatorMenuItem" id="helpSeparator"/>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="helpAboutMenuItem">
+                            <property name="label">_About</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                      </object>
                     </child>
                   </object>
                 </child>
@@ -103,80 +190,10 @@
                   </object>
                 </child>
                 <child>
-                  <object class="GtkEntry" id="filterEntry">
-                    <property name="can-focus">True</property>
+                  <object class="GtkBox" id="filterSlot">
+                    <property name="can-focus">False</property>
                     <property name="hexpand">True</property>
-                    <property name="placeholder-text">Filter by filename or SHA1...</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="filterVideo">
-                    <property name="label">V</property>
-                    <property name="can-focus">False</property>
-                    <property name="tooltip-text">Filter to rows with video media metadata</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="filterAudio">
-                    <property name="label">A</property>
-                    <property name="can-focus">False</property>
-                    <property name="tooltip-text">Filter to rows with audio media metadata</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="filterImage">
-                    <property name="label">I</property>
-                    <property name="can-focus">False</property>
-                    <property name="tooltip-text">Filter to rows with image media metadata</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="filterText">
-                    <property name="label">T</property>
-                    <property name="can-focus">False</property>
-                    <property name="tooltip-text">Filter to rows with text/subtitle media metadata</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="filterMediaNot">
-                    <property name="label">NOT</property>
-                    <property name="can-focus">False</property>
-                    <property name="tooltip-text">Invert the selected media-type filters</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="filterFileType">
-                    <property name="label">FT</property>
-                    <property name="can-focus">False</property>
-                    <property name="tooltip-text">Filter to rows with file type signature metadata</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="filterArchive">
-                    <property name="label">AR</property>
-                    <property name="can-focus">False</property>
-                    <property name="tooltip-text">Filter to rows with file archives.</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkCheckButton" id="filterTorrent">
-                    <property name="label">TO</property>
-                    <property name="can-focus">False</property>
-                    <property name="tooltip-text">Filter to rows with torrent files.</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkButton" id="btnApplyFilter">
-                    <property name="label">Apply Filter</property>
-                    <property name="can-focus">False</property>
-                    <property name="receives-default">False</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkButton" id="btnClearFilter">
-                    <property name="label">Clear Filter</property>
-                    <property name="can-focus">False</property>
-                    <property name="receives-default">False</property>
+                    <property name="orientation">horizontal</property>
                   </object>
                 </child>
                 <child>

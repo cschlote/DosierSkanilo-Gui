@@ -7,6 +7,8 @@ import gtk.Builder;
 import gtk.CheckButton;
 import gtk.Entry;
 import gtk.Label;
+import gtk.SpinButton;
+import gtk.Button;
 import gtk.Window;
 import gtk.c.types : DialogFlags, ResponseType;
 
@@ -19,6 +21,7 @@ struct PreferencesDialogCallbacks
     void delegate() applyDetailsPanePreferenceToAll;
     void delegate(bool) persistCurrentState;
     DocumentTab delegate() currentDocument;
+    void delegate() clearRecentFiles;
 }
 
 /** Widgets from the preferences dialog layout. */
@@ -29,6 +32,8 @@ struct PreferencesDialogUi
     CheckButton optCaseSensitive;
     CheckButton optDetailsBelow;
     CheckButton optRestoreOpenFiles;
+    SpinButton spinRecentFileCount;
+    Button btnClearRecentFiles;
     Label lblExternalOpenProgram;
     Entry entryExternalOpenProgram;
     CheckButton optClearWindowGeometry;
@@ -50,6 +55,13 @@ PreferencesDialogUi loadPreferencesDialogUi()
     ui.optCaseSensitive = builderObject!CheckButton(prefsBuilder, "prefs", "optCaseSensitive");
     ui.optDetailsBelow = builderObject!CheckButton(prefsBuilder, "prefs", "optDetailsBelow");
     ui.optRestoreOpenFiles = builderObject!CheckButton(prefsBuilder, "prefs", "optRestoreOpenFiles");
+    auto recentFilesSpinSlot = builderObject!Box(prefsBuilder, "prefs", "recentFilesSpinSlot");
+    ui.spinRecentFileCount = new SpinButton(0, 100, 1);
+    ui.spinRecentFileCount.setNumeric(true);
+    ui.spinRecentFileCount.setWidthChars(3);
+    ui.spinRecentFileCount.setValue(10);
+    recentFilesSpinSlot.packStart(ui.spinRecentFileCount, false, false, 0);
+    ui.btnClearRecentFiles = builderObject!Button(prefsBuilder, "prefs", "btnClearRecentFiles");
     ui.lblExternalOpenProgram = builderObject!Label(prefsBuilder, "prefs", "lblExternalOpenProgram");
     ui.entryExternalOpenProgram = builderObject!Entry(prefsBuilder, "prefs", "entryExternalOpenProgram");
     ui.optClearWindowGeometry = builderObject!CheckButton(prefsBuilder, "prefs", "optClearWindowGeometry");
@@ -64,6 +76,7 @@ PreferencesDialogUi loadPreferencesDialogUi()
  *     prefCaseSensitiveFilter = In/out flag for case-sensitive filtering.
  *     prefDetailsBelow = In/out flag that controls the details pane placement.
  *     prefRestoreOpenFiles = In/out flag for restoring previously open files.
+ *     recentFileCountLimit = In/out maximum count for the recently used file list.
  *     externalOpenProgram = In/out external program used for opening files.
  *     clearSavedWindowGeometryOnExit = In/out flag that controls whether the
  *         saved window geometry should be cleared on exit.
@@ -77,6 +90,7 @@ void showPreferencesDialog(
     ref bool prefCaseSensitiveFilter,
     ref bool prefDetailsBelow,
     ref bool prefRestoreOpenFiles,
+    ref int recentFileCountLimit,
     ref string externalOpenProgram,
     ref bool clearSavedWindowGeometryOnExit,
     PreferencesDialogCallbacks callbacks
@@ -97,6 +111,8 @@ void showPreferencesDialog(
     auto optCaseSensitive = prefsUi.optCaseSensitive;
     auto optDetailsBelow = prefsUi.optDetailsBelow;
     auto optRestoreOpenFiles = prefsUi.optRestoreOpenFiles;
+    auto spinRecentFileCount = prefsUi.spinRecentFileCount;
+    auto btnClearRecentFiles = prefsUi.btnClearRecentFiles;
     auto entryExternalOpenProgram = prefsUi.entryExternalOpenProgram;
     auto optClearWindowGeometry = prefsUi.optClearWindowGeometry;
 
@@ -105,7 +121,12 @@ void showPreferencesDialog(
     optCaseSensitive.setActive(prefCaseSensitiveFilter);
     optDetailsBelow.setActive(prefDetailsBelow);
     optRestoreOpenFiles.setActive(prefRestoreOpenFiles);
+    spinRecentFileCount.setValue(recentFileCountLimit);
     entryExternalOpenProgram.setText(externalOpenProgram);
+
+    btnClearRecentFiles.addOnClicked((Button _) {
+        callbacks.clearRecentFiles();
+    });
 
     contentArea.packStart(prefsBox, true, true, 0);
 
@@ -117,6 +138,7 @@ void showPreferencesDialog(
         prefAutoApplyFilter = optAutoApply.getActive();
         prefCaseSensitiveFilter = optCaseSensitive.getActive();
         prefRestoreOpenFiles = optRestoreOpenFiles.getActive();
+        recentFileCountLimit = spinRecentFileCount.getValueAsInt();
         auto oldDetailsBelow = prefDetailsBelow;
         prefDetailsBelow = optDetailsBelow.getActive();
         if (prefDetailsBelow != oldDetailsBelow)
