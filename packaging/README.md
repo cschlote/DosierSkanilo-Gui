@@ -13,8 +13,10 @@ The CLI/backend is packaged separately as `dosierskanilo` and
 `dosierskanilo-git`. There is intentionally no umbrella package.
 
 The latest tagged release is `0.6.0` (`v0.6.0`). Replace checksum placeholders
-before publishing packages. The GUI requires the `dosierskanilo` backend and
-GTK3/GTKD runtime libraries. Its source currently declares `CC-BY-NC-SA 4.0`,
+before publishing packages. The GUI compiles the `DosierSkanilo` D modules into
+the executable and requires GTK3/GTKD runtime libraries; it does not require
+the `dosierskanilo` CLI package at runtime. Its source currently declares
+`CC-BY-NC-SA 4.0`,
 but no repository license file is present; add the canonical license text before
 publishing binary packages.
 

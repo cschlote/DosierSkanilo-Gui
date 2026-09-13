@@ -10,7 +10,6 @@ BuildRequires:  dub
 BuildRequires:  gtk3-devel
 Requires:       gtk3
 Requires:       gstreamer1
-Requires:       dosierskanilo
 
 %description
 GTK desktop frontend for browsing and filtering DosierSkanilo JSON indexes.

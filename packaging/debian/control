@@ -8,6 +8,6 @@ Homepage: https://gitlab.vahanus.net/dlang/dosierskanilo-gui
 
 Package: dosierskanilo-gui
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, dosierskanilo, libgtk-3-0, libgstreamer1.0-0
+Depends: ${shlibs:Depends}, ${misc:Depends}, libgtk-3-0, libgstreamer1.0-0
 Description: GTK desktop frontend for DosierSkanilo
  Browse and filter precomputed DosierSkanilo JSON index files.
