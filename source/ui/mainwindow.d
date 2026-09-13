@@ -1861,7 +1861,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         matchesMediaInfo = negateMediaFilter ? !matchesMediaInfo : matchesMediaInfo;
                         auto matchesArchive = (requireArchive && row.hasArchive);
                         auto matchesTorrent = (requireTorrent && row.hasTorrent);
-                        auto keepRow = matchesFileType || matchesMediaInfo || matchesArchive || matchesTorrent;
+                        auto hasMediaRequirements = requireVideo || requireAudio || requireImage || requireText;
+                        auto hasOtherRequirements = requireFileType || requireArchive || requireTorrent;
+                        auto matchesOtherRequirements = matchesFileType || matchesArchive || matchesTorrent;
+                        auto keepRow =
+                            (!hasMediaRequirements || matchesMediaInfo) &&
+                            (!hasOtherRequirements || matchesOtherRequirements);
                         if (keepRow)
                         {
                             mediaFiltered.put(row);
