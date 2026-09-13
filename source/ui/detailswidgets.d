@@ -278,6 +278,11 @@ void stopVideoPreview(DocumentTab document)
     {
         document.previewVideoPlayer.setState(GstState.NULL);
     }
+
+    document.previewVideoPlayer = null;
+    document.previewVideoSink = null;
+    document.previewVideoOverlay = null;
+    document.detailPreviewVideoSinkWidget = null;
 }
 
 /** Resolve the GtkWidget exposed by gtksink. */
