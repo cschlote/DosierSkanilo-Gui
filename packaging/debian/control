@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: Carsten Schlote <schlote@vahanus.net>
 Build-Depends: debhelper-compat (= 13), ldc, dub, libgtk3-dev, libgstreamer1.0-dev
 Standards-Version: 4.7.0
-Homepage: https://github.com/cschlote/DosierSkanilo-Gui
+Homepage: https://gitlab.vahanus.net/dlang/dosierskanilo-gui
 
 Package: dosierskanilo-gui
 Architecture: any

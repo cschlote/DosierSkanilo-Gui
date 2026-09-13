@@ -15,5 +15,5 @@ modules:
       - install -Dm755 build/bin/dosierskanilo-gui /app/bin/dosierskanilo-gui
     sources:
       - type: archive
-        url: https://github.com/cschlote/DosierSkanilo-Gui/archive/refs/tags/v0.6.0.tar.gz
+        url: https://gitlab.vahanus.net/dlang/dosierskanilo-gui/-/archive/v0.6.0/dosierskanilo-gui-v0.6.0.tar.gz
         sha256: REPLACE_WITH_RELEASE_ARCHIVE_HASH

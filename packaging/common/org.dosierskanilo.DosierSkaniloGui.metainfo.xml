@@ -5,7 +5,7 @@
   <summary>Browse DosierSkanilo JSON data files</summary>
   <metadata_license>CC-BY-4.0</metadata_license>
   <project_license>CC-BY-NC-SA-4.0</project_license>
-  <url type="homepage">https://github.com/cschlote/DosierSkanilo-Gui</url>
+  <url type="homepage">https://gitlab.vahanus.net/dlang/dosierskanilo-gui</url>
   <description><p>GTK desktop frontend for browsing and filtering DosierSkanilo JSON indexes.</p></description>
   <launchable type="desktop-id">org.dosierskanilo.DosierSkaniloGui.desktop</launchable>
 </component>
