@@ -506,6 +506,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     auto fileMenu = builderObject!Menu(mainBuilder, "main", "fileMenu");
     auto editMenu = builderObject!Menu(mainBuilder, "main", "editMenu");
     auto helpMenu = builderObject!Menu(mainBuilder, "main", "helpMenu");
+    auto recentFilesMenuItem = builderObject!MenuItem(mainBuilder, "main", "recentFilesMenuItem");
     auto content = builderObject!Box(mainBuilder, "main", "content");
     auto separator = builderObject!Separator(mainBuilder, "main", "separator");
     auto toolbar = builderObject!Box(mainBuilder, "main", "toolbar");
@@ -548,10 +549,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
     bool prefCaseSensitiveFilter = loadedState.prefCaseSensitiveFilter;
     bool prefDetailsBelow = loadedState.prefDetailsBelow;
     bool prefRestoreOpenFiles = loadedState.prefRestoreOpenFiles;
+    string[] recentFilePaths = loadedState.recentFilePaths.dup;
     string externalOpenProgram = loadedState.externalOpenProgram.length > 0 ? loadedState.externalOpenProgram : "xdg-open";
     bool previewVideoAutostart = loadedState.previewVideoAutostart;
     double previewVideoVolume = loadedState.previewVideoVolume < 0.0 ? 0.5
         : loadedState.previewVideoVolume > 1.0 ? 1.0 : loadedState.previewVideoVolume;
+    int recentFileLimit = loadedState.maxRecentFileCount;
+    if (recentFileLimit < 0)
+    {
+        recentFileLimit = 10;
+    }
     bool clearSavedWindowGeometryOnExit;
     bool allowRuntimeStatePersistence = !loadedState.hasWindowSize;
     bool isSyncingToolbarState;
@@ -711,6 +718,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         fileCloseMenuItem.setSensitive(!isLoading && hasCurrentDocument);
         fileOpenMenuItem.setSensitive(!isLoading);
         fileQuitMenuItem.setSensitive(true);
+        recentFilesMenuItem.setSensitive(!isLoading && recentFilePaths.length > 0);
         filterEntry.setSensitive(!isLoading);
         filterVideo.setSensitive(!isLoading && hasCurrentDocument);
         filterAudio.setSensitive(!isLoading && hasCurrentDocument);
@@ -839,6 +847,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             (DocumentTab target, bool resizable) { setTableColumnsResizable(target, resizable); }
         );
     }
+
 
     /** Publish a global busy state while a tab-specific worker is active. */
     void setLoadingState(DocumentTab document, bool loading, string message = "")
@@ -1009,7 +1018,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     void delegate(DocumentTab) updateSelectedRowDetails;
     void delegate(string, string, DocumentTab) copyTextToClipboard;
-    DocumentTab delegate(string, bool) openDocumentFromPath;
+    DocumentTab delegate(string, bool, bool) openDocumentFromPath;
     void delegate(DocumentTab) applyFilterForDocument;
     void delegate(DocumentTab, bool) loadDocument;
 
@@ -1171,6 +1180,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         state.externalOpenProgram = externalOpenProgram;
         state.previewScaleMode = cast(int) previewScaleMode;
         state.previewVideoAutostart = previewVideoAutostart;
+        state.recentFilePaths = recentFilePaths;
+        state.maxRecentFileCount = recentFileLimit;
         state.splitPositionPreview = splitPositionPreview;
         state.hasSplitPositionPreview = splitPositionPreview > 0;
 
@@ -1268,6 +1279,83 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.status.setText(format("Failed to persist app state: %s", ex.msg));
             }
         }
+    }
+
+    /** Keep the in-memory recent-files list within the configured size limit. */
+    void enforceRecentFileLimit()
+    {
+        if (recentFileLimit <= 0)
+        {
+            recentFilePaths.length = 0;
+            return;
+        }
+
+        if (recentFilePaths.length > recentFileLimit)
+        {
+            recentFilePaths = recentFilePaths[0 .. recentFileLimit];
+        }
+    }
+
+    /** Rebuild the recent-files submenu from the current in-memory list. */
+    void refreshRecentFilesMenu()
+    {
+        auto menu = new Menu();
+        if (recentFilePaths.length == 0)
+        {
+            auto emptyItem = new MenuItem("No recently used files", false);
+            emptyItem.setSensitive(false);
+            menu.append(emptyItem);
+        }
+        else
+        {
+            foreach (idx, path; recentFilePaths)
+            {
+                auto recentPath = path;
+                auto label = format("%s. %s", idx + 1, recentPath);
+                menu.append(new MenuItem((MenuItem _) {
+                    auto document = openDocumentFromPath(recentPath, true, true);
+                    if (document.loadedRows.length == 0)
+                    {
+                        loadDocument(document, true);
+                    }
+                }, label, false));
+            }
+        }
+
+        recentFilesMenuItem.setSubmenu(menu);
+        recentFilesMenuItem.setSensitive(!isLoading && recentFilePaths.length > 0);
+    }
+
+    /** Move one file path to the top of the recent-files list and persist it. */
+    void noteRecentFile(string filePath)
+    {
+        auto normalizedPath = normalizeDocumentPath(filePath);
+        if (normalizedPath.length == 0)
+        {
+            return;
+        }
+
+        foreach (idx, existingPath; recentFilePaths)
+        {
+            if (existingPath == normalizedPath)
+            {
+                recentFilePaths = recentFilePaths[0 .. idx] ~ recentFilePaths[idx + 1 .. $];
+                break;
+            }
+        }
+
+        recentFilePaths = [normalizedPath] ~ recentFilePaths;
+        enforceRecentFileLimit();
+        refreshRecentFilesMenu();
+        persistCurrentState(clearSavedWindowGeometryOnExit);
+    }
+
+    /** Clear the recent-files list, rebuild the menu, and save the change. */
+    void clearRecentFiles()
+    {
+        recentFilePaths.length = 0;
+        refreshRecentFilesMenu();
+        persistCurrentState(clearSavedWindowGeometryOnExit);
     }
 
     /** Re-render one document's row set into its list model in GTK-friendly batches. */
@@ -1609,7 +1697,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 continue;
             }
 
-            auto document = openDocumentFromPath(nextPath, false);
+            auto document = openDocumentFromPath(nextPath, false, false);
             loadDocument(document, true);
             return;
         }
@@ -1627,7 +1715,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     }
 
     /** Open a document in a tab, selecting it optionally, without forcing a reload. */
-    openDocumentFromPath = (string filePath, bool selectTab) {
+    openDocumentFromPath = (string filePath, bool selectTab, bool addToRecent) {
         auto normalizedPath = normalizeDocumentPath(filePath);
         auto document = findDocumentByPath(normalizedPath);
         if (document is null)
@@ -1645,6 +1733,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
         else if (selectTab)
         {
             notebook.setCurrentPage(indexOfDocument(document));
+        }
+
+        if (addToRecent)
+        {
+            noteRecentFile(normalizedPath);
         }
 
         syncToolbarFromCurrentDocument();
@@ -2030,7 +2123,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             FileOpenDialogCallbacks(
                 () { return isLoading; },
                 () { return currentDocument(); },
-                (string filePath, bool selectTab) { return openDocumentFromPath(filePath, selectTab); },
+                (string filePath, bool selectTab, bool addToRecent) { return openDocumentFromPath(filePath, selectTab, addToRecent); },
                 (DocumentTab document, bool selectTab) { loadDocument(document, selectTab); }
             )
         );
@@ -2095,12 +2188,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
             prefCaseSensitiveFilter,
             prefDetailsBelow,
             prefRestoreOpenFiles,
+            recentFileLimit,
             externalOpenProgram,
             clearSavedWindowGeometryOnExit,
             PreferencesDialogCallbacks(
                 () { applyDetailsPanePreferenceToAll(); },
                 (bool clearGeometry) { persistCurrentState(clearGeometry); },
-                () { return currentDocument(); }
+                () { return currentDocument(); },
+                () { clearRecentFiles(); }
             )
         );
     });
@@ -2126,6 +2221,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
     attachMenuAccelerator(editClearFilterMenuItem, 'l');
     attachMenuAccelerator(editPreferencesMenuItem, ',', GdkModifierType.CONTROL_MASK);
     attachMenuAccelerator(editResetMetricsMenuItem, 'm');
+
+    enforceRecentFileLimit();
+    refreshRecentFilesMenu();
 
     // Apply persisted splitter orientation/position to any tabs created later.
 

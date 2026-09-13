@@ -50,6 +50,15 @@
                           <object class="GtkSeparatorMenuItem" id="fileSeparator"/>
                         </child>
                         <child>
+                          <object class="GtkMenuItem" id="recentFilesMenuItem">
+                            <property name="label">_Recently Used Files</property>
+                            <property name="use-underline">True</property>
+                            <child type="submenu">
+                              <object class="GtkMenu" id="recentFilesMenu"/>
+                            </child>
+                          </object>
+                        </child>
+                        <child>
                           <object class="GtkMenuItem" id="fileQuitMenuItem">
                             <property name="label">_Quit</property>
                             <property name="use-underline">True</property>

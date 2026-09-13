@@ -30,6 +30,9 @@ struct AppState
     bool previewVideoAutostart;
     double previewVideoVolume = 0.5;
 
+    string[] recentFilePaths;
+    int maxRecentFileCount = 10;
+
     bool hasWindowGeometry;
     int windowX;
     int windowY;
@@ -158,6 +161,25 @@ string[] jsonToStringArray(JSONValue value)
     return result;
 }
 
+/** Escape and serialize a string array as JSON. */
+string jsonStringArray(const(string)[] values)
+{
+    auto result = appender!string();
+    result.put("[");
+    foreach (idx, value; values)
+    {
+        if (idx > 0)
+        {
+            result.put(", ");
+        }
+        result.put("\"");
+        result.put(jsonEscapeString(value));
+        result.put("\"");
+    }
+    result.put("]");
+    return result.data;
+}
+
 /** Escape a string for manual JSON serialization.
  *
  * Params:
@@ -284,6 +306,14 @@ private AppState loadAppStateFromPath(string path)
                 state.previewVideoVolume = value.type == JSONType.float_ ? value.floating : cast(double) jsonToInt(*value, cast(int) (state.previewVideoVolume * 1000)) / 1000.0;
             }
         }
+        if (auto value = "recentFilePaths" in root)
+        {
+            state.recentFilePaths = jsonToStringArray(*value);
+        }
+        if (auto value = "maxRecentFileCount" in root)
+        {
+            state.maxRecentFileCount = jsonToInt(*value, state.maxRecentFileCount);
+        }
 
         if (auto value = "hasWindowGeometry" in root)
         {
@@ -346,19 +376,8 @@ private void saveAppStateToPath(const(AppState) state, string path)
 {
     auto dirPath = dirName(path);
     mkdirRecurse(dirPath);
-    auto openFileJson = appender!string();
-    openFileJson.put("[");
-    foreach (idx, filePathValue; state.openFilePaths)
-    {
-        if (idx > 0)
-        {
-            openFileJson.put(", ");
-        }
-        openFileJson.put("\"");
-        openFileJson.put(jsonEscapeString(filePathValue));
-        openFileJson.put("\"");
-    }
-    openFileJson.put("]");
+    auto openFileJson = jsonStringArray(state.openFilePaths);
+    auto recentFileJson = jsonStringArray(state.recentFilePaths);
 
     auto payload = format(
         "{\n" ~
@@ -374,6 +393,8 @@ private void saveAppStateToPath(const(AppState) state, string path)
             "  \"externalOpenProgram\": \"%s\",\n" ~
             "  \"previewVideoAutostart\": %s,\n" ~
             "  \"previewVideoVolume\": %s,\n" ~
+            "  \"recentFilePaths\": %s,\n" ~
+            "  \"maxRecentFileCount\": %s,\n" ~
             "  \"hasWindowGeometry\": %s,\n" ~
             "  \"windowX\": %s,\n" ~
             "  \"windowY\": %s,\n" ~
@@ -396,6 +417,8 @@ private void saveAppStateToPath(const(AppState) state, string path)
         jsonEscapeString(state.externalOpenProgram),
         state.previewVideoAutostart ? "true" : "false",
         state.previewVideoVolume,
+        recentFileJson,
+        state.maxRecentFileCount,
         state.hasWindowGeometry ? "true" : "false",
         state.windowX,
         state.windowY,
@@ -403,7 +426,7 @@ private void saveAppStateToPath(const(AppState) state, string path)
         state.windowWidth,
         state.windowHeight,
         state.windowMonitorIndex,
-        openFileJson.data,
+        openFileJson,
         state.activeTabIndex
     );
 
@@ -462,6 +485,8 @@ unittest
     expected.externalOpenProgram = "custom tool";
     expected.previewVideoAutostart = true;
     expected.previewVideoVolume = 0.75;
+    expected.recentFilePaths = ["/tmp/one.json", "/tmp/two path.json"];
+    expected.maxRecentFileCount = 12;
     expected.hasWindowGeometry = true;
     expected.windowX = 12;
     expected.windowY = 34;
@@ -487,6 +512,8 @@ unittest
     assert(loaded.externalOpenProgram == expected.externalOpenProgram);
     assert(loaded.previewVideoAutostart == expected.previewVideoAutostart);
     assert(loaded.previewVideoVolume == expected.previewVideoVolume);
+    assert(loaded.recentFilePaths == expected.recentFilePaths);
+    assert(loaded.maxRecentFileCount == expected.maxRecentFileCount);
     assert(loaded.hasWindowGeometry == expected.hasWindowGeometry);
     assert(loaded.windowX == expected.windowX);
     assert(loaded.windowY == expected.windowY);
