@@ -76,8 +76,8 @@ import gstreamer.c.types : GstState, GstStateChangeReturn;
 
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
-import model.datasource : SourceQuery, isRepositorySource, loadDocumentPage,
-    loadDocumentSource;
+import model.datasource : SourceQuery, isRepositorySource, loadDocumentDetails,
+    loadDocumentPage, loadDocumentSource;
 import ui.appstate : AppState, loadAppState, saveAppState;
 import ui.builderutils : builderObject;
 import ui.filterbar : loadFilterBarUi;
@@ -105,6 +105,7 @@ import ui.previewprogress : PreviewProgressCallbacks, startPreviewProgressTimer;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : countDuplicateDigestGroups, filterRowsByText;
 import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, NamedBinaryBlob;
+import dosierskanilo.repository.types : RepositoryBlobFlags;
 import cli.logging;
 
 /** Worker result payload for background JSON loading. */
@@ -122,6 +123,7 @@ struct AsyncLoadResult
     size_t pageTotal;
     bool pagedSource;
     long[] blobIds;
+    RepositoryBlobFlags[] blobFlags;
 }
 
 enum size_t repositoryPageSize = 250;
@@ -1586,6 +1588,17 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
 
         auto row = document.visibleRows[rowIndex];
+        if (isRepositorySource(document.filePath) && row.sourceId >= 0)
+        {
+            try
+            {
+                row.sourceBlob = loadDocumentDetails(document.filePath, row.sourceId);
+            }
+            catch (Exception ex)
+            {
+                document.status.setText(format("Failed to load selected details: %s", ex.msg));
+            }
+        }
         document.selectedSha1 = row.sha1;
         document.selectedFileName = row.primaryFileName;
         setDetailEntry(document.detailSha1HexEntry, digestBase64ToHex(row.sha1));
@@ -2049,6 +2062,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         document.pageOffset, repositoryPageSize, sourceQuery);
                     blobs = page.blobs;
                     result.blobIds = page.blobIds;
+                    result.blobFlags = page.flags;
                     result.pageOffset = page.offset;
                     result.pageTotal = page.total;
                     result.pagedSource = true;
@@ -2077,6 +2091,20 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     if (index >= result.allRows.length)
                         break;
                     result.allRows[index].sourceId = blobId;
+                    if (index < result.blobFlags.length)
+                    {
+                        auto flags = result.blobFlags[index];
+                        auto row = &result.allRows[index];
+                        row.hasSummaryFlags = true;
+                        row.summaryHasMedia = flags.hasMedia;
+                        row.summaryHasVideo = flags.hasVideo;
+                        row.summaryHasAudio = flags.hasAudio;
+                        row.summaryHasImage = flags.hasImage;
+                        row.summaryHasText = flags.hasText;
+                        row.summaryHasFileType = flags.hasFileType;
+                        row.summaryHasArchive = flags.hasArchive;
+                        row.summaryHasTorrent = flags.hasTorrent;
+                    }
                 }
 
                 setLoadingPhase(document, requestId, "Computing duplicate groups ...");

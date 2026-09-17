@@ -33,6 +33,15 @@ import cli.logging;
 struct BlobRow
 {
     long sourceId = -1; /// Stable repository blob ID when available.
+    bool hasSummaryFlags; /// True when metadata presence came from SQLite.
+    bool summaryHasMedia;
+    bool summaryHasVideo;
+    bool summaryHasAudio;
+    bool summaryHasImage;
+    bool summaryHasText;
+    bool summaryHasFileType;
+    bool summaryHasArchive;
+    bool summaryHasTorrent;
     /* Backlink to the NamedBinaryBlob source for this row, for fold-out details and metadata sections. */
     NamedBinaryBlob sourceBlob; /// Original blob data for this row, for direct access to FileSpec and metadata fields.
 
@@ -45,20 +54,20 @@ struct BlobRow
     size_t fileCount; /// Number of known file references for this blob.
 
     /* metadata presence flags and details for fold-out sections in the UI. */
-    @property bool hasMedia() const { return sourceBlob.mediaInfoSig !is null && !sourceBlob.mediaInfoSig.empty; } /// True when media metadata is present.
-    @property bool hasVideo() const { return hasMedia && sourceBlob.mediaInfoSig.hasVideo; } /// True when media metadata marks a video stream.
-    @property bool hasAudio() const { return hasMedia && sourceBlob.mediaInfoSig.hasAudio; } /// True when media metadata marks an audio stream.
-    @property bool hasImage() const { return hasMedia && sourceBlob.mediaInfoSig.hasImage; } /// True when media metadata marks an image stream.
-    @property bool hasText() const { return hasMedia && sourceBlob.mediaInfoSig.hasText; } /// True when media metadata marks a text/subtitle stream.
-    @property bool hasFileType() const { return sourceBlob.fileType !is null && !sourceBlob.fileType.empty; } /// True when file type signature metadata is present.
-    @property bool hasArchive() const { return sourceBlob.archiveSpecs.length > 0; } /// True when archive metadata is present.
-    @property bool hasTorrent() const { return sourceBlob.torrentInfo !is null && !sourceBlob.torrentInfo.empty; } /// True when torrent metadata is present.
+    @property bool hasMedia() const { return hasSummaryFlags ? summaryHasMedia : sourceBlob.mediaInfoSig !is null && !sourceBlob.mediaInfoSig.empty; } /// True when media metadata is present.
+    @property bool hasVideo() const { return hasSummaryFlags ? summaryHasVideo : hasMedia && sourceBlob.mediaInfoSig.hasVideo; } /// True when media metadata marks a video stream.
+    @property bool hasAudio() const { return hasSummaryFlags ? summaryHasAudio : hasMedia && sourceBlob.mediaInfoSig.hasAudio; } /// True when media metadata marks an audio stream.
+    @property bool hasImage() const { return hasSummaryFlags ? summaryHasImage : hasMedia && sourceBlob.mediaInfoSig.hasImage; } /// True when media metadata marks an image stream.
+    @property bool hasText() const { return hasSummaryFlags ? summaryHasText : hasMedia && sourceBlob.mediaInfoSig.hasText; } /// True when media metadata marks a text/subtitle stream.
+    @property bool hasFileType() const { return hasSummaryFlags ? summaryHasFileType : sourceBlob.fileType !is null && !sourceBlob.fileType.empty; } /// True when file type signature metadata is present.
+    @property bool hasArchive() const { return hasSummaryFlags ? summaryHasArchive : sourceBlob.archiveSpecs.length > 0; } /// True when archive metadata is present.
+    @property bool hasTorrent() const { return hasSummaryFlags ? summaryHasTorrent : sourceBlob.torrentInfo !is null && !sourceBlob.torrentInfo.empty; } /// True when torrent metadata is present.
 
     /* Fold-out details text for metadata sections, rendered from the source blob. */
-    @property string mediaInfoDetails() const { return hasMedia ? sourceBlob.mediaInfoSig.toString() : ""; } /// Pretty-printed media metadata for fold-out inspection.
-    @property string fileTypeDetails() const { return hasFileType ? sourceBlob.fileType : ""; } /// Pretty-printed file type metadata for fold-out inspection.
-    @property string archiveDetails() const { return hasArchive ? detailLines(sourceBlob.archiveSpecs) : ""; } /// Pretty-printed archive metadata for fold-out inspection.
-    @property string torrentDetails() const { return hasTorrent ? sourceBlob.torrentInfo.toString() : ""; } /// Pretty-printed torrent metadata for fold-out inspection.
+    @property string mediaInfoDetails() const { return hasMedia && sourceBlob !is null && sourceBlob.mediaInfoSig !is null ? sourceBlob.mediaInfoSig.toString() : ""; } /// Pretty-printed media metadata for fold-out inspection.
+    @property string fileTypeDetails() const { return hasFileType && sourceBlob !is null ? sourceBlob.fileType : ""; } /// Pretty-printed file type metadata for fold-out inspection.
+    @property string archiveDetails() const { return hasArchive && sourceBlob !is null ? detailLines(sourceBlob.archiveSpecs) : ""; } /// Pretty-printed archive metadata for fold-out inspection.
+    @property string torrentDetails() const { return hasTorrent && sourceBlob !is null && sourceBlob.torrentInfo !is null ? sourceBlob.torrentInfo.toString() : ""; } /// Pretty-printed torrent metadata for fold-out inspection.
     @property string fileType() const { return hasFileType ? sourceBlob.fileType : ""; } /// Optional file type signature from scanner metadata.
 
     /** Render the full source object details directly from the backing blob. */

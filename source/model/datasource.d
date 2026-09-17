@@ -13,6 +13,7 @@ struct SourcePage
 {
     NamedBinaryBlob[] blobs;
     long[] blobIds;
+    RepositoryBlobFlags[] flags;
     size_t offset;
     size_t total;
 }
@@ -52,6 +53,17 @@ NamedBinaryBlob[] loadDocumentSource(string path)
     return repository.loadCatalog(options);
 }
 
+/** Load full details for one repository blob. */
+NamedBinaryBlob loadDocumentDetails(string path, long blobId)
+{
+    auto repository = Repository.open(path);
+    scope (exit)
+        repository.close();
+    JsonExportOptions options;
+    options.absolutePaths = true;
+    return repository.loadBlobDetails(blobId, options);
+}
+
 /** Load one bounded page from a JSON file or SQLite repository. */
 SourcePage loadDocumentPage(string path, size_t offset, size_t limit,
     SourceQuery query = SourceQuery())
@@ -64,7 +76,7 @@ SourcePage loadDocumentPage(string path, size_t offset, size_t limit,
             end = allBlobs.length;
         if (offset > allBlobs.length)
             offset = allBlobs.length;
-        return SourcePage(allBlobs[offset .. end].dup, [], offset, allBlobs.length);
+        return SourcePage(allBlobs[offset .. end].dup, [], [], offset, allBlobs.length);
     }
 
     auto repository = Repository.open(path);
@@ -72,6 +84,7 @@ SourcePage loadDocumentPage(string path, size_t offset, size_t limit,
         repository.close();
     JsonExportOptions options;
     options.absolutePaths = true;
+    options.includeDetails = false;
     RepositoryQueryOptions repositoryQuery;
     repositoryQuery.offset = offset;
     repositoryQuery.limit = limit;
@@ -85,7 +98,7 @@ SourcePage loadDocumentPage(string path, size_t offset, size_t limit,
     repositoryQuery.archive = query.archive;
     repositoryQuery.torrent = query.torrent;
     auto page = repository.loadCatalogQueryPageWithIds(repositoryQuery, options);
-    return SourcePage(page.blobs, page.blobIds, page.total);
+    return SourcePage(page.blobs, page.blobIds, page.flags, page.total);
 }
 
 @("repository source detection")
