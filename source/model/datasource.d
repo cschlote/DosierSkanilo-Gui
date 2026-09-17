@@ -84,7 +84,7 @@ SourcePage loadDocumentPage(string path, size_t offset, size_t limit,
     repositoryQuery.archive = query.archive;
     repositoryQuery.torrent = query.torrent;
     return SourcePage(repository.loadCatalogQueryPage(repositoryQuery, options),
-        offset, repository.blobCount);
+        offset, repository.countCatalogQuery(repositoryQuery));
 }
 
 @("repository source detection")
