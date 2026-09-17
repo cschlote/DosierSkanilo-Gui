@@ -207,6 +207,7 @@ class DocumentTab
     ulong loadRequestId;
     ulong filterRequestId;
     ulong renderRequestId;
+    ulong detailRequestId;
     long pendingLoadElapsedMs = -1;
     string pendingStatusSuffix = "";
     long lastLoadElapsedMs = -1;

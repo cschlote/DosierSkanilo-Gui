@@ -47,6 +47,7 @@ Repository roots are currently opened through positional startup arguments.
 The adapter also exposes bounded page reads; visible page controls and SQL-backed
 filtering now use the page controls and backend query filters for repository
 documents. JSON documents retain the full-load compatibility path.
+Nested repository details are fetched asynchronously when a row is selected.
 
 ## 4. UI Composition
 

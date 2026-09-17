@@ -33,6 +33,7 @@ import cli.logging;
 struct BlobRow
 {
     long sourceId = -1; /// Stable repository blob ID when available.
+    bool detailsLoaded = true; /// False while repository details are lazy.
     bool hasSummaryFlags; /// True when metadata presence came from SQLite.
     bool summaryHasMedia;
     bool summaryHasVideo;

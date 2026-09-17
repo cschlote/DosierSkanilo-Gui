@@ -1588,16 +1588,52 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
 
         auto row = document.visibleRows[rowIndex];
-        if (isRepositorySource(document.filePath) && row.sourceId >= 0)
+        if (isRepositorySource(document.filePath) && row.sourceId >= 0
+            && !row.detailsLoaded)
         {
-            try
-            {
-                row.sourceBlob = loadDocumentDetails(document.filePath, row.sourceId);
-            }
-            catch (Exception ex)
-            {
-                document.status.setText(format("Failed to load selected details: %s", ex.msg));
-            }
+            auto requestId = ++document.detailRequestId;
+            auto sourcePath = document.filePath;
+            auto sourceId = row.sourceId;
+            document.status.setText("Loading selected repository details ...");
+            auto worker = new Thread({
+                NamedBinaryBlob details;
+                string error;
+                try
+                    details = loadDocumentDetails(sourcePath, sourceId);
+                catch (Exception ex)
+                    error = ex.msg;
+
+                new Idle({
+                    if (requestId != document.detailRequestId)
+                        return false;
+                    if (error.length > 0)
+                    {
+                        document.status.setText(format(
+                            "Failed to load selected details: %s", error));
+                        return false;
+                    }
+                    foreach (ref candidate; document.loadedRows)
+                    {
+                        if (candidate.sourceId == sourceId)
+                        {
+                            candidate.sourceBlob = details;
+                            candidate.detailsLoaded = true;
+                        }
+                    }
+                    foreach (ref candidate; document.visibleRows)
+                    {
+                        if (candidate.sourceId == sourceId)
+                        {
+                            candidate.sourceBlob = details;
+                            candidate.detailsLoaded = true;
+                        }
+                    }
+                    updateSelectedRowDetails(document);
+                    return false;
+                });
+            });
+            worker.start();
+            return;
         }
         document.selectedSha1 = row.sha1;
         document.selectedFileName = row.primaryFileName;
@@ -2104,6 +2140,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         row.summaryHasFileType = flags.hasFileType;
                         row.summaryHasArchive = flags.hasArchive;
                         row.summaryHasTorrent = flags.hasTorrent;
+                        row.detailsLoaded = false;
                     }
                 }
 
