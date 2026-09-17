@@ -3,6 +3,7 @@ module model.datasource;
 
 import std.file : exists, isDir;
 import std.path : buildPath;
+import std.string : empty;
 
 import dosierskanilo;
 import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob,
@@ -98,7 +99,11 @@ SourcePage loadDocumentPage(string path, size_t offset, size_t limit,
     repositoryQuery.archive = query.archive;
     repositoryQuery.torrent = query.torrent;
     auto page = repository.loadCatalogQueryPageWithIds(repositoryQuery, options);
-    return SourcePage(page.blobs, page.blobIds, page.flags, page.total);
+    auto total = query.text.empty && !query.video && !query.audio && !query.image
+        && !query.textStream && !query.fileType && !query.archive && !query.torrent
+        ? repository.blobCount : repository.countCatalogQuery(repositoryQuery);
+    return SourcePage(page.blobs, page.blobIds, page.flags,
+        total);
 }
 
 @("repository source detection")
@@ -128,11 +133,13 @@ unittest
     write(buildPath(root, "three.txt"), "three");
     repository.scan();
     assert(repository.blobCount == 3, "blobs=" ~ to!string(repository.blobCount));
+    assert(repository.countCatalogQuery(RepositoryQueryOptions()) == 3,
+        "query=" ~ to!string(repository.countCatalogQuery(RepositoryQueryOptions())));
+    repository.close();
     auto populated = loadDocumentPage(root, 0, 2);
     assert(populated.total == 3, "total=" ~ to!string(populated.total));
     assert(populated.blobs.length == 2);
     assert(populated.blobIds.length == 2);
     assert(populated.flags.length == 2);
     assert(!populated.flags[0].hasMedia);
-    repository.close();
 }
