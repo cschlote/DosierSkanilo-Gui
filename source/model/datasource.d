@@ -104,7 +104,8 @@ SourcePage loadDocumentPage(string path, size_t offset, size_t limit,
 @("repository source detection")
 unittest
 {
-    import std.file : mkdirRecurse, rmdirRecurse, tempDir;
+    import std.conv : to;
+    import std.file : mkdirRecurse, rmdirRecurse, tempDir, write;
     import std.path : buildPath;
     import std.uuid : randomUUID;
 
@@ -120,4 +121,18 @@ unittest
     auto page = loadDocumentPage(root, 0, 10);
     assert(page.total == 0);
     assert(page.blobs.length == 0);
+
+    repository = Repository.open(root);
+    write(buildPath(root, "one.txt"), "one");
+    write(buildPath(root, "two.txt"), "two");
+    write(buildPath(root, "three.txt"), "three");
+    repository.scan();
+    assert(repository.blobCount == 3, "blobs=" ~ to!string(repository.blobCount));
+    auto populated = loadDocumentPage(root, 0, 2);
+    assert(populated.total == 3, "total=" ~ to!string(populated.total));
+    assert(populated.blobs.length == 2);
+    assert(populated.blobIds.length == 2);
+    assert(populated.flags.length == 2);
+    assert(!populated.flags[0].hasMedia);
+    repository.close();
 }
