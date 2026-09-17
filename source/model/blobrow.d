@@ -32,6 +32,7 @@ import cli.logging;
  */
 struct BlobRow
 {
+    long sourceId = -1; /// Stable repository blob ID when available.
     /* Backlink to the NamedBinaryBlob source for this row, for fold-out details and metadata sections. */
     NamedBinaryBlob sourceBlob; /// Original blob data for this row, for direct access to FileSpec and metadata fields.
 

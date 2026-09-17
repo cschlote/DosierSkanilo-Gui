@@ -12,6 +12,7 @@ import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob,
 struct SourcePage
 {
     NamedBinaryBlob[] blobs;
+    long[] blobIds;
     size_t offset;
     size_t total;
 }
@@ -63,7 +64,7 @@ SourcePage loadDocumentPage(string path, size_t offset, size_t limit,
             end = allBlobs.length;
         if (offset > allBlobs.length)
             offset = allBlobs.length;
-        return SourcePage(allBlobs[offset .. end].dup, offset, allBlobs.length);
+        return SourcePage(allBlobs[offset .. end].dup, [], offset, allBlobs.length);
     }
 
     auto repository = Repository.open(path);
@@ -83,8 +84,8 @@ SourcePage loadDocumentPage(string path, size_t offset, size_t limit,
     repositoryQuery.fileType = query.fileType;
     repositoryQuery.archive = query.archive;
     repositoryQuery.torrent = query.torrent;
-    return SourcePage(repository.loadCatalogQueryPage(repositoryQuery, options),
-        offset, repository.countCatalogQuery(repositoryQuery));
+    auto page = repository.loadCatalogQueryPageWithIds(repositoryQuery, options);
+    return SourcePage(page.blobs, page.blobIds, page.total);
 }
 
 @("repository source detection")

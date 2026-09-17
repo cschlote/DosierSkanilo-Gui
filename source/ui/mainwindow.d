@@ -121,6 +121,7 @@ struct AsyncLoadResult
     size_t pageOffset;
     size_t pageTotal;
     bool pagedSource;
+    long[] blobIds;
 }
 
 enum size_t repositoryPageSize = 250;
@@ -2047,6 +2048,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     auto page = loadDocumentPage(document.filePath,
                         document.pageOffset, repositoryPageSize, sourceQuery);
                     blobs = page.blobs;
+                    result.blobIds = page.blobIds;
                     result.pageOffset = page.offset;
                     result.pageTotal = page.total;
                     result.pagedSource = true;
@@ -2070,6 +2072,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
                 setLoadingPhase(document, requestId, "Projecting rows for GUI ...");
                 result.allRows = extractRowsFromBlobs(blobs);
+                foreach (index, blobId; result.blobIds)
+                {
+                    if (index >= result.allRows.length)
+                        break;
+                    result.allRows[index].sourceId = blobId;
+                }
 
                 setLoadingPhase(document, requestId, "Computing duplicate groups ...");
                 result.duplicateGroups = countDuplicateDigestGroups(result.allRows);
