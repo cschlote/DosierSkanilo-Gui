@@ -76,7 +76,8 @@ import gstreamer.c.types : GstState, GstStateChangeReturn;
 
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
-import model.datasource : isRepositorySource, loadDocumentPage, loadDocumentSource;
+import model.datasource : SourceQuery, isRepositorySource, loadDocumentPage,
+    loadDocumentSource;
 import ui.appstate : AppState, loadAppState, saveAppState;
 import ui.builderutils : builderObject;
 import ui.filterbar : loadFilterBarUi;
@@ -1786,6 +1787,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.filterArchive = filterArchive.getActive();
         document.filterTorrent = filterTorrent.getActive();
 
+        if (isRepositorySource(document.filePath))
+        {
+            document.pageOffset = 0;
+            loadDocument(document, false);
+            return;
+        }
         applyFilterForDocument(document);
     }
 
@@ -1800,6 +1807,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
         if (document.loadedRows.length == 0)
         {
             document.status.setText("No loaded rows to filter.");
+            return;
+        }
+        if (isRepositorySource(document.filePath))
+        {
+            renderRows(document, filterRowsByText(document.loadedRows,
+                document.filterQuery, prefCaseSensitiveFilter));
             return;
         }
 
@@ -2021,8 +2034,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 NamedBinaryBlob[] blobs;
                 if (isRepositorySource(document.filePath))
                 {
+                    SourceQuery sourceQuery;
+                    sourceQuery.text = document.filterQuery;
+                    sourceQuery.video = document.filterVideo;
+                    sourceQuery.audio = document.filterAudio;
+                    sourceQuery.image = document.filterImage;
+                    sourceQuery.textStream = document.filterText;
+                    sourceQuery.mediaNegated = document.filterMediaNegated;
+                    sourceQuery.fileType = document.filterFileType;
+                    sourceQuery.archive = document.filterArchive;
+                    sourceQuery.torrent = document.filterTorrent;
                     auto page = loadDocumentPage(document.filePath,
-                        document.pageOffset, repositoryPageSize);
+                        document.pageOffset, repositoryPageSize, sourceQuery);
                     blobs = page.blobs;
                     result.pageOffset = page.offset;
                     result.pageTotal = page.total;
@@ -2113,7 +2136,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.lastLoadElapsedMs = result.elapsedMs;
                 updatePerfStatus(document);
 
-                if (prefAutoApplyFilter && (
+                if (isRepositorySource(document.filePath))
+                {
+                    renderRows(document, filterRowsByText(document.loadedRows,
+                        document.filterQuery, prefCaseSensitiveFilter));
+                }
+                else if (prefAutoApplyFilter && (
                     document.filterQuery.length > 0 ||
                     document.filterVideo ||
                     document.filterAudio ||

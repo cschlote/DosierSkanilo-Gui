@@ -16,6 +16,20 @@ struct SourcePage
     size_t total;
 }
 
+/** Filter state translated into repository query options. */
+struct SourceQuery
+{
+    string text;
+    bool video;
+    bool audio;
+    bool image;
+    bool textStream;
+    bool mediaNegated;
+    bool fileType;
+    bool archive;
+    bool torrent;
+}
+
 /** Return whether `path` is a DosierSkanilo repository root. */
 bool isRepositorySource(string path)
 {
@@ -38,7 +52,8 @@ NamedBinaryBlob[] loadDocumentSource(string path)
 }
 
 /** Load one bounded page from a JSON file or SQLite repository. */
-SourcePage loadDocumentPage(string path, size_t offset, size_t limit)
+SourcePage loadDocumentPage(string path, size_t offset, size_t limit,
+    SourceQuery query = SourceQuery())
 {
     if (!isRepositorySource(path))
     {
@@ -56,7 +71,19 @@ SourcePage loadDocumentPage(string path, size_t offset, size_t limit)
         repository.close();
     JsonExportOptions options;
     options.absolutePaths = true;
-    return SourcePage(repository.loadCatalogPage(offset, limit, options),
+    RepositoryQueryOptions repositoryQuery;
+    repositoryQuery.offset = offset;
+    repositoryQuery.limit = limit;
+    repositoryQuery.text = query.text;
+    repositoryQuery.video = query.video;
+    repositoryQuery.audio = query.audio;
+    repositoryQuery.image = query.image;
+    repositoryQuery.textStream = query.textStream;
+    repositoryQuery.mediaNegated = query.mediaNegated;
+    repositoryQuery.fileType = query.fileType;
+    repositoryQuery.archive = query.archive;
+    repositoryQuery.torrent = query.torrent;
+    return SourcePage(repository.loadCatalogQueryPage(repositoryQuery, options),
         offset, repository.blobCount);
 }
 

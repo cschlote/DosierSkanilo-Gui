@@ -12,6 +12,8 @@ All notable changes to this project are documented in this file.
   as preparation for GUI pagination.
 - Added Previous/Next page controls for SQLite repository documents while
   keeping JSON documents fully loaded for compatibility.
+- Repository filter changes now reload SQLite pages through backend query
+  filters instead of filtering the complete repository in the GUI.
 - Fixed media filters so selecting video does not allow image-only rows through via another metadata filter.
 - Added a recent-files submenu to the File menu with duplicate suppression, reverse-use ordering, a configurable maximum count, and a Preferences action to clear the list.
 - Moved the File/Edit/Help menu entries into the GtkBuilder main window layout so the menus are now static UI and only their callbacks, ghosting, and keyboard shortcuts are wired in D.

@@ -45,8 +45,8 @@ Supported startup controls include:
 The GUI still opens JSON data files through the file chooser during normal use.
 Repository roots are currently opened through positional startup arguments.
 The adapter also exposes bounded page reads; visible page controls and SQL-backed
-filtering now use the page controls for repository documents. JSON documents
-retain the full-load compatibility path.
+filtering now use the page controls and backend query filters for repository
+documents. JSON documents retain the full-load compatibility path.
 
 ## 4. UI Composition
 
