@@ -2,7 +2,7 @@
   "targetType": "executable",
   "name": "dosierskanilo-gui",
   "targetPath": "build/bin",
-  "description": "GTKD GUI for browsing DosierSkanilo JSON data files.",
+  "description": "GTKD GUI for browsing DosierSkanilo JSON files and SQLite repositories.",
   "authors": [
     "Carsten Schlote"
   ],

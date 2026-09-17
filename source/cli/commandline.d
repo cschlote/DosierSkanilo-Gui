@@ -30,11 +30,13 @@ immutable string cliUsageText = q"EOF
 DosierSkanilo GUI
 
 This is a graphical user interface for browsing precomputed DosierSkanilo JSON
-output. Open files from the GUI File menu.
+output and SQLite repositories. Open JSON files from the GUI File menu or pass
+a repository root as a positional startup argument.
 
 Startup options:
 
     <file.json>             Open JSON files on startup
+    <repository-directory>  Open a .dosierskanilo repository on startup
     -q, --query <text>      Prefill the text filter
     -v, --verbose           Enable verbose logging
             --case-sensitive    Use case-sensitive text matching

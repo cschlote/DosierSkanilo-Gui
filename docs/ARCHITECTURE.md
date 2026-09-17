@@ -2,17 +2,20 @@
 
 This document describes the current architecture of `DosierSkanilo-Gui`.
 
-The GUI is a read-only browser for precomputed DosierSkanilo JSON output. It
-does not run the scanner, compute metadata, or write JSON back to disk.
+The GUI is a read-only browser for precomputed DosierSkanilo JSON output and
+initialized `.dosierskanilo` SQLite repositories. It does not run the scanner,
+compute metadata, or write repository data back to disk.
 
 ## 1. High-Level Flow
 
-1. User opens a JSON index file or restores previously open tabs.
-2. JSON is parsed through the DosierSkanilo library loader and normalized into
-  `BlobRow` projections.
-3. Text, media, file type, archive, and torrent filters are applied.
-4. Results are rendered in a `TreeView`/`ListStore` table.
-5. Selection details are shown in a split view with metadata expanders,
+1. User opens a JSON index file, repository root, or restores previously open
+   tabs.
+2. The source adapter loads JSON through the legacy loader or reads the SQLite
+  repository through the DosierSkanilo library API.
+3. Loaded domain objects are normalized into `BlobRow` projections.
+4. Text, media, file type, archive, and torrent filters are applied.
+5. Results are rendered in a `TreeView`/`ListStore` table.
+6. Selection details are shown in a split view with metadata expanders,
   clipboard actions, and a raw JSON detail block.
 
 ## 2. Module Layout
@@ -25,6 +28,7 @@ does not run the scanner, compute metadata, or write JSON back to disk.
 - `source/ui/tablecolumns.d`: table column setup
 - `source/ui/appstate.d`: persisted preferences and window state
 - `source/model/blobrow.d`: presentation model (`BlobRow`)
+- `source/model/datasource.d`: JSON/repository source adapter
 - `source/view/textreport.d`: filtering and helper transformations
 
 ## 3. Startup CLI Layer
@@ -38,7 +42,8 @@ Supported startup controls include:
 - case sensitivity
 - auto-filter toggle
 
-The GUI still opens data files through the file chooser during normal use.
+The GUI still opens JSON data files through the file chooser during normal use.
+Repository roots are currently opened through positional startup arguments.
 
 ## 4. UI Composition
 

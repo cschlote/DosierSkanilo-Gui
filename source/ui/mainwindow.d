@@ -76,6 +76,7 @@ import gstreamer.c.types : GstState, GstStateChangeReturn;
 
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
+import model.datasource : isRepositorySource, loadDocumentSource;
 import ui.appstate : AppState, loadAppState, saveAppState;
 import ui.builderutils : builderObject;
 import ui.filterbar : loadFilterBarUi;
@@ -102,7 +103,7 @@ import ui.startupworkflow : scheduleSelfTestQuit, startStartupWorkflow;
 import ui.previewprogress : PreviewProgressCallbacks, startPreviewProgressTimer;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : countDuplicateDigestGroups, filterRowsByText;
-import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, deserializeDataClassJsonFile;
+import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2;
 import cli.logging;
 
 /** Worker result payload for background JSON loading. */
@@ -1994,12 +1995,24 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
             try
             {
-                setLoadingPhase(document, requestId, "Loading scanner data via library ...");
+                setLoadingPhase(document, requestId,
+                    isRepositorySource(document.filePath)
+                    ? "Loading SQLite repository via library ..."
+                    : "Loading scanner data via library ...");
                 logLineVerbose("[load-worker] parsing ", document.filePath);
-                auto blobs = deserializeDataClassJsonFile(document.filePath);
-                result.dataVersion = DATA_CLASS_VERSION2;
-                result.rootShape = "library";
-                result.rootKeysSummary = "NamedBinaryBlob[]";
+                auto blobs = loadDocumentSource(document.filePath);
+                if (isRepositorySource(document.filePath))
+                {
+                    result.dataVersion = 3;
+                    result.rootShape = "repository";
+                    result.rootKeysSummary = "SQLite repository";
+                }
+                else
+                {
+                    result.dataVersion = DATA_CLASS_VERSION2;
+                    result.rootShape = "library";
+                    result.rootKeysSummary = "NamedBinaryBlob[]";
+                }
 
                 setLoadingPhase(document, requestId, "Projecting rows for GUI ...");
                 result.allRows = extractRowsFromBlobs(blobs);

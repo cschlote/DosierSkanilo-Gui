@@ -1,6 +1,7 @@
 {
 	"fileVersion": 1,
 	"versions": {
+		"d2sqlite3": "1.0.0",
 		"dosierskanilo": {"path":"../DosierSkanilo"},
 		"gtk-d": "3.11.0",
 		"jsonizer": "0.7.7",
