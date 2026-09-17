@@ -8,6 +8,14 @@ import dosierskanilo;
 import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob,
     deserializeDataClassJsonFile;
 
+/** One bounded source result page. */
+struct SourcePage
+{
+    NamedBinaryBlob[] blobs;
+    size_t offset;
+    size_t total;
+}
+
 /** Return whether `path` is a DosierSkanilo repository root. */
 bool isRepositorySource(string path)
 {
@@ -29,6 +37,29 @@ NamedBinaryBlob[] loadDocumentSource(string path)
     return repository.loadCatalog(options);
 }
 
+/** Load one bounded page from a JSON file or SQLite repository. */
+SourcePage loadDocumentPage(string path, size_t offset, size_t limit)
+{
+    if (!isRepositorySource(path))
+    {
+        auto allBlobs = deserializeDataClassJsonFile(path);
+        auto end = offset + limit;
+        if (end > allBlobs.length)
+            end = allBlobs.length;
+        if (offset > allBlobs.length)
+            offset = allBlobs.length;
+        return SourcePage(allBlobs[offset .. end].dup, offset, allBlobs.length);
+    }
+
+    auto repository = Repository.open(path);
+    scope (exit)
+        repository.close();
+    JsonExportOptions options;
+    options.absolutePaths = true;
+    return SourcePage(repository.loadCatalogPage(offset, limit, options),
+        offset, repository.blobCount);
+}
+
 @("repository source detection")
 unittest
 {
@@ -45,4 +76,7 @@ unittest
     auto repository = Repository.initialize(root);
     repository.close();
     assert(isRepositorySource(root));
+    auto page = loadDocumentPage(root, 0, 10);
+    assert(page.total == 0);
+    assert(page.blobs.length == 0);
 }
