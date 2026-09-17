@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## Release 0.7.0 - 2026-09-17
 
 - Added a shared data-source adapter for JSON files and DosierSkanilo SQLite
   repository roots.

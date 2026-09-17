@@ -48,7 +48,7 @@ void showAbout(Window window)
     dialog.setModal(true);
     dialog.setLogoIconName("help-about");
     dialog.setProgramName("DosierSkanilo GUI");
-    dialog.setVersion("0.6.0");
+    dialog.setVersion("0.7.0");
     dialog.setComments("Desktop frontend for DosierSkanilo.");
     dialog.setAuthors(["Carsten Schlote"]);
     dialog.run();
