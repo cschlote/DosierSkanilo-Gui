@@ -76,7 +76,7 @@ import gstreamer.c.types : GstState, GstStateChangeReturn;
 
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
-import model.datasource : isRepositorySource, loadDocumentSource;
+import model.datasource : isRepositorySource, loadDocumentPage, loadDocumentSource;
 import ui.appstate : AppState, loadAppState, saveAppState;
 import ui.builderutils : builderObject;
 import ui.filterbar : loadFilterBarUi;
@@ -103,7 +103,7 @@ import ui.startupworkflow : scheduleSelfTestQuit, startStartupWorkflow;
 import ui.previewprogress : PreviewProgressCallbacks, startPreviewProgressTimer;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : countDuplicateDigestGroups, filterRowsByText;
-import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2;
+import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, NamedBinaryBlob;
 import cli.logging;
 
 /** Worker result payload for background JSON loading. */
@@ -117,7 +117,12 @@ struct AsyncLoadResult
     string rootKeysSummary;
     string error;
     long elapsedMs;
+    size_t pageOffset;
+    size_t pageTotal;
+    bool pagedSource;
 }
+
+enum size_t repositoryPageSize = 250;
 
 /** Worker result payload for background text filtering. */
 struct AsyncFilterResult
@@ -1083,6 +1088,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto pageRoot = pageUi.pageRoot;
         auto splitSlot = pageUi.splitSlot;
 
+        document.pagePreviousButton.addOnClicked((Button _) {
+            if (document.pageOffset < repositoryPageSize)
+                return;
+            document.pageOffset -= repositoryPageSize;
+            loadDocument(document, false);
+        });
+        document.pageNextButton.addOnClicked((Button _) {
+            if (document.pageOffset + repositoryPageSize >= document.pageTotal)
+                return;
+            document.pageOffset += repositoryPageSize;
+            loadDocument(document, false);
+        });
+
         syncPreviewToolbarFromDocument(document);
         bindDetailPreviewSignals(document, DetailPreviewCallbacks(
             () => isSyncingToolbarState,
@@ -2000,7 +2018,20 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     ? "Loading SQLite repository via library ..."
                     : "Loading scanner data via library ...");
                 logLineVerbose("[load-worker] parsing ", document.filePath);
-                auto blobs = loadDocumentSource(document.filePath);
+                NamedBinaryBlob[] blobs;
+                if (isRepositorySource(document.filePath))
+                {
+                    auto page = loadDocumentPage(document.filePath,
+                        document.pageOffset, repositoryPageSize);
+                    blobs = page.blobs;
+                    result.pageOffset = page.offset;
+                    result.pageTotal = page.total;
+                    result.pagedSource = true;
+                }
+                else
+                {
+                    blobs = loadDocumentSource(document.filePath);
+                }
                 if (isRepositorySource(document.filePath))
                 {
                     result.dataVersion = 3;
@@ -2064,6 +2095,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.loadedRootShape = result.rootShape.length > 0 ? result.rootShape : "-";
                 document.loadedRootKeysSummary = result.rootKeysSummary.length > 0 ? result.rootKeysSummary
                 : "-";
+                document.pageOffset = result.pageOffset;
+                document.pageTotal = result.pageTotal;
+                document.pageBar.setVisible(result.pagedSource);
+                document.pagePreviousButton.setSensitive(result.pageOffset > 0);
+                document.pageNextButton.setSensitive(
+                    result.pageOffset + document.loadedRows.length < result.pageTotal);
+                if (result.pagedSource)
+                {
+                    auto first = result.pageTotal == 0 ? 0 : result.pageOffset + 1;
+                    auto last = result.pageOffset + document.loadedRows.length;
+                    document.pageStatus.setText(format("Rows %s-%s of %s", first, last,
+                        result.pageTotal));
+                }
                 updateFileMetaStatus(document);
                 document.pendingLoadElapsedMs = result.elapsedMs;
                 document.lastLoadElapsedMs = result.elapsedMs;

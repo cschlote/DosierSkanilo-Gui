@@ -23,6 +23,7 @@ The GUI currently supports:
 - persistent window geometry, splitter positions, tabs, preferences, and
 	clipboard copy actions
 - background loading/filtering with cancel support and performance timings
+- Previous/Next page navigation for SQLite repository documents
 
 The GUI does not yet expose the scanner-side workflow from the overhauled
 DosierSkanilo backend. Use the CLI for scan, analyze, and write-back jobs.

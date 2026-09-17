@@ -2,6 +2,7 @@
 module ui.documentpage;
 
 import gtk.Box;
+import gtk.Button;
 import gtk.Builder;
 import gtk.Label;
 
@@ -13,6 +14,7 @@ struct DocumentPageUi
 {
     Box pageRoot;
     Box splitSlot;
+    Box pageBar;
 }
 
 /** Bind the document page layout to a document tab.
@@ -30,6 +32,12 @@ DocumentPageUi loadDocumentPageUi(DocumentTab document)
     DocumentPageUi ui;
     ui.pageRoot = builderObject!Box(pageBuilder, "page", "pageRoot");
     ui.splitSlot = builderObject!Box(pageBuilder, "page", "splitSlot");
+    ui.pageBar = builderObject!Box(pageBuilder, "page", "pageBar");
+    document.pageBar = ui.pageBar;
+    document.pagePreviousButton = builderObject!Button(pageBuilder, "page", "pagePreviousButton");
+    document.pageNextButton = builderObject!Button(pageBuilder, "page", "pageNextButton");
+    document.pageStatus = builderObject!Label(pageBuilder, "page", "pageStatus");
+    document.pageBar.setVisible(false);
     document.rowDetails = builderObject!Label(pageBuilder, "page", "rowDetails");
     document.status = builderObject!Label(pageBuilder, "page", "status");
     document.perfStatus = builderObject!Label(pageBuilder, "page", "perfStatus");

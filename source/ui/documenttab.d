@@ -161,6 +161,10 @@ class DocumentTab
     Label status;
     Label perfStatus;
     Label fileMetaStatus;
+    Button pagePreviousButton;
+    Button pageNextButton;
+    Label pageStatus;
+    Box pageBar;
     string selectedPreviewPath = "";
     bool selectedPreviewIsImage;
     PreviewScaleMode previewScaleMode = PreviewScaleMode.contain;
@@ -196,6 +200,9 @@ class DocumentTab
     string loadedRootShape = "-";
     string loadedRootKeysSummary = "-";
     bool selectedPreviewIsVideo;
+
+    size_t pageOffset;
+    size_t pageTotal;
 
     ulong loadRequestId;
     ulong filterRequestId;
