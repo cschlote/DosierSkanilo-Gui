@@ -27,8 +27,14 @@
         <property name="orientation">horizontal</property>
         <property name="spacing">6</property>
         <child>
+          <object class="GtkButton" id="pageFirstButton">
+            <property name="label">First</property>
+            <property name="can-focus">False</property>
+          </object>
+        </child>
+        <child>
           <object class="GtkButton" id="pagePreviousButton">
-            <property name="label">Previous page</property>
+            <property name="label">Prev</property>
             <property name="can-focus">False</property>
           </object>
         </child>
@@ -41,8 +47,27 @@
         </child>
         <child>
           <object class="GtkButton" id="pageNextButton">
-            <property name="label">Next page</property>
+            <property name="label">Next</property>
             <property name="can-focus">False</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="pageLastButton">
+            <property name="label">Last</property>
+            <property name="can-focus">False</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkComboBoxText" id="pageSizeCombo">
+            <property name="can-focus">False</property>
+            <property name="active">1</property>
+            <items>
+              <item translatable="yes">100</item>
+              <item translatable="yes">250</item>
+              <item translatable="yes">500</item>
+              <item translatable="yes">1000</item>
+              <item translatable="yes">All rows</item>
+            </items>
           </object>
         </child>
       </object>

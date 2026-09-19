@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## Release 0.7.0 - 2026-09-17
 
+- Added a repository-directory chooser. It searches the selected directory and
+  its parents for `.dosierskanilo` and opens the matching SQLite repository.
+- Added First/Prev/Next/Last repository navigation, selectable page sizes, and
+  an All rows mode for comparison experiments.
+- Restored all saved open documents when startup restoration is enabled.
+- Added mode icons, paths/tooltips, and a keyboard shortcut for repository tabs.
 - Added a shared data-source adapter for JSON files and DosierSkanilo SQLite
   repository roots.
 - Repository roots can now be opened as read-only GUI documents through the

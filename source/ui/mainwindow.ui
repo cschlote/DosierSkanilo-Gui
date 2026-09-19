@@ -24,7 +24,13 @@
                       <object class="GtkMenu" id="fileMenu">
                         <child>
                           <object class="GtkMenuItem" id="fileOpenMenuItem">
-                            <property name="label">_Open JSON</property>
+                            <property name="label">_Open JSON File</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="fileOpenRepositoryMenuItem">
+                            <property name="label">Open _Repository Directory</property>
                             <property name="use-underline">True</property>
                           </object>
                         </child>

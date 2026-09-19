@@ -5,6 +5,7 @@ import gtk.Box;
 import gtk.Button;
 import gtk.Builder;
 import gtk.Label;
+import gtk.ComboBoxText;
 
 import ui.builderutils : builderObject, loadUiBuilder;
 import ui.documenttab : DocumentTab;
@@ -36,6 +37,9 @@ DocumentPageUi loadDocumentPageUi(DocumentTab document)
     document.pageBar = ui.pageBar;
     document.pagePreviousButton = builderObject!Button(pageBuilder, "page", "pagePreviousButton");
     document.pageNextButton = builderObject!Button(pageBuilder, "page", "pageNextButton");
+    document.pageFirstButton = builderObject!Button(pageBuilder, "page", "pageFirstButton");
+    document.pageLastButton = builderObject!Button(pageBuilder, "page", "pageLastButton");
+    document.pageSizeCombo = builderObject!ComboBoxText(pageBuilder, "page", "pageSizeCombo");
     document.pageStatus = builderObject!Label(pageBuilder, "page", "pageStatus");
     document.pageBar.setVisible(false);
     document.rowDetails = builderObject!Label(pageBuilder, "page", "rowDetails");

@@ -1,8 +1,7 @@
 /** Shared data-source adapter for JSON files and SQLite repositories. */
 module model.datasource;
 
-import std.file : exists, isDir;
-import std.path : buildPath;
+import std.file : isDir;
 import std.string : empty;
 
 import dosierskanilo;
@@ -33,10 +32,10 @@ struct SourceQuery
     bool torrent;
 }
 
-/** Return whether `path` is a DosierSkanilo repository root. */
+/** Return whether `path` is inside a DosierSkanilo repository. */
 bool isRepositorySource(string path)
 {
-    return isDir(path) && exists(buildPath(path, ".dosierskanilo"));
+    return isDir(path) && !Repository.findRoot(path).empty;
 }
 
 /** Load one GUI document from JSON or an SQLite repository. */
@@ -98,12 +97,15 @@ SourcePage loadDocumentPage(string path, size_t offset, size_t limit,
     repositoryQuery.fileType = query.fileType;
     repositoryQuery.archive = query.archive;
     repositoryQuery.torrent = query.torrent;
+    if (limit == size_t.max)
+    {
+        auto queryTotal = repository.countCatalogQuery(repositoryQuery);
+        repositoryQuery.limit = queryTotal == 0 ? 1 : queryTotal;
+    }
     auto page = repository.loadCatalogQueryPageWithIds(repositoryQuery, options);
-    auto total = query.text.empty && !query.video && !query.audio && !query.image
-        && !query.textStream && !query.fileType && !query.archive && !query.torrent
-        ? repository.blobCount : repository.countCatalogQuery(repositoryQuery);
+    auto total = page.total;
     return SourcePage(page.blobs, page.blobIds, page.flags,
-        total);
+        offset, total);
 }
 
 @("repository source detection")
@@ -123,6 +125,9 @@ unittest
     auto repository = Repository.initialize(root);
     repository.close();
     assert(isRepositorySource(root));
+    auto nested = buildPath(root, "nested", "directory");
+    mkdirRecurse(nested);
+    assert(isRepositorySource(nested));
     auto page = loadDocumentPage(root, 0, 10);
     assert(page.total == 0);
     assert(page.blobs.length == 0);
@@ -142,4 +147,9 @@ unittest
     assert(populated.blobIds.length == 2);
     assert(populated.flags.length == 2);
     assert(!populated.flags[0].hasMedia);
+    SourceQuery filteredQuery;
+    filteredQuery.text = "one.txt";
+    auto filtered = loadDocumentPage(root, 0, 250, filteredQuery);
+    assert(filtered.total == 1);
+    assert(filtered.blobs.length == 1);
 }

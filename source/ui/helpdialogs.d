@@ -21,7 +21,8 @@ void showShortcutsHelp(Window window)
         MessageType.INFO,
         ButtonsType.CLOSE,
         "Keyboard Shortcuts\n\n" ~
-            "Ctrl+O  Open JSON\n" ~
+            "Ctrl+O  Open JSON file\n" ~
+            "Ctrl+Shift+O  Open repository directory\n" ~
             "Ctrl+W  Close Current Tab\n" ~
             "Ctrl+R  Reload\n" ~
             "Ctrl+K  Cancel Current Operation\n" ~
@@ -49,7 +50,8 @@ void showAbout(Window window)
     dialog.setLogoIconName("help-about");
     dialog.setProgramName("DosierSkanilo GUI");
     dialog.setVersion("0.7.0");
-    dialog.setComments("Desktop frontend for DosierSkanilo.");
+    dialog.setComments("GTK frontend for the DosierSkanilo library backend. " ~
+        "The CLI and GUI share the same repository and JSON operations.");
     dialog.setAuthors(["Carsten Schlote"]);
     dialog.run();
     dialog.destroy();

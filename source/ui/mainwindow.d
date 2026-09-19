@@ -91,7 +91,8 @@ import ui.detailswidgets : setDetailEntry,
     pauseVideoPreview, jumpVideoPreview, stopVideoPreview, syncVideoPreviewPosition,
     seekVideoPreview, syncVideoPlaybackButton, syncVideoTrackSelectors;
 import ui.documentactions : DocumentActionCallbacks, closeCurrentDocument, reloadCurrentDocument;
-import ui.fileopendialog : FileOpenDialogCallbacks, chooseAndLoadPath;
+import ui.fileopendialog : FileOpenDialogCallbacks, chooseAndLoadPath,
+    chooseAndLoadRepository;
 import ui.helpdialogs : showAbout, showShortcutsHelp;
 import ui.loadingstatus;
 import ui.preferencesdialog : PreferencesDialogCallbacks, showPreferencesDialog;
@@ -521,6 +522,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     auto separator = builderObject!Separator(mainBuilder, "main", "separator");
     auto toolbar = builderObject!Box(mainBuilder, "main", "toolbar");
     auto fileOpenMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileOpenMenuItem");
+    auto fileOpenRepositoryMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileOpenRepositoryMenuItem");
     auto fileCloseMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileCloseMenuItem");
     auto fileReloadMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileReloadMenuItem");
     auto fileCancelOperationMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileCancelOperationMenuItem");
@@ -654,6 +656,21 @@ int runMainWindow(string[] args, ref CliOptions cli)
         return absolutePath(filePath);
     }
 
+    /** Build a compact mode-aware notebook tab label with a useful tooltip. */
+    Widget createDocumentTabLabel(string filePath)
+    {
+        auto labelBox = new Box(Orientation.HORIZONTAL, 4);
+        auto icon = new Image(isRepositorySource(filePath) ? "folder" : "text-x-generic",
+            GtkIconSize.MENU);
+        auto label = new Label(baseName(filePath));
+        labelBox.packStart(icon, false, false, 0);
+        labelBox.packStart(label, false, false, 0);
+        labelBox.setTooltipText((isRepositorySource(filePath) ? "SQLite repository: " : "JSON file: ")
+            ~ filePath);
+        labelBox.showAll();
+        return labelBox;
+    }
+
     /** Find an already open document tab by JSON file path. */
     DocumentTab findDocumentByPath(string filePath)
     {
@@ -727,6 +744,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         fileCancelOperationMenuItem.setSensitive(isLoading);
         fileCloseMenuItem.setSensitive(!isLoading && hasCurrentDocument);
         fileOpenMenuItem.setSensitive(!isLoading);
+        fileOpenRepositoryMenuItem.setSensitive(!isLoading);
         fileQuitMenuItem.setSensitive(true);
         recentFilesMenuItem.setSensitive(!isLoading && recentFilePaths.length > 0);
         filterEntry.setSensitive(!isLoading);
@@ -1092,16 +1110,42 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto pageRoot = pageUi.pageRoot;
         auto splitSlot = pageUi.splitSlot;
 
-        document.pagePreviousButton.addOnClicked((Button _) {
-            if (document.pageOffset < repositoryPageSize)
+        document.pageFirstButton.addOnClicked((Button _) {
+            if (document.pageOffset == 0)
                 return;
-            document.pageOffset -= repositoryPageSize;
+            document.pageOffset = 0;
+            loadDocument(document, false);
+        });
+        document.pagePreviousButton.addOnClicked((Button _) {
+            if (document.pageOffset < document.pageSize)
+                return;
+            document.pageOffset -= document.pageSize;
             loadDocument(document, false);
         });
         document.pageNextButton.addOnClicked((Button _) {
-            if (document.pageOffset + repositoryPageSize >= document.pageTotal)
+            if (document.pageOffset + document.pageSize >= document.pageTotal)
                 return;
-            document.pageOffset += repositoryPageSize;
+            document.pageOffset += document.pageSize;
+            loadDocument(document, false);
+        });
+        document.pageLastButton.addOnClicked((Button _) {
+            if (document.pageTotal == 0 || document.pageOffset + document.pageSize >= document.pageTotal)
+                return;
+            document.pageOffset = ((document.pageTotal - 1) / document.pageSize) * document.pageSize;
+            loadDocument(document, false);
+        });
+        document.pageSizeCombo.addOnChanged((ComboBoxText combo) {
+            auto value = combo.getActiveText();
+            if (value == "All rows")
+            {
+                document.loadAllRows = true;
+            }
+            else
+            {
+                document.loadAllRows = false;
+                document.pageSize = to!size_t(value);
+            }
+            document.pageOffset = 0;
             loadDocument(document, false);
         });
 
@@ -1792,7 +1836,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         {
             document = createDocumentTab(normalizedPath);
             documents ~= document;
-            auto pageIndex = notebook.appendPage(document.pageRoot, baseName(normalizedPath));
+            auto pageIndex = notebook.appendPage(document.pageRoot,
+                createDocumentTabLabel(normalizedPath));
             notebook.setTabReorderable(document.pageRoot, true);
             if (selectTab)
             {
@@ -2084,23 +2129,46 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 NamedBinaryBlob[] blobs;
                 if (isRepositorySource(document.filePath))
                 {
-                    SourceQuery sourceQuery;
-                    sourceQuery.text = document.filterQuery;
-                    sourceQuery.video = document.filterVideo;
-                    sourceQuery.audio = document.filterAudio;
-                    sourceQuery.image = document.filterImage;
-                    sourceQuery.textStream = document.filterText;
-                    sourceQuery.mediaNegated = document.filterMediaNegated;
-                    sourceQuery.fileType = document.filterFileType;
-                    sourceQuery.archive = document.filterArchive;
-                    sourceQuery.torrent = document.filterTorrent;
-                    auto page = loadDocumentPage(document.filePath,
-                        document.pageOffset, repositoryPageSize, sourceQuery);
-                    blobs = page.blobs;
-                    result.blobIds = page.blobIds;
-                    result.blobFlags = page.flags;
-                    result.pageOffset = page.offset;
-                    result.pageTotal = page.total;
+                    if (document.loadAllRows)
+                    {
+                        SourceQuery sourceQuery;
+                        sourceQuery.text = document.filterQuery;
+                        sourceQuery.video = document.filterVideo;
+                        sourceQuery.audio = document.filterAudio;
+                        sourceQuery.image = document.filterImage;
+                        sourceQuery.textStream = document.filterText;
+                        sourceQuery.mediaNegated = document.filterMediaNegated;
+                        sourceQuery.fileType = document.filterFileType;
+                        sourceQuery.archive = document.filterArchive;
+                        sourceQuery.torrent = document.filterTorrent;
+                        auto page = loadDocumentPage(document.filePath, 0,
+                            size_t.max, sourceQuery);
+                        blobs = page.blobs;
+                        result.blobIds = page.blobIds;
+                        result.blobFlags = page.flags;
+                        result.pageOffset = page.offset;
+                        result.pageTotal = page.total;
+                    }
+                    else
+                    {
+                        SourceQuery sourceQuery;
+                        sourceQuery.text = document.filterQuery;
+                        sourceQuery.video = document.filterVideo;
+                        sourceQuery.audio = document.filterAudio;
+                        sourceQuery.image = document.filterImage;
+                        sourceQuery.textStream = document.filterText;
+                        sourceQuery.mediaNegated = document.filterMediaNegated;
+                        sourceQuery.fileType = document.filterFileType;
+                        sourceQuery.archive = document.filterArchive;
+                        sourceQuery.torrent = document.filterTorrent;
+                        auto page = loadDocumentPage(document.filePath,
+                            document.pageOffset, document.pageSize, sourceQuery);
+                        blobs = page.blobs;
+                        result.blobIds = page.blobIds;
+                        result.blobFlags = page.flags;
+                        result.pageOffset = page.offset;
+                        result.pageTotal = page.total;
+                    }
                     result.pagedSource = true;
                 }
                 else
@@ -2194,8 +2262,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.pageOffset = result.pageOffset;
                 document.pageTotal = result.pageTotal;
                 document.pageBar.setVisible(result.pagedSource);
+                document.pageFirstButton.setSensitive(result.pageOffset > 0);
                 document.pagePreviousButton.setSensitive(result.pageOffset > 0);
                 document.pageNextButton.setSensitive(
+                    result.pageOffset + document.loadedRows.length < result.pageTotal);
+                document.pageLastButton.setSensitive(
                     result.pageOffset + document.loadedRows.length < result.pageTotal);
                 if (result.pagedSource)
                 {
@@ -2292,6 +2363,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
         );
     });
 
+    fileOpenRepositoryMenuItem.addOnActivate((MenuItem _) {
+        chooseAndLoadRepository(
+            window,
+            FileOpenDialogCallbacks(
+                () { return isLoading; },
+                () { return currentDocument(); },
+                (string filePath, bool selectTab, bool addToRecent) { return openDocumentFromPath(filePath, selectTab, addToRecent); },
+                (DocumentTab document, bool selectTab) { loadDocument(document, selectTab); }
+            )
+        );
+    });
+
     fileReloadMenuItem.addOnActivate((MenuItem _) {
         reloadCurrentDocument(DocumentActionCallbacks(
             () { return currentDocument(); },
@@ -2376,6 +2459,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
     helpAboutMenuItem.addOnActivate((MenuItem _) { showAbout(window); });
 
     attachMenuAccelerator(fileOpenMenuItem, 'o');
+    attachMenuAccelerator(fileOpenRepositoryMenuItem, 'o',
+        GdkModifierType.CONTROL_MASK | GdkModifierType.SHIFT_MASK);
     attachMenuAccelerator(fileReloadMenuItem, 'r');
     attachMenuAccelerator(fileCloseMenuItem, 'w');
     attachMenuAccelerator(fileCancelOperationMenuItem, 'k');

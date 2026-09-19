@@ -221,6 +221,33 @@ private bool isVideoPreviewCandidate(const(BlobRow) row)
         || ext == ".flv";
 }
 
+/** Explain why a selected file cannot be shown in the preview pane. */
+private string unavailablePreviewSummary(const(BlobRow) row, string fileName,
+    string previewPath)
+{
+    auto type = row.fileType.length > 0 ? row.fileType : "unknown";
+    string reason;
+    if (previewPath.length > 0 && !exists(previewPath))
+    {
+        reason = "The referenced file is not available at the recorded path.";
+    }
+    else if (isImagePreviewCandidate(row) || isVideoPreviewCandidate(row))
+    {
+        reason = "The file type is recognized, but no compatible preview could be opened.";
+    }
+    else if (row.hasAudio || row.hasText)
+    {
+        reason = "The GUI preview currently supports images and video, not this media stream.";
+    }
+    else
+    {
+        reason = "No supported image or video preview handler was found for this file type.";
+    }
+
+    return format("Preview unavailable\nFile: %s\nSize: %s bytes\nType: %s\nReason: %s",
+        fileName, row.fileSize, type, reason);
+}
+
 /** Convert a local filesystem path into a file URI. */
 private string toFileUri(string path)
 {
@@ -1467,30 +1494,9 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
     {
         document.detailPreviewImage.clear();
 
-        if (row.hasVideo)
-        {
-            document.detailPreviewSummary.setText(format("Video preview\n%s", mediaSummary));
-        }
-        else if (row.hasAudio)
-        {
-            document.detailPreviewSummary.setText(format("Audio preview\n%s", mediaSummary));
-        }
-        else if (row.hasImage)
-        {
-            document.detailPreviewSummary.setText(format("Image preview\n%s", mediaSummary));
-        }
-        else if (row.hasText)
-        {
-            document.detailPreviewSummary.setText(format("Text preview\n%s", mediaSummary));
-        }
-        else if (fileName != "-")
-        {
-            document.detailPreviewSummary.setText(format("No direct preview\n%s", fileName));
-        }
-        else
-        {
-            document.detailPreviewSummary.setText("No preview available.");
-        }
+        document.detailPreviewTitle.setText("Preview unavailable");
+        document.detailPreviewSummary.setText(unavailablePreviewSummary(row, fileName,
+            previewPath));
     }
 
     refreshMediaPreview(document);

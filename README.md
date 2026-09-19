@@ -3,9 +3,10 @@
 `DosierSkanilo-Gui` is a classic GTK desktop frontend for browsing and filtering
 precomputed DosierSkanilo JSON index files and `.dosierskanilo` repositories.
 
-It is a read-only companion to the DosierSkanilo scanner/library stack:
-scanning, checksum generation, archive/torrent inspection, duplicate analysis,
-and JSON writing remain in the CLI and backend libraries.
+It is a read-only frontend to the DosierSkanilo scanner/library stack. The GUI
+and CLI use the same backend library; scanning, checksum generation,
+archive/torrent inspection, duplicate analysis, and JSON writing are currently
+started through the CLI.
 
 The GUI currently supports:
 
@@ -48,8 +49,9 @@ dub build --compiler=ldc2
 ./build/bin/dosierskanilo-gui
 ```
 
-Open JSON files from `File` > `Open JSON`. Repository roots can be opened from
-the command line as directory arguments.
+Open JSON files from `File` > `Open JSON File`, or repository directories from
+`File` > `Open Repository Directory`. A selected directory may be the repository
+root or any directory below it; the nearest `.dosierskanilo` directory is used.
 
 ## Startup Controls
 
@@ -64,7 +66,8 @@ the command line as directory arguments.
 ## Current Features
 
 - open JSON files from the command line or the file chooser
-- open repository roots from the command line
+- open repository directories from the file chooser or command line
+- `Ctrl+O` opens a JSON file; `Ctrl+Shift+O` opens a repository directory
 - load JSON index files for browsing and inspection
 - compatibility with wrapper and legacy JSON shapes
 - text filter by file name and SHA1

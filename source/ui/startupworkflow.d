@@ -76,9 +76,12 @@ void startStartupWorkflow(
     void delegate() quitApplication
 )
 {
-    foreach (savedPath; savedOpenFilePaths)
+    if (prefRestoreOpenFiles)
     {
-        pendingStartupPaths ~= savedPath;
+        foreach (savedPath; savedOpenFilePaths)
+        {
+            pendingStartupPaths ~= savedPath;
+        }
     }
     foreach (startupPath; cliJsonPaths)
     {
@@ -96,4 +99,28 @@ void startStartupWorkflow(
     }
 
     scheduleSelfTestQuit(selfTestMode, selfTestQuitScheduled, selfTestDelayMs, selfTestQuitTimer, quitApplication);
+}
+
+@("startup restoration respects the open-files preference")
+unittest
+{
+    string[] pending;
+    int loadCalls;
+    int selectedIndex = -1;
+    bool scheduled;
+    Timeout timer;
+
+    startStartupWorkflow(pending, selectedIndex, false,
+        ["one.json", "two.json"], [], 1, false, scheduled, 1, timer,
+        { ++loadCalls; }, {});
+    assert(pending.length == 0);
+    assert(loadCalls == 0);
+
+    pending = [];
+    startStartupWorkflow(pending, selectedIndex, true,
+        ["one.json", "two.json"], [], 1, false, scheduled, 1, timer,
+        { ++loadCalls; }, {});
+    assert(pending == ["one.json", "two.json"]);
+    assert(loadCalls == 1);
+    assert(selectedIndex == 1);
 }

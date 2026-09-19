@@ -24,6 +24,7 @@ import gtk.ToggleButton;
 import gtk.Scale;
 import gtk.CheckButton;
 import gtk.ComboBoxText;
+import gtk.SpinButton;
 import gtk.Widget;
 
 import gdkpixbuf.Pixbuf;
@@ -163,6 +164,9 @@ class DocumentTab
     Label fileMetaStatus;
     Button pagePreviousButton;
     Button pageNextButton;
+    Button pageFirstButton;
+    Button pageLastButton;
+    ComboBoxText pageSizeCombo;
     Label pageStatus;
     Box pageBar;
     string selectedPreviewPath = "";
@@ -203,6 +207,8 @@ class DocumentTab
 
     size_t pageOffset;
     size_t pageTotal;
+    size_t pageSize = 250;
+    bool loadAllRows;
 
     ulong loadRequestId;
     ulong filterRequestId;
