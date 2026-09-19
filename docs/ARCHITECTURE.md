@@ -2,6 +2,11 @@
 
 This document describes the current architecture of `DosierSkanilo-Gui`.
 
+The planned replacement for the current flattened `NamedBinaryBlob` table is
+documented in [GUI-REDESIGN.md](GUI-REDESIGN.md). `NamedBinaryBlob` remains the
+JSON/Jsonizer representation; it is not intended to be the long-term GUI view
+model.
+
 The GUI is a read-only browser for precomputed DosierSkanilo JSON output and
 initialized `.dosierskanilo` SQLite repositories. It does not run the scanner,
 compute metadata, or write repository data back to disk.
