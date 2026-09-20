@@ -1297,8 +1297,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     if (result.filePath != document.filePath || document.directorySource is null)
                         return false;
                     TreeModelIF model = document.directoryTreeView.getModel();
-                    TreeIter parent;
-                    TreeIter rowToRemove;
+                    auto parent = new TreeIter();
+                    auto rowToRemove = new TreeIter();
                     if (!model.getIter(parent, parentPath)
                         || !model.getIter(rowToRemove, rowToRemovePath))
                         return false;
@@ -1374,7 +1374,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         });
         document.directoryTreeView.addOnRowActivated((TreePath path, TreeViewColumn _, TreeView treeView) {
             TreeModelIF model = document.directoryTreeView.getModel();
-            TreeIter pageIter;
+            auto pageIter = new TreeIter();
             if (!model.getIter(pageIter, path) || model.getValueString(pageIter, 1) != "Page")
                 return;
             TreeIter parentIter;

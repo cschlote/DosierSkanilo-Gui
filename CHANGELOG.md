@@ -33,6 +33,8 @@ All notable changes to this project are documented in this file.
   repository trees that load child levels asynchronously.
 - Asynchronous tree updates now resolve GTK iterators from stable TreePaths on
   the main thread, avoiding invalid-iterator warnings during expansion.
+- GTK TreePath lookups now initialize their iterator objects correctly before
+  reading or updating asynchronous tree rows.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and
