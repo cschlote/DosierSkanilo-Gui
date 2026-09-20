@@ -153,11 +153,14 @@ private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
 }
 
 private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
-    TreeIter parent, string directoryId)
+    TreeIter parent, string directoryId, size_t offset = 0, bool includeDirectories = true)
 {
-    foreach (child; source.listDirectories(directoryId))
-        appendDirectoryTreeNode(store, source, child, parent);
-    auto files = source.listFiles(directoryId, 0, 251);
+    if (includeDirectories)
+    {
+        foreach (child; source.listDirectories(directoryId))
+            appendDirectoryTreeNode(store, source, child, parent);
+    }
+    auto files = source.listFiles(directoryId, offset, 251);
     auto fileLimit = files.length > 250 ? 250 : files.length;
     foreach (file; files[0 .. fileLimit])
     {
@@ -174,12 +177,15 @@ private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
         store.setValue(moreIter, 1, "Page");
         store.setValue(moreIter, 2, "");
         store.setValue(moreIter, 3, directoryId);
+        store.setValue(moreIter, 4, fileLimit.to!string);
     }
 }
 
 private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
-    const(DirectoryNode)[] directories, const(FileNode)[] files)
+    const(DirectoryNode)[] directories, const(FileNode)[] files,
+    bool includeDirectories = true)
 {
+    if (includeDirectories)
     foreach (directory; directories)
     {
         auto directoryIter = store.createIter(parent);
@@ -213,6 +219,7 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
         store.setValue(moreIter, 1, "Page");
         store.setValue(moreIter, 2, "");
         store.setValue(moreIter, 3, "");
+        store.setValue(moreIter, 4, fileLimit.to!string);
     }
 }
 
@@ -265,6 +272,7 @@ struct AsyncDirectoryResult
 {
     string filePath;
     string directoryId;
+    size_t offset;
     DirectoryNode[] directories;
     FileNode[] files;
     string error;
@@ -1218,22 +1226,24 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.tableView = new TreeView(document.tableStore);
         configureTableColumns(document.tableView);
         document.directoryTreeStore = new TreeStore([
-            GType.STRING, GType.STRING, GType.STRING, GType.STRING
+            GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING
         ]);
         document.directoryTreeView = new TreeView(document.directoryTreeStore);
         configureDirectoryTreeColumns(document.directoryTreeView);
-        void delegate(TreeIter, string) loadRemoteDirectory;
-        loadRemoteDirectory = (TreeIter parent, string directoryId) {
+        void delegate(TreeIter, string, size_t, TreeIter) loadRemoteDirectory;
+        loadRemoteDirectory = (TreeIter parent, string directoryId, size_t offset,
+            TreeIter rowToRemove) {
             auto filePath = document.filePath;
             new Thread({
                 AsyncDirectoryResult result;
                 result.filePath = filePath;
                 result.directoryId = directoryId;
+                result.offset = offset;
                 try
                 {
                     auto source = openRepositoryDirectorySource(filePath);
                     result.directories = source.listDirectories(directoryId);
-                    result.files = source.listFiles(directoryId, 0, 251);
+                    result.files = source.listFiles(directoryId, offset, 251);
                     source.close();
                 }
                 catch (Exception ex)
@@ -1248,7 +1258,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     if (!model.iterChildren(child, parent)
                         || model.getValueString(child, 1) != "Placeholder")
                         return false;
-                    document.directoryTreeStore.remove(child);
+                    document.directoryTreeStore.remove(rowToRemove);
                     if (result.error.length > 0)
                     {
                         auto errorIter = document.directoryTreeStore.createIter(parent);
@@ -1261,7 +1271,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     else
                     {
                         populateDirectoryTreeRows(document.directoryTreeStore, parent,
-                            result.directories, result.files);
+                            result.directories, result.files, result.offset == 0);
                     }
                     return false;
                 });
@@ -1276,12 +1286,32 @@ int runMainWindow(string[] args, ref CliOptions cli)
             auto directoryId = model.getValueString(iter, 3);
             if (document.directorySourceRemote)
             {
-                loadRemoteDirectory(iter, directoryId);
+                loadRemoteDirectory(iter, directoryId, 0, child);
                 return;
             }
             document.directoryTreeStore.remove(child);
             populateDirectoryTreeNode(document.directoryTreeStore, document.directorySource,
                 iter, directoryId);
+        });
+        document.directoryTreeView.addOnRowActivated((TreePath path, TreeViewColumn _, TreeView treeView) {
+            TreeModelIF model = document.directoryTreeView.getModel();
+            TreeIter pageIter;
+            if (!model.getIter(pageIter, path) || model.getValueString(pageIter, 1) != "Page")
+                return;
+            TreeIter parentIter;
+            if (!model.iterParent(parentIter, pageIter))
+                return;
+            auto directoryId = model.getValueString(pageIter, 3);
+            auto offsetText = model.getValueString(pageIter, 4);
+            auto offset = offsetText.length > 0 ? to!size_t(offsetText) : 0;
+            if (document.directorySourceRemote)
+                loadRemoteDirectory(parentIter, directoryId, offset, pageIter);
+            else
+            {
+                document.directoryTreeStore.remove(pageIter);
+                populateDirectoryTreeNode(document.directoryTreeStore,
+                    document.directorySource, parentIter, directoryId, offset, false);
+            }
         });
         document.directoryTreeView.getSelection().addOnChanged((TreeSelection _) {
             TreeModelIF model;
