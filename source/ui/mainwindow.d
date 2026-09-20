@@ -1285,6 +1285,17 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 return;
 
             auto directoryId = model.getValueString(iter, 3);
+            bool alreadyExpanded;
+            foreach (expandedId; document.expandedDirectoryIds)
+            {
+                if (expandedId == directoryId)
+                {
+                    alreadyExpanded = true;
+                    break;
+                }
+            }
+            if (!alreadyExpanded)
+                document.expandedDirectoryIds ~= directoryId;
             if (document.directorySourceRemote)
             {
                 loadRemoteDirectory(iter, directoryId, 0, child);
@@ -1293,6 +1304,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.directoryTreeStore.remove(child);
             populateDirectoryTreeNode(document.directoryTreeStore, document.directorySource,
                 iter, directoryId);
+        });
+        document.directoryTreeView.addOnRowCollapsed((TreeIter iter, TreePath _, TreeView treeView) {
+            auto model = document.directoryTreeView.getModel();
+            auto directoryId = model.getValueString(iter, 3);
+            foreach (index, expandedId; document.expandedDirectoryIds)
+            {
+                if (expandedId == directoryId)
+                {
+                    document.expandedDirectoryIds = document.expandedDirectoryIds[0 .. index]
+                        ~ document.expandedDirectoryIds[index + 1 .. $];
+                    break;
+                }
+            }
         });
         document.directoryTreeView.addOnRowActivated((TreePath path, TreeViewColumn _, TreeView treeView) {
             TreeModelIF model = document.directoryTreeView.getModel();

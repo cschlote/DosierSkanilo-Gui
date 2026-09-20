@@ -27,6 +27,8 @@ All notable changes to this project are documented in this file.
   activation for both repository and JSON sources.
 - Selecting a repository file that is outside the current table page now loads
   its details by stable blob ID and selects it in the detail view.
+- Each document tab now tracks expanded directory IDs independently of the
+  legacy result table.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and
