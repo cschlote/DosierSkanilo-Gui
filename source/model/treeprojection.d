@@ -1,0 +1,183 @@
+/** GTK-independent directory tree projection for source adapters. */
+module model.treeprojection;
+
+import std.algorithm : count, countUntil, filter;
+import std.array : array;
+import std.conv : to;
+import std.path : baseName, dirName, buildNormalizedPath;
+
+/** Read-only directory node exposed to the GUI. */
+struct DirectoryNode
+{
+    string id;
+    string parentId;
+    string name;
+    string relativePath;
+    size_t childDirectoryCount;
+    size_t fileCount;
+    ulong aggregateSize;
+}
+
+/** Read-only file node exposed to the GUI. */
+struct FileNode
+{
+    string id;
+    string directoryId;
+    string name;
+    string relativePath;
+    ulong size;
+}
+
+/** In-memory directory projection shared by JSON and repository adapters. */
+struct DirectoryTree
+{
+    DirectoryNode[] directories;
+    FileNode[] files;
+
+    @property ref const(DirectoryNode) root() const
+    {
+        return directories[0];
+    }
+
+    const(DirectoryNode)[] listDirectories(string parentId) const
+    {
+        auto result = directories.filter!(node => node.parentId == parentId).array;
+        return result;
+    }
+
+    const(FileNode)[] listFiles(string directoryId) const
+    {
+        auto result = files.filter!(node => node.directoryId == directoryId).array;
+        return result;
+    }
+}
+
+/** Read-only source API consumed by the directory tree view. */
+interface DirectorySource
+{
+    DirectoryNode root();
+    DirectoryNode[] listDirectories(string parentId);
+    FileNode[] listFiles(string directoryId);
+    void close();
+}
+
+/** Source adapter used until the repository backend exposes directory queries. */
+final class ProjectedDirectorySource : DirectorySource
+{
+    private DirectoryTree tree;
+
+    this(DirectoryTree tree)
+    {
+        this.tree = tree;
+    }
+
+    override DirectoryNode root() { return tree.root; }
+
+    override DirectoryNode[] listDirectories(string parentId)
+    {
+        return tree.listDirectories(parentId).dup;
+    }
+
+    override FileNode[] listFiles(string directoryId)
+    {
+        return tree.listFiles(directoryId).dup;
+    }
+
+    override void close() {}
+}
+
+/** Build a deterministic tree from source file paths and payload sizes. */
+DirectoryTree buildDirectoryTree(const(FileInput)[] inputs)
+{
+    DirectoryTree tree;
+    tree.directories ~= DirectoryNode("root", "", "", "", 0, 0, 0);
+
+    foreach (index, input; inputs)
+    {
+        auto normalized = buildNormalizedPath(input.path);
+        auto directoryPath = dirName(normalized);
+        if (directoryPath == ".")
+            directoryPath = "";
+
+        auto directoryId = ensureDirectory(tree, directoryPath);
+        auto fileId = "file:" ~ index.to!string;
+        tree.files ~= FileNode(fileId, directoryId, baseName(normalized),
+            normalized, input.size);
+        addFileToDirectory(tree, directoryId, input.size);
+    }
+
+    foreach (ref directory; tree.directories)
+    {
+        directory.childDirectoryCount = tree.directories.count!(node => node.parentId == directory.id);
+        directory.fileCount = tree.files.count!(fileNode => fileNode.directoryId == directory.id);
+    }
+    return tree;
+}
+
+/** Minimal adapter input, intentionally independent from Jsonizer and GTK. */
+struct FileInput
+{
+    string path;
+    ulong size;
+}
+
+private string ensureDirectory(ref DirectoryTree tree, string path)
+{
+    if (path.length == 0)
+        return "root";
+
+    auto existing = tree.directories.countUntil!(node => node.relativePath == path);
+    if (existing >= 0)
+        return tree.directories[existing].id;
+
+    auto parentPath = dirName(path);
+    if (parentPath == "." || parentPath == path)
+        parentPath = "";
+    auto parentId = ensureDirectory(tree, parentPath);
+    auto id = "directory:" ~ path;
+    tree.directories ~= DirectoryNode(id, parentId, baseName(path), path, 0, 0, 0);
+    return id;
+}
+
+private void addFileToDirectory(ref DirectoryTree tree, string directoryId, ulong size)
+{
+    auto currentId = directoryId;
+    while (currentId.length > 0)
+    {
+        foreach (ref directory; tree.directories)
+        {
+            if (directory.id == currentId)
+            {
+                directory.aggregateSize += size;
+                currentId = directory.parentId;
+                break;
+            }
+        }
+    }
+}
+
+unittest
+{
+    auto tree = buildDirectoryTree([
+        FileInput("music/album/song.flac", 100),
+        FileInput("music/album/cover.jpg", 20),
+        FileInput("readme.txt", 5),
+    ]);
+
+    assert(tree.root.id == "root");
+    assert(tree.root.fileCount == 1);
+    assert(tree.root.aggregateSize == 125);
+    assert(tree.listDirectories("root").length == 1);
+
+    auto album = tree.listDirectories("directory:music");
+    assert(album.length == 1);
+    assert(album[0].relativePath == "music/album");
+    assert(album[0].fileCount == 2);
+    assert(album[0].aggregateSize == 120);
+    assert(tree.listFiles(album[0].id).length == 2);
+
+    DirectorySource source = new ProjectedDirectorySource(tree);
+    assert(source.root.id == "root");
+    assert(source.listDirectories("directory:music").length == 1);
+    assert(source.listFiles(album[0].id).length == 2);
+}

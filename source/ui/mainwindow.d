@@ -51,9 +51,11 @@ import gtk.ToggleButton;
 import gtk.TreeIter;
 import gtk.TreeModelIF;
 import gtk.TreeSelection;
+import gtk.TreeStore;
 import gtk.TreePath;
 import gtk.TreeView;
 import gtk.TreeViewColumn;
+import gtk.CellRendererText;
 import gtk.Widget;
 import gtk.Window;
 import gtk.c.types : GtkAlign, GtkIconSize, GtkReliefStyle, GtkShadowType, GtkTreeViewColumnSizing;
@@ -77,7 +79,9 @@ import gstreamer.c.types : GstState, GstStateChangeReturn;
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
 import model.datasource : SourceQuery, isRepositorySource, loadDocumentDetails,
-    loadDocumentPage, loadDocumentSource;
+    loadDocumentPage, loadDocumentSource, openRepositoryDirectorySource;
+import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, FileInput,
+    ProjectedDirectorySource, buildDirectoryTree;
 import ui.appstate : AppState, loadAppState, saveAppState;
 import ui.builderutils : builderObject;
 import ui.filterbar : loadFilterBarUi;
@@ -109,10 +113,91 @@ import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, NamedBinaryBlo
 import dosierskanilo.repository.types : RepositoryBlobFlags;
 import cli.logging;
 
+/** Configure the transitional directory tree columns. */
+void configureDirectoryTreeColumns(TreeView treeView)
+{
+    void addColumn(string title, int modelColumn, bool expand)
+    {
+        auto renderer = new CellRendererText();
+        auto column = new TreeViewColumn();
+        column.setTitle(title);
+        column.packStart(renderer, true);
+        column.addAttribute(renderer, "text", modelColumn);
+        column.setResizable(true);
+        column.setExpand(expand);
+        treeView.appendColumn(column);
+    }
+
+    addColumn("Name", 0, true);
+    addColumn("Kind", 1, false);
+    addColumn("Size", 2, false);
+    treeView.setHeadersClickable(false);
+}
+
+private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
+    const DirectoryNode node, TreeIter parent)
+{
+    auto iter = store.createIter(parent);
+    store.setValue(iter, 0, node.name.length > 0 ? node.name : "(source root)");
+    store.setValue(iter, 1, "Directory");
+    store.setValue(iter, 2, format("%s files | %s bytes", node.fileCount, node.aggregateSize));
+    store.setValue(iter, 3, node.id);
+    if (source.listDirectories(node.id).length > 0 || source.listFiles(node.id).length > 0)
+    {
+        auto loadingIter = store.createIter(iter);
+        store.setValue(loadingIter, 0, "Loading...");
+        store.setValue(loadingIter, 1, "Placeholder");
+        store.setValue(loadingIter, 2, "");
+        store.setValue(loadingIter, 3, node.id);
+    }
+}
+
+private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
+    TreeIter parent, string directoryId)
+{
+    foreach (child; source.listDirectories(directoryId))
+        appendDirectoryTreeNode(store, source, child, parent);
+    foreach (file; source.listFiles(directoryId))
+    {
+        auto fileIter = store.createIter(parent);
+        store.setValue(fileIter, 0, file.name);
+        store.setValue(fileIter, 1, "File");
+        store.setValue(fileIter, 2, format("%s bytes", file.size));
+        store.setValue(fileIter, 3, file.id);
+    }
+}
+
+/** Render the projection into a GTK tree store. */
+void renderDirectoryTree(TreeStore store, DirectorySource source)
+{
+    store.clear();
+    appendDirectoryTreeNode(store, source, source.root, null);
+}
+
+/** Project the currently visible blob rows into the transitional tree model. */
+DirectoryTree treeFromRows(const(BlobRow)[] rows)
+{
+    FileInput[] inputs;
+    foreach (row; rows)
+    {
+        if (row.sourceBlob is null)
+            continue;
+        foreach (spec; row.sourceBlob.fileSpecs)
+        {
+            if (spec !is null && spec.fileName.length > 0)
+                inputs ~= FileInput(spec.fileName, cast(ulong) row.fileSize);
+        }
+        if (row.sourceBlob.fileSpecs.length == 0 && row.primaryFileName.length > 0)
+            inputs ~= FileInput(row.primaryFileName, row.fileSize);
+    }
+    return buildDirectoryTree(inputs);
+}
+
 /** Worker result payload for background JSON loading. */
 struct AsyncLoadResult
 {
     BlobRow[] allRows;
+    DirectoryTree directoryTree;
     size_t duplicateGroups;
     string filePath;
     int dataVersion = -1;
@@ -1074,6 +1159,47 @@ int runMainWindow(string[] args, ref CliOptions cli)
         ]);
         document.tableView = new TreeView(document.tableStore);
         configureTableColumns(document.tableView);
+        document.directoryTreeStore = new TreeStore([
+            GType.STRING, GType.STRING, GType.STRING, GType.STRING
+        ]);
+        document.directoryTreeView = new TreeView(document.directoryTreeStore);
+        configureDirectoryTreeColumns(document.directoryTreeView);
+        document.directoryTreeView.addOnRowExpanded((TreeIter iter, TreePath _, TreeView treeView) {
+            TreeModelIF model = document.directoryTreeView.getModel();
+            TreeIter child;
+            if (!model.iterChildren(child, iter) || model.getValueString(child, 1) != "Placeholder")
+                return;
+
+            auto directoryId = model.getValueString(iter, 3);
+            document.directoryTreeStore.remove(child);
+            populateDirectoryTreeNode(document.directoryTreeStore, document.directorySource,
+                iter, directoryId);
+        });
+        document.directoryTreeView.getSelection().addOnChanged((TreeSelection _) {
+            TreeModelIF model;
+            TreeIter treeIter;
+            if (!document.directoryTreeView.getSelection().getSelected(model, treeIter))
+                return;
+            if (model.getValueString(treeIter, 1) != "File")
+                return;
+
+            auto selectedName = model.getValueString(treeIter, 0);
+            foreach (rowIndex, row; document.visibleRows)
+            {
+                if (row.primaryFileName != selectedName)
+                    continue;
+                TreeIter tableIter;
+                if (!document.tableView.getModel().getIterFirst(tableIter))
+                    return;
+                foreach (candidateIndex; 0 .. rowIndex)
+                {
+                    if (!document.tableView.getModel().iterNext(tableIter))
+                        return;
+                }
+                document.tableView.getSelection().selectIter(tableIter);
+                return;
+            }
+        });
         document.tableView.addOnSizeAllocate((allocation, Widget _) {
             if (!document.pendingColumnMeasurement)
             {
@@ -1099,6 +1225,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
         scroll.setVexpand(true);
         scroll.setHexpand(true);
         scroll.add(document.tableView);
+        auto directoryScroll = new ScrolledWindow(null, null);
+        directoryScroll.setHexpand(true);
+        directoryScroll.setVexpand(false);
+        directoryScroll.setSizeRequest(-1, 220);
+        directoryScroll.add(document.directoryTreeView);
+        auto resultViews = new Box(Orientation.VERTICAL, 6);
+        resultViews.packStart(directoryScroll, false, true, 0);
+        resultViews.packStart(scroll, true, true, 0);
 
         auto previewUi = loadDetailPreviewUi(document);
         auto detailUi = loadDetailPaneUi(document);
@@ -1188,7 +1322,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         });
 
         document.split = new Paned(Orientation.HORIZONTAL);
-        document.split.pack1(scroll, false, true);
+        document.split.pack1(resultViews, false, true);
         document.split.pack2(detailsPane, true, false);
         document.split.setPosition(splitPositionHorizontal);
         document.split.addOnNotify((ParamSpec _, ObjectG __) {
@@ -2213,6 +2347,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         row.detailsLoaded = false;
                     }
                 }
+                result.directoryTree = isRepositorySource(document.filePath)
+                    ? DirectoryTree()
+                    : treeFromRows(result.allRows);
 
                 setLoadingPhase(document, requestId, "Computing duplicate groups ...");
                 result.duplicateGroups = countDuplicateDigestGroups(result.allRows);
@@ -2257,6 +2394,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
                 document.loadedDuplicateGroups = result.duplicateGroups;
                 document.loadedRows = result.allRows;
+                document.directoryTree = result.directoryTree;
+                document.directorySource = isRepositorySource(document.filePath)
+                    ? openRepositoryDirectorySource(document.filePath)
+                    : new ProjectedDirectorySource(result.directoryTree);
+                renderDirectoryTree(document.directoryTreeStore, document.directorySource);
                 document.loadedDataVersion = result.dataVersion;
                 document.loadedRootShape = result.rootShape.length > 0 ? result.rootShape : "-";
                 document.loadedRootKeysSummary = result.rootKeysSummary.length > 0 ? result.rootKeysSummary
@@ -2399,7 +2541,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             () { return notebook.getCurrentPage(); },
             () { return cast(int) documents.length; },
             (int pageIndex) { return documents[pageIndex]; },
-            (int pageIndex) { notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
+            (int pageIndex) { if (documents[pageIndex].directorySource !is null) documents[pageIndex].directorySource.close(); notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
             () { syncToolbarFromCurrentDocument(); },
             (bool clearGeometry) { persistCurrentState(clearGeometry); },
             () { return isLoading; },
@@ -2499,7 +2641,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     () { return notebook.getCurrentPage(); },
                     () { return cast(int) documents.length; },
                     (int pageIndex) { return documents[pageIndex]; },
-                    (int pageIndex) { notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
+                    (int pageIndex) { if (documents[pageIndex].directorySource !is null) documents[pageIndex].directorySource.close(); notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
                     () { syncToolbarFromCurrentDocument(); },
                     (bool clearGeometry) { persistCurrentState(clearGeometry); },
                     () { return isLoading; },

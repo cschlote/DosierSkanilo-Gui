@@ -2,11 +2,15 @@
 module model.datasource;
 
 import std.file : exists, isDir;
+import std.conv : to;
+import std.path : baseName;
 import std.string : empty;
 
 import dosierskanilo;
 import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob,
     deserializeDataClassJsonFile;
+import model.treeprojection : DirectoryNode, DirectorySource, FileInput, FileNode,
+    DirectoryTree, buildDirectoryTree;
 
 /** One bounded source result page. */
 struct SourcePage
@@ -36,6 +40,99 @@ struct SourceQuery
 bool isRepositorySource(string path)
 {
     return exists(path) && isDir(path) && !Repository.findRoot(path).empty;
+}
+
+/** Build the directory projection for a JSON or repository source. */
+DirectoryTree loadDocumentTree(string path)
+{
+    auto blobs = loadDocumentSource(path);
+    FileInput[] inputs;
+    foreach (blob; blobs)
+    {
+        if (blob is null)
+            continue;
+        foreach (spec; blob.fileSpecs)
+        {
+            if (spec !is null && spec.fileName.length > 0)
+                inputs ~= FileInput(spec.fileName, cast(ulong) blob.fileSize);
+        }
+        if (blob.fileSpecs.length == 0 && blob.getFirstFileName.length > 0)
+            inputs ~= FileInput(blob.getFirstFileName, cast(ulong) blob.fileSize);
+    }
+    return buildDirectoryTree(inputs);
+}
+
+/** Directory source backed by bounded SQLite repository queries. */
+final class RepositoryDirectorySource : DirectorySource
+{
+    private Repository repository;
+    private DirectoryNode rootNode;
+
+    this(string path)
+    {
+        repository = Repository.open(path);
+        RepositoryDirectoryQuery directoryQuery;
+        directoryQuery.limit = size_t.max;
+        RepositoryFileQuery fileQuery;
+        fileQuery.limit = size_t.max;
+        auto directories = repository.listDirectories(directoryQuery);
+        auto files = repository.listFiles(fileQuery);
+        ulong aggregate;
+        foreach (file; files)
+            aggregate += file.size;
+        rootNode = DirectoryNode("root", "", baseName(path), "", directories.length,
+            files.length, aggregate);
+    }
+
+    override DirectoryNode root()
+    {
+        return rootNode;
+    }
+
+    override DirectoryNode[] listDirectories(string parentId)
+    {
+        RepositoryDirectoryQuery query;
+        query.parentId = parentId == "root" ? 0 : to!long(parentId);
+        query.limit = size_t.max;
+        DirectoryNode[] result;
+        foreach (directory; repository.listDirectories(query))
+        {
+            result ~= DirectoryNode("" ~ directory.id.to!string,
+                directory.parentId == 0 ? "root" : directory.parentId.to!string,
+                directory.name, directory.relativePath, directory.childDirectoryCount,
+                directory.fileCount, directory.aggregateSize);
+        }
+        return result;
+    }
+
+    override FileNode[] listFiles(string directoryId)
+    {
+        RepositoryFileQuery query;
+        query.directoryId = directoryId == "root" ? 0 : to!long(directoryId);
+        query.limit = size_t.max;
+        FileNode[] result;
+        foreach (file; repository.listFiles(query))
+        {
+            result ~= FileNode(file.id.to!string, directoryId, file.name,
+                file.relativePath, file.size);
+        }
+        return result;
+    }
+
+    override void close()
+    {
+        if (repository !is null)
+        {
+            repository.close();
+            repository = null;
+        }
+    }
+}
+
+/** Open a repository-backed directory source for the GUI tree. */
+DirectorySource openRepositoryDirectorySource(string path)
+{
+    return new RepositoryDirectorySource(path);
 }
 
 /** Load one GUI document from JSON or an SQLite repository. */
@@ -148,6 +245,12 @@ unittest
     assert(populated.blobIds.length == 2);
     assert(populated.flags.length == 2);
     assert(!populated.flags[0].hasMedia);
+    auto tree = loadDocumentTree(root);
+    assert(tree.files.length == 3);
+    auto directorySource = openRepositoryDirectorySource(root);
+    assert(directorySource.root().id == "root");
+    assert(directorySource.listFiles("root").length == 3);
+    directorySource.close();
     SourceQuery filteredQuery;
     filteredQuery.text = "one.txt";
     auto filtered = loadDocumentPage(root, 0, 250, filteredQuery);

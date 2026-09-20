@@ -6,6 +6,17 @@ All notable changes to this project are documented in this file.
 
 - Ignore missing paths in the recent-files list instead of terminating the GUI,
   and normalize empty filter text before passing it to GTK.
+- Added the GTK-independent directory projection and source adapter entry point
+  used by the planned tree model.
+- Added a transitional directory TreeView above the existing result table;
+  selecting a file in it selects the corresponding table row and detail view.
+- Directory trees are now built from the complete loaded source rather than the
+  current filtered or paged table rows.
+- Directory children are now materialized in the GTK TreeStore when their
+  parent is expanded, with visible loading placeholder nodes.
+- The TreeView now consumes a read-only `DirectorySource` interface, isolating
+  GTK from the current in-memory adapter and preparing a repository-backed
+  directory query implementation.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and

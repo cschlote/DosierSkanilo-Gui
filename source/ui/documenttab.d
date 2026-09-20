@@ -20,6 +20,7 @@ import gtk.Paned;
 import gtk.TextView;
 import gtk.ScrolledWindow;
 import gtk.TreeView;
+import gtk.TreeStore;
 import gtk.ToggleButton;
 import gtk.Scale;
 import gtk.CheckButton;
@@ -31,6 +32,7 @@ import gdkpixbuf.Pixbuf;
 import gstreamer.Element;
 import gstinterfaces.VideoOverlay;
 import model.blobrow : BlobRow;
+import model.treeprojection : DirectorySource, DirectoryTree;
 
 /** Column index for the row number in the main table model. */
 enum int COL_INDEX = 0;
@@ -101,6 +103,10 @@ class DocumentTab
     Builder previewBuilder;
     ListStore tableStore;
     TreeView tableView;
+    TreeStore directoryTreeStore;
+    TreeView directoryTreeView;
+    DirectoryTree directoryTree;
+    DirectorySource directorySource;
     Entry detailIndexEntry;
     Entry detailSizeEntry;
     Entry detailSha1HexEntry;
