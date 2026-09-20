@@ -221,6 +221,7 @@ class DocumentTab
     ulong filterRequestId;
     ulong renderRequestId;
     ulong detailRequestId;
+    long pendingTreeSelectionIndex = -1;
     long pendingLoadElapsedMs = -1;
     string pendingStatusSuffix = "";
     long lastLoadElapsedMs = -1;

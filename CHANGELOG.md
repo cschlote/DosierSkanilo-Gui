@@ -25,6 +25,8 @@ All notable changes to this project are documented in this file.
   show an error row when the asynchronous query fails.
 - The `More files available...` row now loads subsequent file pages on
   activation for both repository and JSON sources.
+- Selecting a repository file that is outside the current table page now loads
+  its details by stable blob ID and selects it in the detail view.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and

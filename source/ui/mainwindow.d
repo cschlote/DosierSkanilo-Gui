@@ -1200,6 +1200,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     DocumentTab delegate(string, bool, bool) openDocumentFromPath;
     void delegate(DocumentTab) applyFilterForDocument;
     void delegate(DocumentTab, bool) loadDocument;
+    void delegate(DocumentTab, const(BlobRow)[]) renderRowsForTree;
 
     /** Build and wire a new document tab widget hierarchy. */
     DocumentTab createDocumentTab(string filePath)
@@ -1339,6 +1340,45 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 }
                 document.tableView.getSelection().selectIter(tableIter);
                 return;
+            }
+            if (document.directorySourceRemote && selectedId.length > 0)
+            {
+                long sourceId;
+                try
+                    sourceId = to!long(selectedId);
+                catch (Exception)
+                    return;
+                auto requestId = ++document.detailRequestId;
+                auto sourcePath = document.filePath;
+                document.status.setText("Loading tree selection details ...");
+                new Thread({
+                    NamedBinaryBlob details;
+                    string error;
+                    try
+                        details = loadDocumentDetails(sourcePath, sourceId);
+                    catch (Exception ex)
+                        error = ex.msg;
+                    new Idle({
+                        if (requestId != document.detailRequestId)
+                            return false;
+                        if (error.length > 0)
+                        {
+                            document.status.setText("Failed to load tree selection: " ~ error);
+                            return false;
+                        }
+                        auto rows = extractRowsFromBlobs([details]);
+                        if (rows.length == 0 || renderRowsForTree is null)
+                            return false;
+                        auto row = rows[0];
+                        row.sourceId = sourceId;
+                        row.detailsLoaded = true;
+                        document.loadedRows ~= row;
+                        document.visibleRows ~= row;
+                        document.pendingTreeSelectionIndex = cast(long) document.visibleRows.length - 1;
+                        renderRowsForTree(document, document.visibleRows);
+                        return false;
+                    });
+                }).start();
             }
         });
         document.tableView.addOnSizeAllocate((allocation, Widget _) {
@@ -1847,6 +1887,20 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 document.tableView.queueResize();
             }
+            if (document.pendingTreeSelectionIndex >= 0)
+            {
+                TreeIter selectedIter;
+                if (document.tableView.getModel().getIterFirst(selectedIter))
+                {
+                    foreach (index; 0 .. cast(size_t) document.pendingTreeSelectionIndex)
+                    {
+                        if (!document.tableView.getModel().iterNext(selectedIter))
+                            break;
+                    }
+                    document.tableView.getSelection().selectIter(selectedIter);
+                }
+                document.pendingTreeSelectionIndex = -1;
+            }
 
             if (busyDocument is document)
             {
@@ -1859,6 +1913,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
         new Idle(renderStep);
     }
+
+    renderRowsForTree = (DocumentTab document, const(BlobRow)[] rows) {
+        renderRows(document, rows);
+    };
 
     /** Update one document tab's detail pane from the selected row. */
     updateSelectedRowDetails = (DocumentTab document) {
