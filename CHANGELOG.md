@@ -29,6 +29,8 @@ All notable changes to this project are documented in this file.
   its details by stable blob ID and selects it in the detail view.
 - Each document tab now tracks expanded directory IDs independently of the
   legacy result table.
+- Tree rebuilds now restore the directories tracked as expanded, including
+  repository trees that load child levels asynchronously.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and

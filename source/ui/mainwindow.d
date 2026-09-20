@@ -223,11 +223,53 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
     }
 }
 
-/** Render the projection into a GTK tree store. */
-void renderDirectoryTree(TreeStore store, DirectorySource source)
+private bool findDirectoryTreeIter(TreeModelIF model, TreeIter parent, bool hasParent,
+    string id, ref TreeIter result)
+{
+    TreeIter iter;
+    if (hasParent)
+    {
+        if (!model.iterChildren(iter, parent))
+            return false;
+    }
+    else if (!model.getIterFirst(iter))
+    {
+        return false;
+    }
+
+    do
+    {
+        if (model.getValueString(iter, 3) == id)
+        {
+            result = iter;
+            return true;
+        }
+        if (model.iterHasChild(iter) && findDirectoryTreeIter(model, iter, true, id, result))
+            return true;
+    }
+    while (model.iterNext(iter));
+    return false;
+}
+
+private void restoreExpandedDirectories(TreeView treeView, string[] expandedIds)
+{
+    auto model = treeView.getModel();
+    foreach (id; expandedIds)
+    {
+        TreeIter root;
+        TreeIter iter;
+        if (findDirectoryTreeIter(model, root, false, id, iter))
+            treeView.expandRow(model.getPath(iter), false);
+    }
+}
+
+/** Render the projection into a GTK tree store and restore per-tab expansion. */
+void renderDirectoryTree(TreeStore store, DirectorySource source, TreeView treeView,
+    string[] expandedIds)
 {
     store.clear();
     appendDirectoryTreeNode(store, source, source.root, null);
+    restoreExpandedDirectories(treeView, expandedIds);
 }
 
 /** Project the currently visible blob rows into the transitional tree model. */
@@ -1273,6 +1315,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     {
                         populateDirectoryTreeRows(document.directoryTreeStore, parent,
                             result.directories, result.files, result.offset == 0);
+                        restoreExpandedDirectories(document.directoryTreeView,
+                            document.expandedDirectoryIds);
                     }
                     return false;
                 });
@@ -1304,6 +1348,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.directoryTreeStore.remove(child);
             populateDirectoryTreeNode(document.directoryTreeStore, document.directorySource,
                 iter, directoryId);
+            restoreExpandedDirectories(document.directoryTreeView,
+                document.expandedDirectoryIds);
         });
         document.directoryTreeView.addOnRowCollapsed((TreeIter iter, TreePath _, TreeView treeView) {
             auto model = document.directoryTreeView.getModel();
@@ -2622,7 +2668,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     ? openRepositoryDirectorySource(document.filePath)
                     : new ProjectedDirectorySource(result.directoryTree);
                 document.directorySourceRemote = isRepositorySource(document.filePath);
-                renderDirectoryTree(document.directoryTreeStore, document.directorySource);
+                renderDirectoryTree(document.directoryTreeStore, document.directorySource,
+                    document.directoryTreeView, document.expandedDirectoryIds);
                 document.loadedDataVersion = result.dataVersion;
                 document.loadedRootShape = result.rootShape.length > 0 ? result.rootShape : "-";
                 document.loadedRootKeysSummary = result.rootKeysSummary.length > 0 ? result.rootKeysSummary
