@@ -57,7 +57,7 @@ interface DirectorySource
 {
     DirectoryNode root();
     DirectoryNode[] listDirectories(string parentId);
-    FileNode[] listFiles(string directoryId);
+    FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250);
     void close();
 }
 
@@ -78,9 +78,15 @@ final class ProjectedDirectorySource : DirectorySource
         return tree.listDirectories(parentId).dup;
     }
 
-    override FileNode[] listFiles(string directoryId)
+    override FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250)
     {
-        return tree.listFiles(directoryId).dup;
+        auto allFiles = tree.listFiles(directoryId);
+        if (offset >= allFiles.length)
+            return [];
+        auto end = offset + limit;
+        if (end > allFiles.length)
+            end = allFiles.length;
+        return allFiles[offset .. end].dup;
     }
 
     override void close() {}

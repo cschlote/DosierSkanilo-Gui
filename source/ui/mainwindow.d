@@ -142,7 +142,7 @@ private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
     store.setValue(iter, 1, "Directory");
     store.setValue(iter, 2, format("%s files | %s bytes", node.fileCount, node.aggregateSize));
     store.setValue(iter, 3, node.id);
-    if (source.listDirectories(node.id).length > 0 || source.listFiles(node.id).length > 0)
+    if (source.listDirectories(node.id).length > 0 || source.listFiles(node.id, 0, 1).length > 0)
     {
         auto loadingIter = store.createIter(iter);
         store.setValue(loadingIter, 0, "Loading...");
@@ -157,7 +157,7 @@ private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
 {
     foreach (child; source.listDirectories(directoryId))
         appendDirectoryTreeNode(store, source, child, parent);
-    foreach (file; source.listFiles(directoryId))
+    foreach (file; source.listFiles(directoryId, 0, 250))
     {
         auto fileIter = store.createIter(parent);
         store.setValue(fileIter, 0, file.name);
