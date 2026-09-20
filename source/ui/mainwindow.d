@@ -1273,9 +1273,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
         ]);
         document.directoryTreeView = new TreeView(document.directoryTreeStore);
         configureDirectoryTreeColumns(document.directoryTreeView);
-        void delegate(TreeIter, string, size_t, TreeIter) loadRemoteDirectory;
-        loadRemoteDirectory = (TreeIter parent, string directoryId, size_t offset,
-            TreeIter rowToRemove) {
+        void delegate(TreePath, string, size_t, TreePath) loadRemoteDirectory;
+        loadRemoteDirectory = (TreePath parentPath, string directoryId, size_t offset,
+            TreePath rowToRemovePath) {
             auto filePath = document.filePath;
             new Thread({
                 AsyncDirectoryResult result;
@@ -1297,10 +1297,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     if (result.filePath != document.filePath || document.directorySource is null)
                         return false;
                     TreeModelIF model = document.directoryTreeView.getModel();
-                    TreeIter child;
-                    if (!model.iterChildren(child, parent)
-                        || model.getValueString(child, 1) != "Placeholder")
+                    TreeIter parent;
+                    TreeIter rowToRemove;
+                    if (!model.getIter(parent, parentPath)
+                        || !model.getIter(rowToRemove, rowToRemovePath))
                         return false;
+                    if (result.offset == 0)
+                    {
+                        TreeIter child;
+                        if (!model.iterChildren(child, parent)
+                            || model.getValueString(child, 1) != "Placeholder")
+                            return false;
+                    }
                     document.directoryTreeStore.remove(rowToRemove);
                     if (result.error.length > 0)
                     {
@@ -1342,7 +1350,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.expandedDirectoryIds ~= directoryId;
             if (document.directorySourceRemote)
             {
-                loadRemoteDirectory(iter, directoryId, 0, child);
+                loadRemoteDirectory(model.getPath(iter), directoryId, 0, model.getPath(child));
                 return;
             }
             document.directoryTreeStore.remove(child);
@@ -1376,7 +1384,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             auto offsetText = model.getValueString(pageIter, 4);
             auto offset = offsetText.length > 0 ? to!size_t(offsetText) : 0;
             if (document.directorySourceRemote)
-                loadRemoteDirectory(parentIter, directoryId, offset, pageIter);
+                loadRemoteDirectory(model.getPath(parentIter), directoryId, offset, path);
             else
             {
                 document.directoryTreeStore.remove(pageIter);
