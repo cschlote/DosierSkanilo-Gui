@@ -1,7 +1,7 @@
 /** Shared data-source adapter for JSON files and SQLite repositories. */
 module model.datasource;
 
-import std.file : isDir;
+import std.file : exists, isDir;
 import std.string : empty;
 
 import dosierskanilo;
@@ -35,7 +35,7 @@ struct SourceQuery
 /** Return whether `path` is inside a DosierSkanilo repository. */
 bool isRepositorySource(string path)
 {
-    return isDir(path) && !Repository.findRoot(path).empty;
+    return exists(path) && isDir(path) && !Repository.findRoot(path).empty;
 }
 
 /** Load one GUI document from JSON or an SQLite repository. */
@@ -122,6 +122,7 @@ unittest
         rmdirRecurse(root);
 
     assert(!isRepositorySource(root));
+    assert(!isRepositorySource(buildPath(root, "missing")));
     auto repository = Repository.initialize(root);
     repository.close();
     assert(isRepositorySource(root));

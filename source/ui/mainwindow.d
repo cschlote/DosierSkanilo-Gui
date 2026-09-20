@@ -599,7 +599,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     if (cli.filterOnStart.length > 0)
     {
-        filterEntry.setText(cli.filterOnStart);
+        filterEntry.setText(cli.filterOnStart is null ? "" : cli.filterOnStart);
     }
     else
     {
@@ -787,7 +787,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
 
         // pathEntry entfernt
-        filterEntry.setText(document.filterQuery);
+        filterEntry.setText(document.filterQuery is null ? "" : document.filterQuery);
         filterVideo.setActive(document.filterVideo);
         filterAudio.setActive(document.filterAudio);
         filterImage.setActive(document.filterImage);
@@ -1055,7 +1055,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
     {
         auto document = new DocumentTab();
         document.filePath = filePath;
-        document.filterQuery = filterEntry.getText();
+        auto filterQueryText = filterEntry.getText();
+        document.filterQuery = filterQueryText is null ? "" : filterQueryText;
         document.previewScaleMode = previewScaleMode;
         document.previewVideoAutostart = previewVideoAutostart;
         document.previewVideoVolume = previewVideoVolume;
@@ -1872,7 +1873,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             return;
         }
 
-        document.filterQuery = filterEntry.getText();
+        auto filterQueryText = filterEntry.getText();
+        document.filterQuery = filterQueryText is null ? "" : filterQueryText;
         document.filterVideo = filterVideo.getActive();
         document.filterAudio = filterAudio.getActive();
         document.filterImage = filterImage.getActive();

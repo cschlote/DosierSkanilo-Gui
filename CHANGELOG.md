@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Release 0.7.0 - 2026-09-17
 
+- Ignore missing paths in the recent-files list instead of terminating the GUI,
+  and normalize empty filter text before passing it to GTK.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and
