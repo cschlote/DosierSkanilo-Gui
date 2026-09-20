@@ -81,7 +81,7 @@ import model.blobrow : BlobRow, extractRowsFromBlobs;
 import model.datasource : SourceQuery, isRepositorySource, loadDocumentDetails,
     loadDocumentPage, loadDocumentSource, openRepositoryDirectorySource;
 import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, FileInput,
-    ProjectedDirectorySource, buildDirectoryTree;
+    FileNode, ProjectedDirectorySource, buildDirectoryTree;
 import ui.appstate : AppState, loadAppState, saveAppState;
 import ui.builderutils : builderObject;
 import ui.filterbar : loadFilterBarUi;
@@ -157,13 +157,62 @@ private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
 {
     foreach (child; source.listDirectories(directoryId))
         appendDirectoryTreeNode(store, source, child, parent);
-    foreach (file; source.listFiles(directoryId, 0, 250))
+    auto files = source.listFiles(directoryId, 0, 251);
+    auto fileLimit = files.length > 250 ? 250 : files.length;
+    foreach (file; files[0 .. fileLimit])
     {
         auto fileIter = store.createIter(parent);
         store.setValue(fileIter, 0, file.name);
         store.setValue(fileIter, 1, "File");
         store.setValue(fileIter, 2, format("%s bytes", file.size));
         store.setValue(fileIter, 3, file.id);
+    }
+    if (files.length > fileLimit)
+    {
+        auto moreIter = store.createIter(parent);
+        store.setValue(moreIter, 0, "More files available...");
+        store.setValue(moreIter, 1, "Page");
+        store.setValue(moreIter, 2, "");
+        store.setValue(moreIter, 3, directoryId);
+    }
+}
+
+private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
+    const(DirectoryNode)[] directories, const(FileNode)[] files)
+{
+    foreach (directory; directories)
+    {
+        auto directoryIter = store.createIter(parent);
+        store.setValue(directoryIter, 0, directory.name);
+        store.setValue(directoryIter, 1, "Directory");
+        store.setValue(directoryIter, 2, format("%s files | %s bytes",
+            directory.fileCount, directory.aggregateSize));
+        store.setValue(directoryIter, 3, directory.id);
+        if (directory.childDirectoryCount > 0 || directory.fileCount > 0)
+        {
+            auto loadingIter = store.createIter(directoryIter);
+            store.setValue(loadingIter, 0, "Loading...");
+            store.setValue(loadingIter, 1, "Placeholder");
+            store.setValue(loadingIter, 2, "");
+            store.setValue(loadingIter, 3, directory.id);
+        }
+    }
+    auto fileLimit = files.length > 250 ? 250 : files.length;
+    foreach (file; files[0 .. fileLimit])
+    {
+        auto fileIter = store.createIter(parent);
+        store.setValue(fileIter, 0, file.name);
+        store.setValue(fileIter, 1, "File");
+        store.setValue(fileIter, 2, format("%s bytes", file.size));
+        store.setValue(fileIter, 3, file.id);
+    }
+    if (files.length > fileLimit)
+    {
+        auto moreIter = store.createIter(parent);
+        store.setValue(moreIter, 0, "More files available...");
+        store.setValue(moreIter, 1, "Page");
+        store.setValue(moreIter, 2, "");
+        store.setValue(moreIter, 3, "");
     }
 }
 
@@ -210,6 +259,15 @@ struct AsyncLoadResult
     bool pagedSource;
     long[] blobIds;
     RepositoryBlobFlags[] blobFlags;
+}
+
+struct AsyncDirectoryResult
+{
+    string filePath;
+    string directoryId;
+    DirectoryNode[] directories;
+    FileNode[] files;
+    string error;
 }
 
 enum size_t repositoryPageSize = 250;
@@ -1164,6 +1222,51 @@ int runMainWindow(string[] args, ref CliOptions cli)
         ]);
         document.directoryTreeView = new TreeView(document.directoryTreeStore);
         configureDirectoryTreeColumns(document.directoryTreeView);
+        void delegate(TreeIter, string) loadRemoteDirectory;
+        loadRemoteDirectory = (TreeIter parent, string directoryId) {
+            auto filePath = document.filePath;
+            new Thread({
+                AsyncDirectoryResult result;
+                result.filePath = filePath;
+                result.directoryId = directoryId;
+                try
+                {
+                    auto source = openRepositoryDirectorySource(filePath);
+                    result.directories = source.listDirectories(directoryId);
+                    result.files = source.listFiles(directoryId, 0, 251);
+                    source.close();
+                }
+                catch (Exception ex)
+                {
+                    result.error = ex.msg;
+                }
+                new Idle({
+                    if (result.filePath != document.filePath || document.directorySource is null)
+                        return false;
+                    TreeModelIF model = document.directoryTreeView.getModel();
+                    TreeIter child;
+                    if (!model.iterChildren(child, parent)
+                        || model.getValueString(child, 1) != "Placeholder")
+                        return false;
+                    document.directoryTreeStore.remove(child);
+                    if (result.error.length > 0)
+                    {
+                        auto errorIter = document.directoryTreeStore.createIter(parent);
+                        document.directoryTreeStore.setValue(errorIter, 0,
+                            "Failed to load: " ~ result.error);
+                        document.directoryTreeStore.setValue(errorIter, 1, "Error");
+                        document.directoryTreeStore.setValue(errorIter, 2, "");
+                        document.directoryTreeStore.setValue(errorIter, 3, result.directoryId);
+                    }
+                    else
+                    {
+                        populateDirectoryTreeRows(document.directoryTreeStore, parent,
+                            result.directories, result.files);
+                    }
+                    return false;
+                });
+            }).start();
+        };
         document.directoryTreeView.addOnRowExpanded((TreeIter iter, TreePath _, TreeView treeView) {
             TreeModelIF model = document.directoryTreeView.getModel();
             TreeIter child;
@@ -1171,6 +1274,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 return;
 
             auto directoryId = model.getValueString(iter, 3);
+            if (document.directorySourceRemote)
+            {
+                loadRemoteDirectory(iter, directoryId);
+                return;
+            }
             document.directoryTreeStore.remove(child);
             populateDirectoryTreeNode(document.directoryTreeStore, document.directorySource,
                 iter, directoryId);
@@ -2401,6 +2509,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.directorySource = isRepositorySource(document.filePath)
                     ? openRepositoryDirectorySource(document.filePath)
                     : new ProjectedDirectorySource(result.directoryTree);
+                document.directorySourceRemote = isRepositorySource(document.filePath);
                 renderDirectoryTree(document.directoryTreeStore, document.directorySource);
                 document.loadedDataVersion = result.dataVersion;
                 document.loadedRootShape = result.rootShape.length > 0 ? result.rootShape : "-";

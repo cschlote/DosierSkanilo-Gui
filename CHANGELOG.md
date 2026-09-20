@@ -21,6 +21,8 @@ All notable changes to this project are documented in this file.
   display filename.
 - Directory sources now expose bounded file-page queries; tree expansion no
   longer requests an unbounded file list.
+- Repository directory expansions now query children on a background worker and
+  show an error row when the asynchronous query fails.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and

@@ -107,6 +107,7 @@ class DocumentTab
     TreeView directoryTreeView;
     DirectoryTree directoryTree;
     DirectorySource directorySource;
+    bool directorySourceRemote;
     Entry detailIndexEntry;
     Entry detailSizeEntry;
     Entry detailSha1HexEntry;
