@@ -113,7 +113,7 @@ final class RepositoryDirectorySource : DirectorySource
         FileNode[] result;
         foreach (file; repository.listFiles(query))
         {
-            result ~= FileNode(file.id.to!string, directoryId, file.name,
+            result ~= FileNode(file.blobId.to!string, directoryId, file.name,
                 file.relativePath, file.size);
         }
         return result;

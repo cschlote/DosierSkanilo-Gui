@@ -1183,10 +1183,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
             if (model.getValueString(treeIter, 1) != "File")
                 return;
 
-            auto selectedName = model.getValueString(treeIter, 0);
+            auto selectedId = model.getValueString(treeIter, 3);
             foreach (rowIndex, row; document.visibleRows)
             {
-                if (row.primaryFileName != selectedName)
+                auto rowId = row.sourceId >= 0
+                    ? row.sourceId.to!string
+                    : "file:" ~ rowIndex.to!string;
+                if (rowId != selectedId)
                     continue;
                 TreeIter tableIter;
                 if (!document.tableView.getModel().getIterFirst(tableIter))

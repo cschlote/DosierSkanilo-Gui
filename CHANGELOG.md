@@ -17,6 +17,8 @@ All notable changes to this project are documented in this file.
 - The TreeView now consumes a read-only `DirectorySource` interface, isolating
   GTK from the current in-memory adapter and preparing a repository-backed
   directory query implementation.
+- Tree selections now resolve repository rows by stable blob ID instead of
+  display filename.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and
