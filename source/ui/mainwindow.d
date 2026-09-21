@@ -135,14 +135,15 @@ void configureDirectoryTreeColumns(TreeView treeView)
 }
 
 private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
-    const DirectoryNode node, TreeIter parent)
+    const DirectoryNode node, TreeIter parent, string filter = "")
 {
     auto iter = store.createIter(parent);
     store.setValue(iter, 0, node.name.length > 0 ? node.name : "(source root)");
     store.setValue(iter, 1, "Directory");
     store.setValue(iter, 2, format("%s files | %s bytes", node.fileCount, node.aggregateSize));
     store.setValue(iter, 3, node.id);
-    if (source.listDirectories(node.id).length > 0 || source.listFiles(node.id, 0, 1).length > 0)
+    if (source.listDirectories(node.id).length > 0
+        || source.listFiles(node.id, 0, 1, filter).length > 0)
     {
         auto loadingIter = store.createIter(iter);
         store.setValue(loadingIter, 0, "Loading...");
@@ -153,14 +154,15 @@ private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
 }
 
 private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
-    TreeIter parent, string directoryId, size_t offset = 0, bool includeDirectories = true)
+    TreeIter parent, string directoryId, size_t offset = 0, bool includeDirectories = true,
+    string filter = "")
 {
     if (includeDirectories)
     {
         foreach (child; source.listDirectories(directoryId))
-            appendDirectoryTreeNode(store, source, child, parent);
+            appendDirectoryTreeNode(store, source, child, parent, filter);
     }
-    auto files = source.listFiles(directoryId, offset, 251);
+    auto files = source.listFiles(directoryId, offset, 251, filter);
     auto fileLimit = files.length > 250 ? 250 : files.length;
     foreach (file; files[0 .. fileLimit])
     {
@@ -298,10 +300,10 @@ private void selectPendingTreeFile(DocumentTab document)
 
 /** Render the projection into a GTK tree store and restore per-tab expansion. */
 void renderDirectoryTree(TreeStore store, DirectorySource source, TreeView treeView,
-    string[] expandedIds)
+    string[] expandedIds, string filter = "")
 {
     store.clear();
-    appendDirectoryTreeNode(store, source, source.root, null);
+    appendDirectoryTreeNode(store, source, source.root, null, filter);
     restoreExpandedDirectories(treeView, expandedIds);
 }
 
@@ -1386,7 +1388,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 {
                     auto source = openRepositoryDirectorySource(filePath);
                     result.directories = source.listDirectories(directoryId);
-                    result.files = source.listFiles(directoryId, offset, 251);
+                    result.files = source.listFiles(directoryId, offset, 251, document.filterQuery);
                     source.close();
                 }
                 catch (Exception ex)
@@ -1456,7 +1458,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
             document.directoryTreeStore.remove(child);
             populateDirectoryTreeNode(document.directoryTreeStore, document.directorySource,
-                iter, directoryId);
+                iter, directoryId, 0, true, document.filterQuery);
             restoreExpandedDirectories(document.directoryTreeView,
                 document.expandedDirectoryIds);
             selectPendingTreeFile(document);
@@ -1491,7 +1493,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 document.directoryTreeStore.remove(pageIter);
                 populateDirectoryTreeNode(document.directoryTreeStore,
-                    document.directorySource, parentIter, directoryId, offset, false);
+                    document.directorySource, parentIter, directoryId, offset, false,
+                    document.filterQuery);
             }
         });
         document.directoryTreeView.getSelection().addOnChanged((TreeSelection _) {
@@ -2074,6 +2077,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
             // Nach dem Befüllen TreeView wieder verbinden und eine neue Layout-Runde anstoßen.
             document.tableView.setModel(document.tableStore);
+            if (document.directorySource !is null)
+            {
+                renderDirectoryTree(document.directoryTreeStore, document.directorySource,
+                    document.directoryTreeView, document.expandedDirectoryIds,
+                    document.filterQuery);
+            }
             if (document.pendingColumnMeasurement)
             {
                 document.tableView.queueResize();
@@ -2807,7 +2816,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     : new ProjectedDirectorySource(result.directoryTree);
                 document.directorySourceRemote = isRepositorySource(document.filePath);
                 renderDirectoryTree(document.directoryTreeStore, document.directorySource,
-                    document.directoryTreeView, document.expandedDirectoryIds);
+                    document.directoryTreeView, document.expandedDirectoryIds,
+                    document.filterQuery);
                 if (document.pendingTreeRevealFileId.length > 0 && revealTreeFile !is null)
                     revealTreeFile(document, document.pendingTreeRevealFileId);
                 selectPendingTreeFile(document);

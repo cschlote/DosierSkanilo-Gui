@@ -1,10 +1,11 @@
 /** GTK-independent directory tree projection for source adapters. */
 module model.treeprojection;
 
-import std.algorithm : count, countUntil, filter;
+import std.algorithm : canFind, count, countUntil, filter;
 import std.array : array;
 import std.conv : to;
 import std.path : baseName, dirName, buildNormalizedPath;
+import std.string : toLower;
 
 /** Read-only directory node exposed to the GUI. */
 struct DirectoryNode
@@ -57,7 +58,8 @@ interface DirectorySource
 {
     DirectoryNode root();
     DirectoryNode[] listDirectories(string parentId);
-    FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250);
+    FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250,
+        string filter = "");
     void close();
 }
 
@@ -78,9 +80,16 @@ final class ProjectedDirectorySource : DirectorySource
         return tree.listDirectories(parentId).dup;
     }
 
-    override FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250)
+    override FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250,
+        string filter = "")
     {
         auto allFiles = tree.listFiles(directoryId);
+        if (filter.length > 0)
+        {
+            auto query = filter.toLower;
+            allFiles = allFiles.filter!(file => file.name.toLower.canFind(query)
+                || file.relativePath.toLower.canFind(query)).array;
+        }
         if (offset >= allFiles.length)
             return [];
         auto end = offset + limit;

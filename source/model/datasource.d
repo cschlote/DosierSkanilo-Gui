@@ -105,12 +105,14 @@ final class RepositoryDirectorySource : DirectorySource
         return result;
     }
 
-    override FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250)
+    override FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250,
+        string filter = "")
     {
         RepositoryFileQuery query;
         query.directoryId = directoryId == "root" ? 0 : to!long(directoryId);
         query.offset = offset;
         query.limit = limit;
+        query.text = filter;
         FileNode[] result;
         foreach (file; repository.listFiles(query))
         {

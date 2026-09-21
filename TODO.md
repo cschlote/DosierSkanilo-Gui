@@ -3,7 +3,7 @@
 ## Directory Tree Redesign
 
 - Reveal and select the collapsed TreeView path when a blob-table row is selected.
-- Make TreeView filtering use the same per-tab filter state as the blob table.
+- Add media/type-aware TreeView filtering on top of the shared text filter.
 - Add explicit per-tab sort state for directories and files.
 - Persist the selected tree file in `AppState`.
 - Load `FileDetails` directly from a `FileNode`/blob ID without appending a
