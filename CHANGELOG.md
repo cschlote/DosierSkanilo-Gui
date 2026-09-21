@@ -52,6 +52,8 @@ All notable changes to this project are documented in this file.
 - Directory and file nodes now support per-tab sorting by name or size through
   the TreeView sort selector.
 - The per-document TreeView sort order is now persisted in `AppState`.
+- Tree selections outside the current blob-table page now render directly in
+  the detail pane without appending a temporary table row.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and

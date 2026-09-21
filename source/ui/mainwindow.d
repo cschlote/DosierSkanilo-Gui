@@ -1327,7 +1327,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
     DocumentTab delegate(string, bool, bool) openDocumentFromPath;
     void delegate(DocumentTab) applyFilterForDocument;
     void delegate(DocumentTab, bool) loadDocument;
-    void delegate(DocumentTab, const(BlobRow)[]) renderRowsForTree;
     void delegate(DocumentTab, string) revealTreeFile;
 
     /** Build and wire a new document tab widget hierarchy. */
@@ -1619,15 +1618,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
                             return false;
                         }
                         auto rows = extractRowsFromBlobs([details]);
-                        if (rows.length == 0 || renderRowsForTree is null)
+                        if (rows.length == 0)
                             return false;
                         auto row = rows[0];
                         row.sourceId = sourceId;
                         row.detailsLoaded = true;
-                        document.loadedRows ~= row;
-                        document.visibleRows ~= row;
-                        document.pendingTreeSelectionIndex = cast(long) document.visibleRows.length - 1;
-                        renderRowsForTree(document, document.visibleRows);
+                        document.tableView.getSelection().unselectAll();
+                        document.directSelectedRow = row;
+                        document.hasDirectSelectedRow = true;
+                        document.directSelectedIndex = "Tree";
+                        updateSelectedRowDetails(document);
                         return false;
                     });
                 }).start();
@@ -2163,21 +2163,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 document.tableView.queueResize();
             }
-            if (document.pendingTreeSelectionIndex >= 0)
-            {
-                TreeIter selectedIter;
-                if (document.tableView.getModel().getIterFirst(selectedIter))
-                {
-                    foreach (index; 0 .. cast(size_t) document.pendingTreeSelectionIndex)
-                    {
-                        if (!document.tableView.getModel().iterNext(selectedIter))
-                            break;
-                    }
-                    document.tableView.getSelection().selectIter(selectedIter);
-                }
-                document.pendingTreeSelectionIndex = -1;
-            }
-
             if (busyDocument is document)
             {
                 setLoadingState(document, false);
@@ -2190,28 +2175,49 @@ int runMainWindow(string[] args, ref CliOptions cli)
         new Idle(renderStep);
     }
 
-    renderRowsForTree = (DocumentTab document, const(BlobRow)[] rows) {
-        renderRows(document, rows);
-    };
-
     /** Update one document tab's detail pane from the selected row. */
     updateSelectedRowDetails = (DocumentTab document) {
         TreeModelIF model;
         TreeIter iter;
         auto selection = document.tableView.getSelection();
-        if (!selection.getSelected(model, iter))
+        auto hasTableSelection = selection.getSelected(model, iter);
+        if (!hasTableSelection && !document.hasDirectSelectedRow)
         {
             clearSelectionDetails(document);
             return;
         }
 
-        auto idx = model.getValueString(iter, COL_INDEX);
-        auto size = model.getValueString(iter, COL_FILE_SIZE);
-        auto checksums = model.getValueString(iter, COL_CHECKSUM_SET);
-        auto fileType = model.getValueString(iter, COL_FILE_TYPE);
-        auto mediaInfo = model.getValueString(iter, COL_MEDIA_INFO);
-        auto archive = model.getValueString(iter, COL_HAS_ARCHIVE);
-        auto torrent = model.getValueString(iter, COL_HAS_TORRENT);
+        string idx;
+        string size;
+        string checksums;
+        string fileType;
+        string mediaInfo;
+        string archive;
+        string torrent;
+        BlobRow row;
+        size_t rowIndex;
+        if (document.hasDirectSelectedRow)
+        {
+            idx = document.directSelectedIndex;
+            row = document.directSelectedRow;
+            size = row.fileSize.to!string;
+            checksums = checksumSetStatus(row);
+            fileType = boolStatusIcon(row.hasFileType);
+            mediaInfo = mediaInfoSummary(row);
+            archive = boolStatusIcon(row.hasArchive);
+            torrent = boolStatusIcon(row.hasTorrent);
+        }
+        else
+        {
+            document.hasDirectSelectedRow = false;
+            idx = model.getValueString(iter, COL_INDEX);
+            size = model.getValueString(iter, COL_FILE_SIZE);
+            checksums = model.getValueString(iter, COL_CHECKSUM_SET);
+            fileType = model.getValueString(iter, COL_FILE_TYPE);
+            mediaInfo = model.getValueString(iter, COL_MEDIA_INFO);
+            archive = model.getValueString(iter, COL_HAS_ARCHIVE);
+            torrent = model.getValueString(iter, COL_HAS_TORRENT);
+        }
         document.rowDetails.setText(format(
                 "Selection: #%s | size=%s | checksums=%s | type=%s | media=%s | archive=%s | torrent=%s",
                 idx,
@@ -2223,25 +2229,25 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 torrent
         ));
 
-        size_t rowIndex = 0;
-        try
+        if (!document.hasDirectSelectedRow)
         {
-            rowIndex = to!size_t(idx) - 1;
-        }
-        catch (Exception)
-        {
-            clearSelectionDetails(document);
-            document.status.setText("Failed to resolve selected row index.");
-            return;
-        }
-        if (rowIndex >= document.visibleRows.length)
-        {
-            clearSelectionDetails(document);
-            document.status.setText("Selected row is outside visible data range.");
-            return;
+            try
+                rowIndex = to!size_t(idx) - 1;
+            catch (Exception)
+            {
+                clearSelectionDetails(document);
+                document.status.setText("Failed to resolve selected row index.");
+                return;
+            }
+            if (rowIndex >= document.visibleRows.length)
+            {
+                clearSelectionDetails(document);
+                document.status.setText("Selected row is outside visible data range.");
+                return;
+            }
+            row = document.visibleRows[rowIndex];
         }
 
-        auto row = document.visibleRows[rowIndex];
         auto treeSelectionId = row.sourceId >= 0
             ? row.sourceId.to!string
             : "file:" ~ rowIndex.to!string;

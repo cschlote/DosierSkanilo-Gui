@@ -120,6 +120,9 @@ class DocumentTab
     bool syncingTreeSelection;
     string pendingTreeRevealFileId;
     string selectedTreeFileId;
+    BlobRow directSelectedRow;
+    bool hasDirectSelectedRow;
+    string directSelectedIndex;
     Entry detailIndexEntry;
     Entry detailSizeEntry;
     Entry detailSha1HexEntry;
@@ -237,7 +240,6 @@ class DocumentTab
     ulong filterRequestId;
     ulong renderRequestId;
     ulong detailRequestId;
-    long pendingTreeSelectionIndex = -1;
     long pendingLoadElapsedMs = -1;
     string pendingStatusSuffix = "";
     long lastLoadElapsedMs = -1;

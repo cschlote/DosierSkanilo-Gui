@@ -6,8 +6,6 @@
 - Add media/type-aware TreeView filtering on top of the shared text filter.
 - Add persistence for the selected TreeView file and validate restored sort state.
 - Persist the selected tree file in `AppState`.
-- Load `FileDetails` directly from a `FileNode`/blob ID without appending a
-  temporary row to the legacy table.
 - Add directory/file context actions and a view switch between TreeView and the
   alternative blob table.
 - Add archive and torrent child trees with lazy loading.
