@@ -516,6 +516,9 @@ unittest
     expected.windowHeight = 600;
     expected.windowMonitorIndex = 2;
     expected.openFilePaths = ["one.json", "two path.json"];
+    expected.expandedTreeStates = ["one.json\troot", "one.json\tdirectory:music"];
+    expected.selectedTreeStates = ["one.json\tfile:7"];
+    expected.treeSortStates = ["one.json\t2"];
     expected.activeTabIndex = 7;
 
     saveAppStateToPath(expected, testStateFile);
@@ -543,5 +546,8 @@ unittest
     assert(loaded.windowHeight == expected.windowHeight);
     assert(loaded.windowMonitorIndex == expected.windowMonitorIndex);
     assert(loaded.openFilePaths == expected.openFilePaths);
+    assert(loaded.expandedTreeStates == expected.expandedTreeStates);
+    assert(loaded.selectedTreeStates == expected.selectedTreeStates);
+    assert(loaded.treeSortStates == expected.treeSortStates);
     assert(loaded.activeTabIndex == expected.activeTabIndex);
 }
