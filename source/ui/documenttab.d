@@ -193,6 +193,8 @@ class DocumentTab
     ComboBoxText pageSizeCombo;
     ComboBoxText treeSortCombo;
     TreeSortOrder treeSortOrder = TreeSortOrder.nameAscending;
+    ComboBoxText viewModeCombo;
+    int viewMode;
     Label pageStatus;
     Box pageBar;
     string selectedPreviewPath = "";

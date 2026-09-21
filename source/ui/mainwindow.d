@@ -1666,6 +1666,21 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto resultViews = new Box(Orientation.VERTICAL, 6);
         resultViews.packStart(directoryScroll, false, true, 0);
         resultViews.packStart(scroll, true, true, 0);
+        void applyViewMode()
+        {
+            auto showTree = document.viewMode != 2;
+            auto showTable = document.viewMode != 1;
+            directoryScroll.setVisible(showTree);
+            scroll.setVisible(showTable);
+        }
+        document.viewModeCombo.addOnChanged((ComboBoxText combo) {
+            auto active = combo.getActive();
+            if (active < 0 || active > 2)
+                return;
+            document.viewMode = active;
+            applyViewMode();
+        });
+        applyViewMode();
 
         auto previewUi = loadDetailPreviewUi(document);
         auto detailUi = loadDetailPaneUi(document);

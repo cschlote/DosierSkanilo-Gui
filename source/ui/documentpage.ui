@@ -82,6 +82,17 @@
             </items>
           </object>
         </child>
+        <child>
+          <object class="GtkComboBoxText" id="viewModeCombo">
+            <property name="can-focus">False</property>
+            <property name="active">0</property>
+            <items>
+              <item translatable="yes">Tree + table</item>
+              <item translatable="yes">Tree only</item>
+              <item translatable="yes">Blob table only</item>
+            </items>
+          </object>
+        </child>
       </object>
       <packing>
         <property name="expand">False</property>
