@@ -60,6 +60,10 @@ DetailPaneUi loadDetailPaneUi(DocumentTab document)
     auto detailVisuals = builderObject!Box(detailBuilder, "detail", "detailVisuals");
     auto detailGrid = builderObject!Grid(detailBuilder, "detail", "detailGrid");
     document.detailFileNamesLabel = builderObject!Label(detailBuilder, "detail", "detailFileNamesLabel");
+    document.detailPreviousFileButton = builderObject!Button(detailBuilder, "detail",
+        "detailPreviousFileButton");
+    document.detailNextFileButton = builderObject!Button(detailBuilder, "detail",
+        "detailNextFileButton");
     auto detailsScroll = builderObject!ScrolledWindow(detailBuilder, "detail", "detailsScroll");
     ui.previewSlot = builderObject!Box(detailBuilder, "detail", "previewSlot");
 
@@ -101,6 +105,9 @@ DetailPaneUi loadDetailPaneUi(DocumentTab document)
         auto selectedFileName = model.getValueString(iter, 0);
         if (selectedFileName.length > 0)
             document.selectedFileName = selectedFileName;
+        auto count = model.iterNChildren(null);
+        document.detailPreviousFileButton.setSensitive(count > 1);
+        document.detailNextFileButton.setSensitive(count > 1);
     });
 
     return ui;
@@ -116,6 +123,24 @@ DetailPaneUi loadDetailPaneUi(DocumentTab document)
  */
 void bindDetailPaneSignals(DocumentTab document, DetailPaneCallbacks callbacks)
 {
+    void selectRelativeFile(bool next)
+    {
+        TreeModelIF model;
+        TreeIter iter;
+        auto selection = document.detailFileNamesView.getSelection();
+        if (!selection.getSelected(model, iter))
+            return;
+        auto path = model.getPath(iter);
+        if (next)
+            path.next();
+        else if (!path.prev())
+            return;
+        selection.selectPath(path);
+    }
+
+    document.detailPreviousFileButton.addOnClicked((Button _) { selectRelativeFile(false); });
+    document.detailNextFileButton.addOnClicked((Button _) { selectRelativeFile(true); });
+
     document.detailFileNamesView.addOnRowActivated((TreePath path, TreeViewColumn column, TreeView treeView) {
         TreeModelIF model;
         TreeIter iter;

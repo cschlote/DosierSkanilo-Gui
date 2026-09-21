@@ -417,10 +417,31 @@
               </packing>
             </child>
             <child>
-              <object class="GtkLabel" id="detailFileNamesLabel">
+              <object class="GtkBox" id="knownFilesHeader">
                 <property name="can-focus">False</property>
-                <property name="label">Known file names (0)</property>
-                <property name="xalign">0</property>
+                <property name="spacing">6</property>
+                <child>
+                  <object class="GtkLabel" id="detailFileNamesLabel">
+                    <property name="can-focus">False</property>
+                    <property name="label">Known file names (0)</property>
+                    <property name="hexpand">True</property>
+                    <property name="xalign">0</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="detailPreviousFileButton">
+                    <property name="label">Previous</property>
+                    <property name="can-focus">False</property>
+                    <property name="sensitive">False</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="detailNextFileButton">
+                    <property name="label">Next</property>
+                    <property name="can-focus">False</property>
+                    <property name="sensitive">False</property>
+                  </object>
+                </child>
               </object>
               <packing>
                 <property name="expand">False</property>

@@ -38,6 +38,8 @@ All notable changes to this project are documented in this file.
 - Table selection now selects the matching TreeView file when it is currently
   materialized, while selecting a known file name updates the active file
   action target for blobs with multiple references.
+- The detail pane now provides Previous/Next controls for switching between
+  multiple known file names of one binary blob.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and

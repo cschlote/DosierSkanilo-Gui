@@ -110,6 +110,8 @@ void setMetadataDetails(Expander expander, TextView view, string title, string d
 void setKnownFilesTable(DocumentTab document, const(BlobRow) row)
 {
     document.detailFileNamesStore.clear();
+    document.detailPreviousFileButton.setSensitive(false);
+    document.detailNextFileButton.setSensitive(false);
     enforce(document.detailFileNamesLabel !is null,
         "detailFileNamesLabel must be initialized before setting known files table");
     document.detailFileNamesLabel.setText(format("Known file names (%s)", row.fileCount));

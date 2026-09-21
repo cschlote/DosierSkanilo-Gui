@@ -117,6 +117,8 @@ class DocumentTab
     Entry detailXxh64HexEntry;
     Label detailChecksumStatus;
     Label detailFileNamesLabel;
+    Button detailPreviousFileButton;
+    Button detailNextFileButton;
     Label detailPreviewTitle;
     Label detailPreviewSummary;
     Label detailMediaInfoStatus;
