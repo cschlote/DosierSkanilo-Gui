@@ -17,9 +17,11 @@ compute metadata, or write repository data back to disk.
    tabs.
 2. The source adapter loads JSON through the legacy loader or reads the SQLite
   repository through the DosierSkanilo library API.
-3. Loaded domain objects are normalized into `BlobRow` projections.
-4. Text, media, file type, archive, and torrent filters are applied.
-5. Results are rendered in a `TreeView`/`ListStore` table.
+3. The source is projected into a GTK-independent `DirectorySource`.
+4. Directory children are loaded lazily; repository children use bounded SQLite
+   queries on background workers.
+5. The directory tree is rendered as the primary navigation view. The flattened
+   `BlobRow` table remains an alternative blob-oriented view.
 6. Selection details are shown in a split view with metadata expanders,
   clipboard actions, and a raw JSON detail block.
 
@@ -33,8 +35,12 @@ compute metadata, or write repository data back to disk.
 - `source/ui/tablecolumns.d`: table column setup
 - `source/ui/appstate.d`: persisted preferences and window state
 - `source/model/blobrow.d`: presentation model (`BlobRow`)
+- `source/model/treeprojection.d`: directory/file projection and `DirectorySource`
 - `source/model/datasource.d`: JSON/repository source adapter
 - `source/view/textreport.d`: filtering and helper transformations
+
+Repository DTOs and bounded directory SQL queries live in the sibling
+`DosierSkanilo` library. The GUI does not access SQLite directly.
 
 ## 3. Startup CLI Layer
 
@@ -53,6 +59,8 @@ The adapter also exposes bounded page reads; visible page controls and SQL-backe
 filtering now use the page controls and backend query filters for repository
 documents. JSON documents retain the full-load compatibility path.
 Nested repository details are fetched asynchronously when a row is selected.
+Directory expansion and additional file pages use the same background-query
+pattern. Known file references can be navigated independently of the blob row.
 
 ## 4. UI Composition
 
@@ -61,7 +69,8 @@ Nested repository details are fetched asynchronously when a row is selected.
   - `Edit`: filter actions, metrics reset, preferences
   - `Help`: shortcuts, about
 - toolbar with load/filter controls
-- main `TreeView` table for rows
+- primary lazy directory `TreeView`
+- alternative `TreeView`/`ListStore` blob table
 - split-view detail pane with metadata expanders and known-file table
 - status, performance, and file-metadata lines
 

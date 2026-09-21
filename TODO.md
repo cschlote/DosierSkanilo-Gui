@@ -1,5 +1,18 @@
 # Open Issues
 
+## Directory Tree Redesign
+
+- Reveal and select the collapsed TreeView path when a blob-table row is selected.
+- Make TreeView filtering use the same per-tab filter state as the blob table.
+- Add explicit per-tab sort state for directories and files.
+- Persist expanded directory IDs and selected tree file in `AppState`.
+- Load `FileDetails` directly from a `FileNode`/blob ID without appending a
+  temporary row to the legacy table.
+- Add directory/file context actions and a view switch between TreeView and the
+  alternative blob table.
+- Add archive and torrent child trees with lazy loading.
+- Add specialized detail renderers and explicit analysis operations.
+
 - The top-level splitter still snaps back to the maximum width after loading a file, so the current layout clamping is not stable enough.
 - The preview pane can stay visually empty on first video selection even though audio already plays; the preview refresh path likely races widget realization and sink attachment.
 - The preview/details splitter position is still not restored reliably, which suggests the current save/restore path needs a dedicated layout lifecycle pass.

@@ -6,7 +6,7 @@ need to preserve the current widget layout or interaction model.
 
 ## Direction
 
-The GUI should present a directory tree with files below each directory. JSON
+The GUI now presents a directory tree with files below each directory. JSON
 files and SQLite repositories should look and behave the same from the user's
 perspective:
 
@@ -18,9 +18,32 @@ The source adapter hides whether data comes from a JSON file or a
 `.dosierskanilo` repository. Loading details, directory children, archive
 entries, torrent files, and analysis results may be deferred or lazy.
 
-The existing table of flattened `NamedBinaryBlob` values is a useful prototype,
-but it should not remain the primary GUI model. It exposes the storage shape
-instead of the user's directory-oriented view.
+The existing table of flattened `NamedBinaryBlob` values remains available as
+an alternative blob-oriented view. It is useful for duplicate-oriented work,
+but it is no longer the only or primary navigation model.
+
+## Current Status
+
+Implemented:
+
+- GTK-independent `DirectoryNode` and `FileNode` projections.
+- `DirectorySource` abstraction with JSON and repository adapters.
+- SQLite `listDirectories()` and bounded `listFiles()` APIs in `DosierSkanilo`.
+- Lazy directory expansion with loading and error states.
+- Asynchronous repository child queries and paged file navigation.
+- Per-tab expanded-directory tracking and restoration.
+- Stable blob-ID selection between the TreeView and blob table where nodes are
+  materialized.
+- Asynchronous details for repository files outside the current table page.
+- Previous/Next navigation for multiple known file references.
+
+Known limitations:
+
+- A table selection does not yet automatically expand collapsed directories to
+  reveal its TreeView file.
+- Tree filtering and sorting are not yet unified with table filtering/sorting.
+- Expanded-directory state is held per tab but is not persisted in `AppState`.
+- The table remains a transitional implementation of the alternative blob view.
 
 ## JSON and Jsonizer
 
@@ -199,12 +222,21 @@ a compatibility layer around the current table UI:
 1. Define projection types and source capabilities without GTK dependencies.
 2. Implement the JSON projection using `NamedBinaryBlob` and Jsonizer.
 3. Implement the SQLite projection using repository queries.
-4. Replace the flattened table with the directory tree.
-5. Move filter, sort, selection, and paging state into each tab.
-6. Add lazy file details and specialized detail renderers.
+4. Replace the flattened table as the primary view with the directory tree. **In progress; the table remains as an alternative view.**
+5. Move filter, sort, selection, and paging state into each tab. **In progress; expanded IDs and most filter/page state are per-tab.**
+6. Add lazy file details and specialized detail renderers. **Partially complete; repository details load asynchronously.**
 7. Add archive and torrent entry trees.
 8. Add explicit analysis operations through the Tools menu.
-9. Move stable, reusable projection and analysis code into `DosierSkanilo`.
+9. Move stable, reusable projection and analysis code into `DosierSkanilo`. **Directory query DTOs and bounded queries are complete.**
+
+## Immediate Plan
+
+1. Reveal and select a collapsed TreeView path when the blob table is selected.
+2. Add unified tree filtering and stable per-tab sorting.
+3. Persist expanded and selected tree state in `AppState`.
+4. Make direct `FileNode` detail loading independent of temporary table rows.
+5. Add context actions, specialized renderers, archive/torrent trees, and
+   explicit analysis operations.
 
 The current pagination and BlobRow table are temporary implementation details.
 They may be removed once the new source and tree model are usable.
