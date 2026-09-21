@@ -2366,6 +2366,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
         document.selectedSha1 = row.sha1;
         document.selectedFileName = row.primaryFileName;
+        document.selectedFilePath = row.primaryFileName;
         setDetailEntry(document.detailSha1HexEntry, digestBase64ToHex(row.sha1));
         setDetailEntry(document.detailMd5HexEntry, digestBase64ToHex(row.md5));
         setDetailEntry(document.detailXxh64HexEntry, digestBase64ToHex(row.xxh64));
@@ -2448,6 +2449,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.selectedDetailsText = detailsText;
         document.btnCopySha1.setSensitive(!isLoading && document.selectedSha1.length > 0);
         document.btnCopyFile.setSensitive(!isLoading && document.selectedFileName.length > 0);
+        document.btnCopyPath.setSensitive(!isLoading && document.selectedFilePath.length > 0);
         document.btnCopyDetails.setSensitive(!isLoading && document.selectedDetailsText.length > 0);
         setKnownFilesTable(document, row);
     };

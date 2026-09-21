@@ -181,6 +181,7 @@ class DocumentTab
     VideoOverlay previewVideoOverlay;
     Button btnCopySha1;
     Button btnCopyFile;
+    Button btnCopyPath;
     Button btnCopyDetails;
     Label rowDetails;
     Label status;
@@ -227,6 +228,7 @@ class DocumentTab
     bool pendingColumnMeasurement;
     string selectedSha1 = "";
     string selectedFileName = "";
+    string selectedFilePath = "";
     string selectedDetailsText = "";
     int loadedDataVersion = -1;
     string loadedRootShape = "-";

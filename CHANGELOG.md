@@ -59,6 +59,7 @@ All notable changes to this project are documented in this file.
 - The selected view mode is now persisted per document path in `AppState`.
 - Activating a File node in the TreeView now opens its source-relative path in
   the configured external application.
+- Added a `Copy Path` action for the active file reference in the detail pane.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and

@@ -175,6 +175,7 @@ void clearSelectionDetails(DocumentTab document)
 {
     document.selectedSha1 = "";
     document.selectedFileName = "";
+    document.selectedFilePath = "";
     document.selectedDetailsText = "";
     document.selectedPreviewPath = "";
     document.selectedPreviewIsImage = false;

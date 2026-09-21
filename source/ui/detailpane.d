@@ -69,6 +69,7 @@ DetailPaneUi loadDetailPaneUi(DocumentTab document)
 
     document.btnCopySha1 = builderObject!Button(detailBuilder, "detail", "btnCopySha1");
     document.btnCopyFile = builderObject!Button(detailBuilder, "detail", "btnCopyFile");
+    document.btnCopyPath = builderObject!Button(detailBuilder, "detail", "btnCopyPath");
     document.btnCopyDetails = builderObject!Button(detailBuilder, "detail", "btnCopyDetails");
 
     document.detailChecksumExpander = builderObject!Expander(detailBuilder, "detail", "detailChecksumExpander");
@@ -104,7 +105,10 @@ DetailPaneUi loadDetailPaneUi(DocumentTab document)
             return;
         auto selectedFileName = model.getValueString(iter, 0);
         if (selectedFileName.length > 0)
+        {
             document.selectedFileName = selectedFileName;
+            document.selectedFilePath = selectedFileName;
+        }
         auto count = model.iterNChildren(null);
         document.detailPreviousFileButton.setSensitive(count > 1);
         document.detailNextFileButton.setSensitive(count > 1);
@@ -164,6 +168,9 @@ void bindDetailPaneSignals(DocumentTab document, DetailPaneCallbacks callbacks)
     });
     document.btnCopyFile.addOnClicked((Button _) {
         callbacks.copyTextToClipboard("file name", document.selectedFileName, document);
+    });
+    document.btnCopyPath.addOnClicked((Button _) {
+        callbacks.copyTextToClipboard("file path", document.selectedFilePath, document);
     });
     document.btnCopyDetails.addOnClicked((Button _) {
         callbacks.copyTextToClipboard("details", document.selectedDetailsText, document);

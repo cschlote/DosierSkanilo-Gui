@@ -110,6 +110,7 @@ void setMetadataDetails(Expander expander, TextView view, string title, string d
 void setKnownFilesTable(DocumentTab document, const(BlobRow) row)
 {
     document.detailFileNamesStore.clear();
+    document.selectedFilePath = "";
     document.detailPreviousFileButton.setSensitive(false);
     document.detailNextFileButton.setSensitive(false);
     enforce(document.detailFileNamesLabel !is null,
