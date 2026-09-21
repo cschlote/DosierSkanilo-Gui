@@ -62,6 +62,8 @@ All notable changes to this project are documented in this file.
 - Added a `Copy Path` action for the active file reference in the detail pane.
 - File nodes now provide a right-click menu for copying their name or
   source-relative path directly from the TreeView.
+- Directory nodes now provide right-click actions for copying their relative
+  path and filtering the current tab to that directory.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and

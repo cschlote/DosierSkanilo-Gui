@@ -172,6 +172,7 @@ private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
     store.setValue(iter, 1, "Directory");
     store.setValue(iter, 2, format("%s files | %s bytes", node.fileCount, node.aggregateSize));
     store.setValue(iter, 3, node.id);
+    store.setValue(iter, 5, node.relativePath);
     if (sortedDirectories(source, node.id, order).length > 0
         || sortedFiles(source, node.id, 0, 1, filter, order).length > 0)
     {
@@ -247,6 +248,7 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
         store.setValue(directoryIter, 2, format("%s files | %s bytes",
             directory.fileCount, directory.aggregateSize));
         store.setValue(directoryIter, 3, directory.id);
+        store.setValue(directoryIter, 5, directory.relativePath);
         if (directory.childDirectoryCount > 0 || directory.fileCount > 0)
         {
             auto loadingIter = store.createIter(directoryIter);
@@ -1423,9 +1425,31 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 return false;
             auto model = document.directoryTreeView.getModel();
             auto iter = new TreeIter();
-            if (!model.getIter(iter, path) || model.getValueString(iter, 1) != "File")
+            if (!model.getIter(iter, path))
                 return false;
             document.directoryTreeView.getSelection().selectPath(path);
+            auto kind = model.getValueString(iter, 1);
+            if (kind == "Directory")
+            {
+                auto directoryPath = model.getValueString(iter, 5);
+                auto menu = new Menu();
+                menu.append(new MenuItem((MenuItem _) {
+                    copyTextToClipboard("directory path", directoryPath, document);
+                }, "Copy directory path", false));
+                menu.append(new MenuItem((MenuItem _) {
+                    if (directoryPath.length > 0)
+                    {
+                        filterEntry.setText(directoryPath);
+                        document.filterQuery = directoryPath;
+                        applyFilterForDocument(document);
+                    }
+                }, "Filter this directory", false));
+                menu.showAll();
+                menu.popup(buttonEvent.button, buttonEvent.time);
+                return true;
+            }
+            if (kind != "File")
+                return false;
             auto name = model.getValueString(iter, 0);
             auto relativePath = model.getValueString(iter, 5);
             auto menu = new Menu();
