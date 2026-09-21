@@ -1283,6 +1283,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
     {
         auto document = new DocumentTab();
         document.filePath = filePath;
+        auto treeStatePrefix = filePath ~ "\t";
+        foreach (treeState; loadedState.expandedTreeStates)
+        {
+            if (treeState.length > treeStatePrefix.length
+                && treeState[0 .. treeStatePrefix.length] == treeStatePrefix)
+                document.expandedDirectoryIds ~= treeState[treeStatePrefix.length .. $];
+        }
         auto filterQueryText = filterEntry.getText();
         document.filterQuery = filterQueryText is null ? "" : filterQueryText;
         document.previewScaleMode = previewScaleMode;
@@ -1800,6 +1807,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         foreach (openDocument; documents)
         {
             state.openFilePaths ~= openDocument.filePath;
+            foreach (directoryId; openDocument.expandedDirectoryIds)
+                state.expandedTreeStates ~= openDocument.filePath ~ "\t" ~ directoryId;
         }
         state.activeTabIndex = notebook.getCurrentPage();
 

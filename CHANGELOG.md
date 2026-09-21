@@ -43,6 +43,8 @@ All notable changes to this project are documented in this file.
 - Selecting a blob-table row now searches and expands its directory path before
   selecting the matching TreeView file, including repository paths loaded in a
   background worker.
+- Expanded Directory IDs are now persisted per document path in `AppState` and
+  restored when tabs are recreated.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and
