@@ -111,6 +111,7 @@ class DocumentTab
     string[] expandedDirectoryIds;
     bool syncingTreeSelection;
     string pendingTreeRevealFileId;
+    string selectedTreeFileId;
     Entry detailIndexEntry;
     Entry detailSizeEntry;
     Entry detailSha1HexEntry;

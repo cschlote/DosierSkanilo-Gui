@@ -42,6 +42,7 @@ struct AppState
     int windowMonitorIndex = -1;
     string[] openFilePaths;
     string[] expandedTreeStates;
+    string[] selectedTreeStates;
     int activeTabIndex;
 }
 
@@ -352,6 +353,10 @@ private AppState loadAppStateFromPath(string path)
         {
             state.expandedTreeStates = jsonToStringArray(*value);
         }
+        if (auto value = "selectedTreeStates" in root)
+        {
+            state.selectedTreeStates = jsonToStringArray(*value);
+        }
         if (auto value = "activeTabIndex" in root)
         {
             state.activeTabIndex = jsonToInt(*value, state.activeTabIndex);
@@ -409,6 +414,7 @@ private void saveAppStateToPath(const(AppState) state, string path)
             "  \"windowMonitorIndex\": %s,\n" ~
             "  \"openFilePaths\": %s,\n" ~
             "  \"expandedTreeStates\": %s,\n" ~
+            "  \"selectedTreeStates\": %s,\n" ~
             "  \"activeTabIndex\": %s\n" ~
             "}\n",
         state.prefAutoApplyFilter ? "true" : "false",
@@ -434,6 +440,7 @@ private void saveAppStateToPath(const(AppState) state, string path)
         state.windowMonitorIndex,
         openFileJson,
         jsonStringArray(state.expandedTreeStates),
+        jsonStringArray(state.selectedTreeStates),
         state.activeTabIndex
     );
 

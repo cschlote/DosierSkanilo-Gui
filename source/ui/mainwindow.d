@@ -1290,6 +1290,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 && treeState[0 .. treeStatePrefix.length] == treeStatePrefix)
                 document.expandedDirectoryIds ~= treeState[treeStatePrefix.length .. $];
         }
+        foreach (treeState; loadedState.selectedTreeStates)
+        {
+            if (treeState.length > treeStatePrefix.length
+                && treeState[0 .. treeStatePrefix.length] == treeStatePrefix)
+                document.pendingTreeRevealFileId = treeState[treeStatePrefix.length .. $];
+        }
         auto filterQueryText = filterEntry.getText();
         document.filterQuery = filterQueryText is null ? "" : filterQueryText;
         document.previewScaleMode = previewScaleMode;
@@ -1499,6 +1505,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 return;
 
             auto selectedId = model.getValueString(treeIter, 3);
+            document.selectedTreeFileId = selectedId;
             auto selectedTreeFileName = model.getValueString(treeIter, 0);
             foreach (rowIndex, row; document.visibleRows)
             {
@@ -1809,6 +1816,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
             state.openFilePaths ~= openDocument.filePath;
             foreach (directoryId; openDocument.expandedDirectoryIds)
                 state.expandedTreeStates ~= openDocument.filePath ~ "\t" ~ directoryId;
+            if (openDocument.selectedTreeFileId.length > 0)
+                state.selectedTreeStates ~= openDocument.filePath ~ "\t"
+                    ~ openDocument.selectedTreeFileId;
         }
         state.activeTabIndex = notebook.getCurrentPage();
 
@@ -2798,6 +2808,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.directorySourceRemote = isRepositorySource(document.filePath);
                 renderDirectoryTree(document.directoryTreeStore, document.directorySource,
                     document.directoryTreeView, document.expandedDirectoryIds);
+                if (document.pendingTreeRevealFileId.length > 0 && revealTreeFile !is null)
+                    revealTreeFile(document, document.pendingTreeRevealFileId);
                 selectPendingTreeFile(document);
                 document.loadedDataVersion = result.dataVersion;
                 document.loadedRootShape = result.rootShape.length > 0 ? result.rootShape : "-";

@@ -45,6 +45,8 @@ All notable changes to this project are documented in this file.
   background worker.
 - Expanded Directory IDs are now persisted per document path in `AppState` and
   restored when tabs are recreated.
+- The selected TreeView file is now persisted per document path and revealed
+  after the source is loaded again.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and
