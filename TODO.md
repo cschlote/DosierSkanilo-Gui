@@ -6,7 +6,7 @@
 - Add media/type-aware TreeView filtering on top of the shared text filter.
 - Add persistence for the selected TreeView file and validate restored sort state.
 - Persist the selected tree file in `AppState`.
-- Add richer file actions such as filtering and direct details commands.
+- Add richer file actions such as direct details commands.
 - Add archive and torrent child trees with lazy loading.
 - Add specialized detail renderers and explicit analysis operations.
 

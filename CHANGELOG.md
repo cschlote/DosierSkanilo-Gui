@@ -64,6 +64,8 @@ All notable changes to this project are documented in this file.
   source-relative path directly from the TreeView.
 - Directory nodes now provide right-click actions for copying their relative
   path and filtering the current tab to that directory.
+- File nodes now provide a right-click action for filtering the current tab to
+  the selected relative path.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and

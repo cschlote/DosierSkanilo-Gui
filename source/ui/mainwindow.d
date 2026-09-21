@@ -1459,6 +1459,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
             menu.append(new MenuItem((MenuItem _) {
                 copyTextToClipboard("file path", relativePath, document);
             }, "Copy file path", false));
+            menu.append(new MenuItem((MenuItem _) {
+                if (relativePath.length > 0)
+                {
+                    filterEntry.setText(relativePath);
+                    document.filterQuery = relativePath;
+                    applyFilterForDocument(document);
+                }
+            }, "Filter this file", false));
             menu.showAll();
             menu.popup(buttonEvent.button, buttonEvent.time);
             return true;
