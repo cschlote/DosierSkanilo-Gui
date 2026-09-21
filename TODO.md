@@ -5,7 +5,7 @@
 - Reveal and select the collapsed TreeView path when a blob-table row is selected.
 - Make TreeView filtering use the same per-tab filter state as the blob table.
 - Add explicit per-tab sort state for directories and files.
-- Persist expanded directory IDs and selected tree file in `AppState`.
+- Persist the selected tree file in `AppState`.
 - Load `FileDetails` directly from a `FileNode`/blob ID without appending a
   temporary row to the legacy table.
 - Add directory/file context actions and a view switch between TreeView and the

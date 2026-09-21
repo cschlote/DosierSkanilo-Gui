@@ -42,7 +42,7 @@ Known limitations:
 - A table selection does not yet automatically expand collapsed directories to
   reveal its TreeView file.
 - Tree filtering and sorting are not yet unified with table filtering/sorting.
-- Expanded-directory state is held per tab but is not persisted in `AppState`.
+- Expanded-directory state is held per tab and persisted in `AppState`.
 - The table remains a transitional implementation of the alternative blob view.
 
 ## JSON and Jsonizer
@@ -233,7 +233,7 @@ a compatibility layer around the current table UI:
 
 1. Reveal and select a collapsed TreeView path when the blob table is selected.
 2. Add unified tree filtering and stable per-tab sorting.
-3. Persist expanded and selected tree state in `AppState`.
+3. Persist the selected tree file in `AppState`.
 4. Make direct `FileNode` detail loading independent of temporary table rows.
 5. Add context actions, specialized renderers, archive/torrent trees, and
    explicit analysis operations.
