@@ -10,7 +10,7 @@ import dosierskanilo;
 import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob,
     deserializeDataClassJsonFile;
 import model.treeprojection : DirectoryNode, DirectorySource, FileInput, FileNode,
-    DirectoryTree, buildDirectoryTree;
+    NestedFileNode, DirectoryTree, buildDirectoryTree;
 
 /** One bounded source result page. */
 struct SourcePage
@@ -136,6 +136,42 @@ final class RepositoryDirectorySource : DirectorySource
 DirectorySource openRepositoryDirectorySource(string path)
 {
     return new RepositoryDirectorySource(path);
+}
+
+/** Load one bounded page of archive entries for a repository blob. */
+NestedFileNode[] loadRepositoryArchiveEntries(string path, long blobId,
+    size_t offset = 0, size_t limit = 250)
+{
+    auto repository = Repository.open(path);
+    scope (exit)
+        repository.close();
+    RepositoryArchiveQuery query;
+    query.blobId = blobId;
+    query.offset = offset;
+    query.limit = limit;
+    NestedFileNode[] result;
+    foreach (entry; repository.listArchiveEntries(query))
+        result ~= NestedFileNode(entry.id.to!string, entry.name, entry.name,
+            entry.size, entry.modifiedAt);
+    return result;
+}
+
+/** Load one bounded page of torrent files for a repository blob. */
+NestedFileNode[] loadRepositoryTorrentFiles(string path, long blobId,
+    size_t offset = 0, size_t limit = 250)
+{
+    auto repository = Repository.open(path);
+    scope (exit)
+        repository.close();
+    RepositoryTorrentQuery query;
+    query.blobId = blobId;
+    query.offset = offset;
+    query.limit = limit;
+    NestedFileNode[] result;
+    foreach (file; repository.listTorrentFiles(query))
+        result ~= NestedFileNode(file.id.to!string, file.relativePath,
+            file.relativePath, file.size, "");
+    return result;
 }
 
 /** Load one GUI document from JSON or an SQLite repository. */

@@ -29,6 +29,16 @@ struct FileNode
     ulong size;
 }
 
+/** Lazy nested entry projection used by archive and torrent detail trees. */
+struct NestedFileNode
+{
+    string id;
+    string name;
+    string relativePath;
+    ulong size;
+    string modifiedAt;
+}
+
 /** In-memory directory projection shared by JSON and repository adapters. */
 struct DirectoryTree
 {

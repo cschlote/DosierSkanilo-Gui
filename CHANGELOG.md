@@ -67,6 +67,8 @@ All notable changes to this project are documented in this file.
 - File nodes now provide a right-click action for filtering the current tab to
   the selected relative path.
 - File nodes now also provide an explicit `Show details` context action.
+- Added GTK-independent `NestedFileNode` projections and GUI source adapters
+  for bounded repository archive-entry and torrent-file pages.
 - Fixed a startup segmentation fault caused by registering the view-mode
   callback before the document-page Builder had created its ComboBox.
 - Fixed malformed detail-pane Builder nesting that attempted to add the Copy
