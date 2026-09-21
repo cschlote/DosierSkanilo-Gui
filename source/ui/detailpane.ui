@@ -41,6 +41,13 @@
           </packing>
         </child>
         <child>
+          <object class="GtkButton" id="btnCopyPath">
+            <property name="label">Copy Path</property>
+            <property name="can-focus">False</property>
+            <property name="sensitive">False</property>
+          </object>
+        </child>
+        <child>
           <object class="GtkButton" id="btnCopyDetails">
             <property name="label">Copy Details</property>
             <property name="can-focus">False</property>
@@ -90,13 +97,6 @@
                         <style>
                           <class name="document-status-label"/>
                         </style>
-          </object>
-        </child>
-        <child>
-          <object class="GtkButton" id="btnCopyPath">
-            <property name="label">Copy Path</property>
-            <property name="can-focus">False</property>
-            <property name="sensitive">False</property>
           </object>
         </child>
                     <child>
