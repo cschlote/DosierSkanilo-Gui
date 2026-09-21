@@ -195,4 +195,5 @@ unittest
     assert(source.root.id == "root");
     assert(source.listDirectories("directory:music").length == 1);
     assert(source.listFiles(album[0].id).length == 2);
+    assert(source.listFiles("root", 0, 250, "readme").length == 1);
 }

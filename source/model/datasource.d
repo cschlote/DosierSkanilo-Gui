@@ -253,6 +253,7 @@ unittest
     auto directorySource = openRepositoryDirectorySource(root);
     assert(directorySource.root().id == "root");
     assert(directorySource.listFiles("root").length == 3);
+    assert(directorySource.listFiles("root", 0, 250, "one.txt").length == 1);
     directorySource.close();
     SourceQuery filteredQuery;
     filteredQuery.text = "one.txt";
