@@ -1359,6 +1359,17 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     document.treeSortOrder = cast(TreeSortOrder) sortValue;
             }
         }
+        foreach (viewState; loadedState.viewModeStates)
+        {
+            if (viewState.length > treeStatePrefix.length
+                && viewState[0 .. treeStatePrefix.length] == treeStatePrefix)
+            {
+                auto viewText = viewState[treeStatePrefix.length .. $];
+                auto viewValue = to!int(viewText);
+                if (viewValue >= 0 && viewValue <= 2)
+                    document.viewMode = viewValue;
+            }
+        }
         auto filterQueryText = filterEntry.getText();
         document.filterQuery = filterQueryText is null ? "" : filterQueryText;
         document.previewScaleMode = previewScaleMode;
@@ -1686,6 +1697,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto detailUi = loadDetailPaneUi(document);
         auto pageUi = loadDocumentPageUi(document);
         document.treeSortCombo.setActive(cast(int) document.treeSortOrder);
+        document.viewModeCombo.setActive(document.viewMode);
 
         auto previewPane = previewUi.previewPane;
         auto detailsPane = detailUi.detailsPane;
@@ -1913,6 +1925,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     ~ openDocument.selectedTreeFileId;
             state.treeSortStates ~= openDocument.filePath ~ "\t"
                 ~ (cast(int) openDocument.treeSortOrder).to!string;
+            state.viewModeStates ~= openDocument.filePath ~ "\t"
+                ~ openDocument.viewMode.to!string;
         }
         state.activeTabIndex = notebook.getCurrentPage();
 

@@ -56,6 +56,7 @@ All notable changes to this project are documented in this file.
   the detail pane without appending a temporary table row.
 - Added a per-tab view switch for `Tree + table`, `Tree only`, and `Blob table
   only`.
+- The selected view mode is now persisted per document path in `AppState`.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and

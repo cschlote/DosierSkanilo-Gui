@@ -44,6 +44,7 @@ struct AppState
     string[] expandedTreeStates;
     string[] selectedTreeStates;
     string[] treeSortStates;
+    string[] viewModeStates;
     int activeTabIndex;
 }
 
@@ -362,6 +363,10 @@ private AppState loadAppStateFromPath(string path)
         {
             state.treeSortStates = jsonToStringArray(*value);
         }
+        if (auto value = "viewModeStates" in root)
+        {
+            state.viewModeStates = jsonToStringArray(*value);
+        }
         if (auto value = "activeTabIndex" in root)
         {
             state.activeTabIndex = jsonToInt(*value, state.activeTabIndex);
@@ -421,6 +426,7 @@ private void saveAppStateToPath(const(AppState) state, string path)
             "  \"expandedTreeStates\": %s,\n" ~
             "  \"selectedTreeStates\": %s,\n" ~
             "  \"treeSortStates\": %s,\n" ~
+            "  \"viewModeStates\": %s,\n" ~
             "  \"activeTabIndex\": %s\n" ~
             "}\n",
         state.prefAutoApplyFilter ? "true" : "false",
@@ -448,6 +454,7 @@ private void saveAppStateToPath(const(AppState) state, string path)
         jsonStringArray(state.expandedTreeStates),
         jsonStringArray(state.selectedTreeStates),
         jsonStringArray(state.treeSortStates),
+        jsonStringArray(state.viewModeStates),
         state.activeTabIndex
     );
 
@@ -519,6 +526,7 @@ unittest
     expected.expandedTreeStates = ["one.json\troot", "one.json\tdirectory:music"];
     expected.selectedTreeStates = ["one.json\tfile:7"];
     expected.treeSortStates = ["one.json\t2"];
+    expected.viewModeStates = ["one.json\t1"];
     expected.activeTabIndex = 7;
 
     saveAppStateToPath(expected, testStateFile);
@@ -549,5 +557,6 @@ unittest
     assert(loaded.expandedTreeStates == expected.expandedTreeStates);
     assert(loaded.selectedTreeStates == expected.selectedTreeStates);
     assert(loaded.treeSortStates == expected.treeSortStates);
+    assert(loaded.viewModeStates == expected.viewModeStates);
     assert(loaded.activeTabIndex == expected.activeTabIndex);
 }

@@ -236,8 +236,7 @@ a compatibility layer around the current table UI:
 
 1. Reveal and select a collapsed TreeView path when the blob table is selected.
 2. Persist the selected tree file and TreeView sort order in `AppState`.
-3. Persist the selected view mode in `AppState`.
-4. Add context actions, specialized renderers, archive/torrent trees, and
+3. Add context actions, specialized renderers, archive/torrent trees, and
    explicit analysis operations.
 
 The current pagination and BlobRow table are temporary implementation details.

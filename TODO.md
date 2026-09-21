@@ -7,7 +7,6 @@
 - Add persistence for the selected TreeView file and validate restored sort state.
 - Persist the selected tree file in `AppState`.
 - Add directory/file context actions.
-- Persist the selected Tree/table view mode in `AppState`.
 - Add archive and torrent child trees with lazy loading.
 - Add specialized detail renderers and explicit analysis operations.
 
