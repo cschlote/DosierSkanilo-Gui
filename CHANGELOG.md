@@ -73,6 +73,8 @@ All notable changes to this project are documented in this file.
   callback before the document-page Builder had created its ComboBox.
 - Fixed malformed detail-pane Builder nesting that attempted to add the Copy
   Path button to a checksum expander.
+- Fixed the `Details below` layout restoring a zero-height list area after
+  loading by deferring vertical splitter positioning until GTK allocates it.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and

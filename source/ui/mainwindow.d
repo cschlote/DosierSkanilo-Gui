@@ -1301,10 +1301,26 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto splitPosition = prefDetailsBelow ? splitPositionVertical : splitPositionHorizontal;
         document.split.setOrientation(orientation);
 
-        auto clampedPosition = clampSplitPositionToVisibleBounds(document, document.split, orientation, splitPosition);
-        document.split.setPosition(clampedPosition);
-        new Idle({
-            auto realizedClamped = clampSplitPositionToVisibleBounds(document, document.split, orientation, splitPosition);
+        if (orientation == Orientation.HORIZONTAL)
+        {
+            auto clampedPosition = clampSplitPositionToVisibleBounds(document, document.split,
+                orientation, splitPosition);
+            document.split.setPosition(clampedPosition);
+        }
+        int realizationAttempt;
+        void delegate() applyRealizedPosition;
+        applyRealizedPosition = {
+            auto allocatedExtent = orientation == Orientation.VERTICAL
+                ? document.split.getAllocatedHeight() : document.split.getAllocatedWidth();
+            if (allocatedExtent <= 0 && realizationAttempt < 10)
+            {
+                ++realizationAttempt;
+                new Timeout(50, { applyRealizedPosition(); return false; });
+                return;
+            }
+
+            auto realizedClamped = clampSplitPositionToVisibleBounds(document, document.split,
+                orientation, splitPosition);
             document.split.setPosition(realizedClamped);
             if (orientation == Orientation.VERTICAL)
             {
@@ -1314,8 +1330,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 splitPositionHorizontal = realizedClamped;
             }
-            return false;
-        });
+        };
+        new Idle({ applyRealizedPosition(); return false; });
     }
 
     /** Apply the shared details-pane preference to all open document tabs. */
