@@ -7,7 +7,7 @@ import gtk.Builder;
 import gtk.Label;
 import gtk.ComboBoxText;
 
-import ui.builderutils : builderObject, loadUiBuilder;
+import ui.builderutils : builderObject, builderObjectOrNull, loadUiBuilder;
 import ui.documenttab : DocumentTab;
 
 /** Widgets from the document page layout. */
@@ -41,7 +41,16 @@ DocumentPageUi loadDocumentPageUi(DocumentTab document)
     document.pageLastButton = builderObject!Button(pageBuilder, "page", "pageLastButton");
     document.pageSizeCombo = builderObject!ComboBoxText(pageBuilder, "page", "pageSizeCombo");
     document.treeSortCombo = builderObject!ComboBoxText(pageBuilder, "page", "treeSortCombo");
-    document.viewModeCombo = builderObject!ComboBoxText(pageBuilder, "page", "viewModeCombo");
+    document.viewModeCombo = builderObjectOrNull!ComboBoxText(pageBuilder, "page", "viewModeCombo");
+    if (document.viewModeCombo is null)
+    {
+        document.viewModeCombo = new ComboBoxText();
+        document.viewModeCombo.appendText("Tree + table");
+        document.viewModeCombo.appendText("Tree only");
+        document.viewModeCombo.appendText("Blob table only");
+        ui.pageBar.packStart(document.viewModeCombo, false, false, 0);
+        document.viewModeCombo.show();
+    }
     document.pageStatus = builderObject!Label(pageBuilder, "page", "pageStatus");
     document.pageBar.setVisible(false);
     document.rowDetails = builderObject!Label(pageBuilder, "page", "rowDetails");

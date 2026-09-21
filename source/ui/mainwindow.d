@@ -1765,6 +1765,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto resultViews = new Box(Orientation.VERTICAL, 6);
         resultViews.packStart(directoryScroll, false, true, 0);
         resultViews.packStart(scroll, true, true, 0);
+        auto previewUi = loadDetailPreviewUi(document);
+        auto detailUi = loadDetailPaneUi(document);
+        auto pageUi = loadDocumentPageUi(document);
+        document.treeSortCombo.setActive(cast(int) document.treeSortOrder);
+        document.viewModeCombo.setActive(document.viewMode);
         void applyViewMode()
         {
             auto showTree = document.viewMode != 2;
@@ -1780,12 +1785,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
             applyViewMode();
         });
         applyViewMode();
-
-        auto previewUi = loadDetailPreviewUi(document);
-        auto detailUi = loadDetailPaneUi(document);
-        auto pageUi = loadDocumentPageUi(document);
-        document.treeSortCombo.setActive(cast(int) document.treeSortOrder);
-        document.viewModeCombo.setActive(document.viewMode);
 
         auto previewPane = previewUi.previewPane;
         auto detailsPane = detailUi.detailsPane;

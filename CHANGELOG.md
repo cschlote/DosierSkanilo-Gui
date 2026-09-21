@@ -67,6 +67,8 @@ All notable changes to this project are documented in this file.
 - File nodes now provide a right-click action for filtering the current tab to
   the selected relative path.
 - File nodes now also provide an explicit `Show details` context action.
+- Fixed a startup segmentation fault caused by registering the view-mode
+  callback before the document-page Builder had created its ComboBox.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and
