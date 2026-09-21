@@ -40,6 +40,9 @@ All notable changes to this project are documented in this file.
   action target for blobs with multiple references.
 - The detail pane now provides Previous/Next controls for switching between
   multiple known file names of one binary blob.
+- Selecting a blob-table row now searches and expands its directory path before
+  selecting the matching TreeView file, including repository paths loaded in a
+  background worker.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and

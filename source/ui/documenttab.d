@@ -110,6 +110,7 @@ class DocumentTab
     bool directorySourceRemote;
     string[] expandedDirectoryIds;
     bool syncingTreeSelection;
+    string pendingTreeRevealFileId;
     Entry detailIndexEntry;
     Entry detailSizeEntry;
     Entry detailSha1HexEntry;

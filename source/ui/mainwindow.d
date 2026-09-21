@@ -263,6 +263,39 @@ private void restoreExpandedDirectories(TreeView treeView, string[] expandedIds)
     }
 }
 
+private string[] findDirectoryPathForFile(DirectorySource source, string parentId,
+    string fileId)
+{
+    foreach (file; source.listFiles(parentId, 0, size_t.max))
+    {
+        if (file.id == fileId)
+            return [parentId];
+    }
+    foreach (directory; source.listDirectories(parentId))
+    {
+        auto nested = findDirectoryPathForFile(source, directory.id, fileId);
+        if (nested.length > 0)
+            return [parentId] ~ nested;
+    }
+    return [];
+}
+
+private void selectPendingTreeFile(DocumentTab document)
+{
+    if (document.pendingTreeRevealFileId.length == 0)
+        return;
+    TreeIter root;
+    TreeIter fileIter;
+    if (findDirectoryTreeIter(document.directoryTreeView.getModel(), root, false,
+        document.pendingTreeRevealFileId, fileIter))
+    {
+        document.syncingTreeSelection = true;
+        document.directoryTreeView.getSelection().selectIter(fileIter);
+        document.syncingTreeSelection = false;
+        document.pendingTreeRevealFileId = "";
+    }
+}
+
 /** Render the projection into a GTK tree store and restore per-tab expansion. */
 void renderDirectoryTree(TreeStore store, DirectorySource source, TreeView treeView,
     string[] expandedIds)
@@ -1243,6 +1276,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     void delegate(DocumentTab) applyFilterForDocument;
     void delegate(DocumentTab, bool) loadDocument;
     void delegate(DocumentTab, const(BlobRow)[]) renderRowsForTree;
+    void delegate(DocumentTab, string) revealTreeFile;
 
     /** Build and wire a new document tab widget hierarchy. */
     DocumentTab createDocumentTab(string filePath)
@@ -1273,6 +1307,59 @@ int runMainWindow(string[] args, ref CliOptions cli)
         ]);
         document.directoryTreeView = new TreeView(document.directoryTreeStore);
         configureDirectoryTreeColumns(document.directoryTreeView);
+        revealTreeFile = (DocumentTab target, string fileId) {
+            if (target.directorySource is null)
+                return;
+            void applyReveal(string[] path)
+            {
+                if (path.length == 0)
+                    return;
+                target.pendingTreeRevealFileId = fileId;
+                foreach (directoryId; path)
+                {
+                    bool known;
+                    foreach (expandedId; target.expandedDirectoryIds)
+                    {
+                        if (expandedId == directoryId)
+                        {
+                            known = true;
+                            break;
+                        }
+                    }
+                    if (!known)
+                        target.expandedDirectoryIds ~= directoryId;
+                }
+                restoreExpandedDirectories(target.directoryTreeView,
+                    target.expandedDirectoryIds);
+                selectPendingTreeFile(target);
+            }
+
+            if (!target.directorySourceRemote)
+            {
+                applyReveal(findDirectoryPathForFile(target.directorySource, "root", fileId));
+                return;
+            }
+
+            auto sourcePath = target.filePath;
+            new Thread({
+                string[] path;
+                try
+                {
+                    auto source = openRepositoryDirectorySource(sourcePath);
+                    path = findDirectoryPathForFile(source, "root", fileId);
+                    source.close();
+                }
+                catch (Exception)
+                {
+                    path = [];
+                }
+                new Idle({
+                    if (target.filePath == sourcePath)
+                        applyReveal(path);
+                    return false;
+                });
+            }).start();
+        };
         void delegate(TreePath, string, size_t, TreePath) loadRemoteDirectory;
         loadRemoteDirectory = (TreePath parentPath, string directoryId, size_t offset,
             TreePath rowToRemovePath) {
@@ -1325,6 +1412,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                             result.directories, result.files, result.offset == 0);
                         restoreExpandedDirectories(document.directoryTreeView,
                             document.expandedDirectoryIds);
+                        selectPendingTreeFile(document);
                     }
                     return false;
                 });
@@ -1358,6 +1446,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 iter, directoryId);
             restoreExpandedDirectories(document.directoryTreeView,
                 document.expandedDirectoryIds);
+            selectPendingTreeFile(document);
         });
         document.directoryTreeView.addOnRowCollapsed((TreeIter iter, TreePath _, TreeView treeView) {
             auto model = document.directoryTreeView.getModel();
@@ -2054,6 +2143,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             : "file:" ~ rowIndex.to!string;
         TreeIter treeRoot;
         TreeIter treeFile;
+        bool treeSelected;
         if (!document.syncingTreeSelection
             && findDirectoryTreeIter(document.directoryTreeView.getModel(), treeRoot, false,
                 treeSelectionId, treeFile))
@@ -2061,7 +2151,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.syncingTreeSelection = true;
             document.directoryTreeView.getSelection().selectIter(treeFile);
             document.syncingTreeSelection = false;
+            treeSelected = true;
         }
+        if (!treeSelected && revealTreeFile !is null)
+            revealTreeFile(document, treeSelectionId);
         if (isRepositorySource(document.filePath) && row.sourceId >= 0
             && !row.detailsLoaded)
         {
@@ -2696,6 +2789,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.directorySourceRemote = isRepositorySource(document.filePath);
                 renderDirectoryTree(document.directoryTreeStore, document.directorySource,
                     document.directoryTreeView, document.expandedDirectoryIds);
+                selectPendingTreeFile(document);
                 document.loadedDataVersion = result.dataVersion;
                 document.loadedRootShape = result.rootShape.length > 0 ? result.rootShape : "-";
                 document.loadedRootKeysSummary = result.rootKeysSummary.length > 0 ? result.rootKeysSummary
