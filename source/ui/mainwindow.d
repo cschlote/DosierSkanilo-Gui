@@ -1399,8 +1399,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 return;
             if (model.getValueString(treeIter, 1) != "File")
                 return;
+            if (document.syncingTreeSelection)
+                return;
 
             auto selectedId = model.getValueString(treeIter, 3);
+            auto selectedTreeFileName = model.getValueString(treeIter, 0);
             foreach (rowIndex, row; document.visibleRows)
             {
                 auto rowId = row.sourceId >= 0
@@ -1417,6 +1420,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         return;
                 }
                 document.tableView.getSelection().selectIter(tableIter);
+                if (selectedTreeFileName.length > 0)
+                    document.selectedFileName = selectedTreeFileName;
                 return;
             }
             if (document.directorySourceRemote && selectedId.length > 0)
@@ -2044,6 +2049,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
 
         auto row = document.visibleRows[rowIndex];
+        auto treeSelectionId = row.sourceId >= 0
+            ? row.sourceId.to!string
+            : "file:" ~ rowIndex.to!string;
+        TreeIter treeRoot;
+        TreeIter treeFile;
+        if (!document.syncingTreeSelection
+            && findDirectoryTreeIter(document.directoryTreeView.getModel(), treeRoot, false,
+                treeSelectionId, treeFile))
+        {
+            document.syncingTreeSelection = true;
+            document.directoryTreeView.getSelection().selectIter(treeFile);
+            document.syncingTreeSelection = false;
+        }
         if (isRepositorySource(document.filePath) && row.sourceId >= 0
             && !row.detailsLoaded)
         {

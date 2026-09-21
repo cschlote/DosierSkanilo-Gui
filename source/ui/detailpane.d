@@ -93,6 +93,15 @@ DetailPaneUi loadDetailPaneUi(DocumentTab document)
     document.detailFileNamesView = new TreeView(document.detailFileNamesStore);
     configureKnownFilesColumns(document.detailFileNamesView);
     detailsScroll.add(document.detailFileNamesView);
+    document.detailFileNamesView.getSelection().addOnChanged((TreeSelection _) {
+        TreeModelIF model;
+        TreeIter iter;
+        if (!document.detailFileNamesView.getSelection().getSelected(model, iter))
+            return;
+        auto selectedFileName = model.getValueString(iter, 0);
+        if (selectedFileName.length > 0)
+            document.selectedFileName = selectedFileName;
+    });
 
     return ui;
 }

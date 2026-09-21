@@ -109,6 +109,7 @@ class DocumentTab
     DirectorySource directorySource;
     bool directorySourceRemote;
     string[] expandedDirectoryIds;
+    bool syncingTreeSelection;
     Entry detailIndexEntry;
     Entry detailSizeEntry;
     Entry detailSha1HexEntry;
