@@ -200,6 +200,7 @@ private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
         store.setValue(fileIter, 1, "File");
         store.setValue(fileIter, 2, format("%s bytes", file.size));
         store.setValue(fileIter, 3, file.id);
+        store.setValue(fileIter, 5, file.relativePath);
     }
     if (files.length > fileLimit)
     {
@@ -262,6 +263,7 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
         store.setValue(fileIter, 1, "File");
         store.setValue(fileIter, 2, format("%s bytes", file.size));
         store.setValue(fileIter, 3, file.id);
+        store.setValue(fileIter, 5, file.relativePath);
     }
     if (sortedFileRows.length > fileLimit)
     {
@@ -1402,7 +1404,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.tableView = new TreeView(document.tableStore);
         configureTableColumns(document.tableView);
         document.directoryTreeStore = new TreeStore([
-            GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING
+            GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING,
+            GType.STRING
         ]);
         document.directoryTreeView = new TreeView(document.directoryTreeStore);
         configureDirectoryTreeColumns(document.directoryTreeView);
@@ -1564,7 +1567,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.directoryTreeView.addOnRowActivated((TreePath path, TreeViewColumn _, TreeView treeView) {
             TreeModelIF model = document.directoryTreeView.getModel();
             auto pageIter = new TreeIter();
-            if (!model.getIter(pageIter, path) || model.getValueString(pageIter, 1) != "Page")
+            if (!model.getIter(pageIter, path))
+                return;
+            auto kind = model.getValueString(pageIter, 1);
+            if (kind == "File")
+            {
+                openKnownFileExternally(document, model.getValueString(pageIter, 5));
+                return;
+            }
+            if (kind != "Page")
                 return;
             TreeIter parentIter;
             if (!model.iterParent(parentIter, pageIter))

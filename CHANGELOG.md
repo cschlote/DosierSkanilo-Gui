@@ -57,6 +57,8 @@ All notable changes to this project are documented in this file.
 - Added a per-tab view switch for `Tree + table`, `Tree only`, and `Blob table
   only`.
 - The selected view mode is now persisted per document path in `AppState`.
+- Activating a File node in the TreeView now opens its source-relative path in
+  the configured external application.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and
