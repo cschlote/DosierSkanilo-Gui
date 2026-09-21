@@ -1353,10 +1353,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 && treeState[0 .. treeStatePrefix.length] == treeStatePrefix)
             {
                 auto sortText = treeState[treeStatePrefix.length .. $];
-                auto sortValue = to!int(sortText);
-                if (sortValue >= cast(int) TreeSortOrder.nameAscending
-                    && sortValue <= cast(int) TreeSortOrder.sizeDescending)
-                    document.treeSortOrder = cast(TreeSortOrder) sortValue;
+                try
+                {
+                    auto sortValue = to!int(sortText);
+                    if (sortValue >= cast(int) TreeSortOrder.nameAscending
+                        && sortValue <= cast(int) TreeSortOrder.sizeDescending)
+                        document.treeSortOrder = cast(TreeSortOrder) sortValue;
+                }
+                catch (Exception)
+                {
+                }
             }
         }
         foreach (viewState; loadedState.viewModeStates)
@@ -1365,9 +1371,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 && viewState[0 .. treeStatePrefix.length] == treeStatePrefix)
             {
                 auto viewText = viewState[treeStatePrefix.length .. $];
-                auto viewValue = to!int(viewText);
-                if (viewValue >= 0 && viewValue <= 2)
-                    document.viewMode = viewValue;
+                try
+                {
+                    auto viewValue = to!int(viewText);
+                    if (viewValue >= 0 && viewValue <= 2)
+                        document.viewMode = viewValue;
+                }
+                catch (Exception)
+                {
+                }
             }
         }
         auto filterQueryText = filterEntry.getText();
