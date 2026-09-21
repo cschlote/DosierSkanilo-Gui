@@ -41,8 +41,8 @@ Known limitations:
 
 - A table selection does not yet automatically expand collapsed directories to
   reveal its TreeView file.
-- Tree text filtering is unified with the table filter; tree-specific sorting is
-  still pending.
+- Tree text filtering is unified with the table filter; TreeView sorting by name
+  or size is available per tab.
 - Expanded-directory state is held per tab and persisted in `AppState`.
 - The table remains a transitional implementation of the alternative blob view.
 
@@ -233,10 +233,9 @@ a compatibility layer around the current table UI:
 ## Immediate Plan
 
 1. Reveal and select a collapsed TreeView path when the blob table is selected.
-2. Add stable per-tab sorting for directories and files.
-3. Persist the selected tree file in `AppState`.
-4. Make direct `FileNode` detail loading independent of temporary table rows.
-5. Add context actions, specialized renderers, archive/torrent trees, and
+2. Persist the selected tree file in `AppState`.
+3. Make direct `FileNode` detail loading independent of temporary table rows.
+4. Add context actions, specialized renderers, archive/torrent trees, and
    explicit analysis operations.
 
 The current pagination and BlobRow table are temporary implementation details.

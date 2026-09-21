@@ -49,6 +49,8 @@ All notable changes to this project are documented in this file.
   after the source is loaded again.
 - The active text filter is now applied to TreeView file children for both JSON
   and repository sources.
+- Directory and file nodes now support per-tab sorting by name or size through
+  the TreeView sort selector.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and

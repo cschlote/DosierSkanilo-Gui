@@ -64,6 +64,14 @@ enum PreviewScaleMode : int
     cover = 4,
 }
 
+enum TreeSortOrder : int
+{
+    nameAscending = 0,
+    nameDescending = 1,
+    sizeAscending = 2,
+    sizeDescending = 3,
+}
+
 /** Clamp an integer preview scale mode to a valid enum value.
  *
  * Params:
@@ -180,6 +188,8 @@ class DocumentTab
     Button pageFirstButton;
     Button pageLastButton;
     ComboBoxText pageSizeCombo;
+    ComboBoxText treeSortCombo;
+    TreeSortOrder treeSortOrder = TreeSortOrder.nameAscending;
     Label pageStatus;
     Box pageBar;
     string selectedPreviewPath = "";

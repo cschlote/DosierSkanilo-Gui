@@ -40,6 +40,7 @@ DocumentPageUi loadDocumentPageUi(DocumentTab document)
     document.pageFirstButton = builderObject!Button(pageBuilder, "page", "pageFirstButton");
     document.pageLastButton = builderObject!Button(pageBuilder, "page", "pageLastButton");
     document.pageSizeCombo = builderObject!ComboBoxText(pageBuilder, "page", "pageSizeCombo");
+    document.treeSortCombo = builderObject!ComboBoxText(pageBuilder, "page", "treeSortCombo");
     document.pageStatus = builderObject!Label(pageBuilder, "page", "pageStatus");
     document.pageBar.setVisible(false);
     document.rowDetails = builderObject!Label(pageBuilder, "page", "rowDetails");
