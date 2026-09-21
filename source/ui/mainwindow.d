@@ -60,6 +60,7 @@ import gtk.Widget;
 import gtk.Window;
 import gtk.c.types : GtkAlign, GtkIconSize, GtkReliefStyle, GtkShadowType, GtkTreeViewColumnSizing;
 import gdk.c.types : GdkModifierType;
+import gdk.Event;
 
 import core.thread : Thread;
 import core.time : MonoTime;
@@ -1409,6 +1410,35 @@ int runMainWindow(string[] args, ref CliOptions cli)
         ]);
         document.directoryTreeView = new TreeView(document.directoryTreeStore);
         configureDirectoryTreeColumns(document.directoryTreeView);
+        document.directoryTreeView.addOnButtonPress((Event event, Widget _) {
+            if (event.type != EventType.BUTTON_PRESS || event.button.button != 3)
+                return false;
+            auto buttonEvent = event.button;
+            TreePath path;
+            TreeViewColumn column;
+            int cellX;
+            int cellY;
+            if (!document.directoryTreeView.getPathAtPos(cast(int) buttonEvent.x,
+                cast(int) buttonEvent.y, path, column, cellX, cellY))
+                return false;
+            auto model = document.directoryTreeView.getModel();
+            auto iter = new TreeIter();
+            if (!model.getIter(iter, path) || model.getValueString(iter, 1) != "File")
+                return false;
+            document.directoryTreeView.getSelection().selectPath(path);
+            auto name = model.getValueString(iter, 0);
+            auto relativePath = model.getValueString(iter, 5);
+            auto menu = new Menu();
+            menu.append(new MenuItem((MenuItem _) {
+                copyTextToClipboard("file name", name, document);
+            }, "Copy file name", false));
+            menu.append(new MenuItem((MenuItem _) {
+                copyTextToClipboard("file path", relativePath, document);
+            }, "Copy file path", false));
+            menu.showAll();
+            menu.popup(buttonEvent.button, buttonEvent.time);
+            return true;
+        });
         revealTreeFile = (DocumentTab target, string fileId) {
             if (target.directorySource is null)
                 return;

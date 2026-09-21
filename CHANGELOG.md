@@ -60,6 +60,8 @@ All notable changes to this project are documented in this file.
 - Activating a File node in the TreeView now opens its source-relative path in
   the configured external application.
 - Added a `Copy Path` action for the active file reference in the detail pane.
+- File nodes now provide a right-click menu for copying their name or
+  source-relative path directly from the TreeView.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and
