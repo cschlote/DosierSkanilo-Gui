@@ -1348,6 +1348,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 && treeState[0 .. treeStatePrefix.length] == treeStatePrefix)
                 document.pendingTreeRevealFileId = treeState[treeStatePrefix.length .. $];
         }
+        foreach (treeState; loadedState.treeSortStates)
+        {
+            if (treeState.length > treeStatePrefix.length
+                && treeState[0 .. treeStatePrefix.length] == treeStatePrefix)
+            {
+                auto sortText = treeState[treeStatePrefix.length .. $];
+                auto sortValue = to!int(sortText);
+                if (sortValue >= cast(int) TreeSortOrder.nameAscending
+                    && sortValue <= cast(int) TreeSortOrder.sizeDescending)
+                    document.treeSortOrder = cast(TreeSortOrder) sortValue;
+            }
+        }
         auto filterQueryText = filterEntry.getText();
         document.filterQuery = filterQueryText is null ? "" : filterQueryText;
         document.previewScaleMode = previewScaleMode;
@@ -1658,6 +1670,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto previewUi = loadDetailPreviewUi(document);
         auto detailUi = loadDetailPaneUi(document);
         auto pageUi = loadDocumentPageUi(document);
+        document.treeSortCombo.setActive(cast(int) document.treeSortOrder);
 
         auto previewPane = previewUi.previewPane;
         auto detailsPane = detailUi.detailsPane;
@@ -1883,6 +1896,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             if (openDocument.selectedTreeFileId.length > 0)
                 state.selectedTreeStates ~= openDocument.filePath ~ "\t"
                     ~ openDocument.selectedTreeFileId;
+            state.treeSortStates ~= openDocument.filePath ~ "\t"
+                ~ (cast(int) openDocument.treeSortOrder).to!string;
         }
         state.activeTabIndex = notebook.getCurrentPage();
 

@@ -233,7 +233,7 @@ a compatibility layer around the current table UI:
 ## Immediate Plan
 
 1. Reveal and select a collapsed TreeView path when the blob table is selected.
-2. Persist the selected tree file in `AppState`.
+2. Persist the selected tree file and TreeView sort order in `AppState`.
 3. Make direct `FileNode` detail loading independent of temporary table rows.
 4. Add context actions, specialized renderers, archive/torrent trees, and
    explicit analysis operations.
