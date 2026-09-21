@@ -1460,6 +1460,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 copyTextToClipboard("file path", relativePath, document);
             }, "Copy file path", false));
             menu.append(new MenuItem((MenuItem _) {
+                updateSelectedRowDetails(document);
+            }, "Show details", false));
+            menu.append(new MenuItem((MenuItem _) {
                 if (relativePath.length > 0)
                 {
                     filterEntry.setText(relativePath);
