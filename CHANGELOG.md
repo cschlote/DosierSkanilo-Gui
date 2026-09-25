@@ -80,6 +80,8 @@ All notable changes to this project are documented in this file.
   toolbar content and reappears when loading finishes.
 - Filter bars are now owned by individual document tabs; the global
   `mainwindow.ui` filter slot has been removed.
+- Media preview selection now gives audio priority over embedded cover-art
+  image metadata, so MP3 files use the audio path instead of the image preview.
 - Tree and Blob views are now separate pages in a per-document `GtkNotebook`
   instead of being shown simultaneously.
 - Added a repository-directory chooser. It searches the selected directory and

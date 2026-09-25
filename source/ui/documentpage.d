@@ -46,6 +46,7 @@ DocumentPageUi loadDocumentPageUi(DocumentTab document)
     document.filterTorrentWidget = filterUi.filterTorrent;
     document.btnApplyFilter = filterUi.btnApplyFilter;
     document.btnClearFilter = filterUi.btnClearFilter;
+    document.filterSlot.showAll();
     ui.splitSlot = builderObject!Box(pageBuilder, "page", "splitSlot");
     ui.pageBar = builderObject!Box(pageBuilder, "page", "pageBar");
     document.pageBar = ui.pageBar;

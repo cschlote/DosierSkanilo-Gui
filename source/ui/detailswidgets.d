@@ -186,6 +186,11 @@ private string resolvePreviewPath(DocumentTab document, const(BlobRow) row)
 /** Decide whether the selected row is likely to represent an image file. */
 private bool isImagePreviewCandidate(const(BlobRow) row)
 {
+    // Embedded cover art in an audio container must not steal the audio preview.
+    if (row.hasAudio || row.hasVideo)
+    {
+        return false;
+    }
     if (row.hasImage)
     {
         return true;
