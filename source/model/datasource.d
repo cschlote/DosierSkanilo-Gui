@@ -71,6 +71,7 @@ final class RepositoryDirectorySource : DirectorySource
     this(string path)
     {
         repository = Repository.open(path);
+        auto rootPath = Repository.findRoot(path);
         RepositoryDirectoryQuery directoryQuery;
         directoryQuery.limit = size_t.max;
         RepositoryFileQuery fileQuery;
@@ -80,7 +81,7 @@ final class RepositoryDirectorySource : DirectorySource
         ulong aggregate;
         foreach (file; files)
             aggregate += file.size;
-        rootNode = DirectoryNode("root", "", baseName(path), "", directories.length,
+        rootNode = DirectoryNode("root", "", baseName(rootPath), "", directories.length,
             files.length, aggregate);
     }
 
@@ -288,6 +289,7 @@ unittest
     assert(tree.files.length == 3);
     auto directorySource = openRepositoryDirectorySource(root);
     assert(directorySource.root().id == "root");
+    assert(directorySource.root().name == baseName(root));
     assert(directorySource.listFiles("root").length == 3);
     assert(directorySource.listFiles("root", 0, 250, "one.txt").length == 1);
     directorySource.close();

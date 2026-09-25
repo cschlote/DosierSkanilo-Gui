@@ -59,6 +59,8 @@ All notable changes to this project are documented in this file.
 - The selected view mode is now persisted per document path in `AppState`.
 - Repository tabs now use the discovered repository root name, even when the
   user opened a nested directory below that root.
+- The repository TreeView root node now uses the same discovered repository
+  root basename.
 - Activating a File node in the TreeView now opens its source-relative path in
   the configured external application.
 - Added a `Copy Path` action for the active file reference in the detail pane.
