@@ -9,8 +9,8 @@ import std.string : empty;
 import dosierskanilo;
 import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob,
     deserializeDataClassJsonFile;
-import model.treeprojection : DirectoryNode, DirectorySource, FileInput, FileNode,
-    NestedFileNode, DirectoryTree, buildDirectoryTree;
+import model.treeprojection : DirectoryNode, DirectorySource, FileCursor, FileInput, FileNode,
+    FilePage, NestedFileNode, DirectoryTree, buildDirectoryTree;
 
 /** One bounded source result page. */
 struct SourcePage
@@ -120,6 +120,27 @@ final class RepositoryDirectorySource : DirectorySource
             result ~= FileNode(file.blobId.to!string, directoryId, file.name,
                 file.relativePath, file.size);
         }
+        return result;
+    }
+
+    override FilePage listFilesPage(string directoryId, FileCursor cursor = FileCursor(),
+        size_t limit = 250, string filter = "")
+    {
+        RepositoryFileQuery query;
+        query.directoryId = directoryId == "root" ? 0 : to!long(directoryId);
+        query.limit = limit;
+        query.text = filter;
+        query.afterPath = cursor.relativePath;
+        query.afterId = cursor.id.length > 0 ? to!long(cursor.id) : 0;
+        auto page = repository.listFilesPage(query);
+        FilePage result;
+        result.hasMore = page.hasMore;
+        foreach (file; page.files)
+            result.files ~= FileNode(file.blobId.to!string, directoryId, file.name,
+                file.relativePath, file.size);
+        if (page.hasMore)
+            result.nextCursor = FileCursor(page.nextCursor.relativePath,
+                page.nextCursor.id.to!string);
         return result;
     }
 

@@ -39,6 +39,19 @@ struct NestedFileNode
     string modifiedAt;
 }
 
+struct FileCursor
+{
+    string relativePath;
+    string id;
+}
+
+struct FilePage
+{
+    FileNode[] files;
+    FileCursor nextCursor;
+    bool hasMore;
+}
+
 /** In-memory directory projection shared by JSON and repository adapters. */
 struct DirectoryTree
 {
@@ -70,6 +83,8 @@ interface DirectorySource
     DirectoryNode[] listDirectories(string parentId);
     FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250,
         string filter = "");
+    FilePage listFilesPage(string directoryId, FileCursor cursor = FileCursor(),
+        size_t limit = 250, string filter = "");
     void close();
 }
 
@@ -102,10 +117,40 @@ final class ProjectedDirectorySource : DirectorySource
         }
         if (offset >= allFiles.length)
             return [];
-        auto end = offset + limit;
+        auto end = limit == size_t.max ? allFiles.length : offset + limit;
         if (end > allFiles.length)
             end = allFiles.length;
         return allFiles[offset .. end].dup;
+    }
+
+    override FilePage listFilesPage(string directoryId, FileCursor cursor = FileCursor(),
+        size_t limit = 250, string filter = "")
+    {
+        auto allFiles = listFiles(directoryId, 0, size_t.max, filter);
+        size_t offset;
+        if (cursor.id.length > 0)
+        {
+            foreach (index, file; allFiles)
+            {
+                if (file.id == cursor.id && file.relativePath == cursor.relativePath)
+                {
+                    offset = index + 1;
+                    break;
+                }
+            }
+        }
+        FilePage page;
+        auto end = offset + limit;
+        if (end > allFiles.length)
+            end = allFiles.length;
+        page.files = allFiles[offset .. end].dup;
+        page.hasMore = end < allFiles.length;
+        if (page.hasMore && page.files.length > 0)
+        {
+            auto last = page.files[$ - 1];
+            page.nextCursor = FileCursor(last.relativePath, last.id);
+        }
+        return page;
     }
 
     override void close() {}

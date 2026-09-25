@@ -59,6 +59,8 @@ All notable changes to this project are documented in this file.
 - The selected view mode is now persisted per document path in `AppState`.
 - Repository tabs now use the discovered repository root name, even when the
   user opened a nested directory below that root.
+- GUI `DirectorySource` now exposes source-opaque `FilePage`/`FileCursor`
+  projections for internal chunk navigation across JSON and SQLite adapters.
 - The repository TreeView root node now uses the same discovered repository
   root basename.
 - Startup restoration now advances to the next saved document after the
