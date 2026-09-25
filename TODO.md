@@ -2,10 +2,9 @@
 
 ## Directory Tree Redesign
 
-- Reveal and select the collapsed TreeView path when a blob-table row is selected.
 - Add media/type-aware TreeView filtering on top of the shared text filter.
-- Add persistence for the selected TreeView file and validate restored sort state.
-- Persist the selected tree file in `AppState`.
+- Replace visible SQL paging with opaque source cursors and logical append-on-demand loading.
+- Add `next`/`previous` navigation over the filtered and sorted source sequence.
 - Add archive/torrent-specific details actions and nested entry trees.
 - Add archive and torrent child trees with lazy loading.
 - Add specialized detail renderers and explicit analysis operations.

@@ -49,6 +49,10 @@ Known limitations:
 - A per-tab view switch now selects separate Tree or Blob-table notebook pages.
 - Each document tab now owns its filter bar and filter controls.
 
+The source adapter is intentionally opaque. JSON and SQLite expose the same
+logical result set to the GUI. SQLite may fetch internal chunks, but those
+chunks must not become visible `Page 1 of N` UI state.
+
 ## JSON and Jsonizer
 
 `NamedBinaryBlob` remains the canonical representation of the JSON file format.
@@ -95,25 +99,31 @@ implementation.
 
 ## Source API
 
-The GUI-facing source interface should be small and read-oriented:
+The GUI-facing source interface should be small, read-oriented, and source
+opaque:
 
 ```text
 open(path)
 root()
 listDirectories(parentId)
-listFiles(directoryId, filter, page)
+listFiles(directoryId, filterState, sortOrder, cursor)
 loadFileDetails(fileId)
 loadArchiveDetails(fileId)
 loadTorrentDetails(fileId)
 loadAnalysis(sourceScope, analysisKind)
+next(fileId, filterState, sortOrder)
+previous(fileId, filterState, sortOrder)
 close()
 ```
 
 The JSON implementation may build an in-memory directory index when opened.
-The SQLite implementation should query directory and file children directly.
-Both implementations return the same projection types. Missing information
-must be represented explicitly rather than inferred differently by each UI
-path.
+The SQLite implementation should use a query cursor or keyset internally.
+Both implementations return the same projection types and logical
+filtered/sorted sequences. Missing information must be represented explicitly.
+
+Internal chunks may expose `nextCursor` and `hasMore`, but the GUI appends them
+to one logical view. `next()` and `previous()` operate on stable file IDs
+within the active filter and sort state.
 
 JSON cannot display empty directories unless they are represented in the JSON
 input. This capability difference should be exposed as source metadata instead
@@ -143,7 +153,8 @@ The primary view should be a GTK `TreeView` backed by a lazy tree model:
 - directories are expandable nodes
 - files are children of directories
 - child nodes are loaded when a directory is expanded
-- large file lists are paged below the selected directory
+- large file lists are fetched in internal chunks and appended below the
+  selected directory; user-visible pagination controls are not required
 - sorting is explicit and stable
 - loading and error placeholder nodes are visible states
 
@@ -235,8 +246,9 @@ a compatibility layer around the current table UI:
 
 ## Immediate Plan
 
-1. Reveal and select a collapsed TreeView path when the blob table is selected.
-2. Persist the selected tree file and TreeView sort order in `AppState`.
+1. Replace visible SQL paging with opaque source cursors and logical
+   append-on-demand loading for both TreeView and Blob-table views.
+2. Add media/type-aware filtering to the shared source query state.
 3. Add context actions, specialized renderers, archive/torrent trees, and
    explicit analysis operations.
 
