@@ -1364,6 +1364,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     void delegate(DocumentTab) applyFilterForDocument;
     void delegate(DocumentTab, bool) loadDocument;
     void delegate(DocumentTab, string) revealTreeFile;
+    void delegate() advanceStartupQueue;
 
     /** Build and wire a new document tab widget hierarchy. */
     DocumentTab createDocumentTab(string filePath)
@@ -2322,6 +2323,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 setLoadingState(document, false);
             }
+            if (!isLoading && pendingStartupPaths.length > 0 && advanceStartupQueue !is null)
+                new Idle({ advanceStartupQueue(); return false; });
             document.status.setText(baseStatus);
 
             return false;
@@ -2617,6 +2620,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             return;
         }
     }
+
+    advanceStartupQueue = () { loadNextPendingStartupPath(); };
 
     closeDocumentTab = (DocumentTab document) {
         auto pageIndex = notebook.pageNum(document.pageRoot);

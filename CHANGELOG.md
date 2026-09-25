@@ -61,6 +61,9 @@ All notable changes to this project are documented in this file.
   user opened a nested directory below that root.
 - The repository TreeView root node now uses the same discovered repository
   root basename.
+- Startup restoration now advances to the next saved document after the
+  asynchronous table/tree render completes, so multiple JSON and repository
+  tabs are restored in sequence.
 - Activating a File node in the TreeView now opens its source-relative path in
   the configured external application.
 - Added a `Copy Path` action for the active file reference in the detail pane.
