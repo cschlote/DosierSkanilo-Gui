@@ -64,6 +64,8 @@ All notable changes to this project are documented in this file.
 - Startup restoration now advances to the next saved document after the
   asynchronous table/tree render completes, so multiple JSON and repository
   tabs are restored in sequence.
+- Source opening now validates JSON before creating a tab and normalizes
+  repository subdirectories to their discovered repository root.
 - Activating a File node in the TreeView now opens its source-relative path in
   the configured external application.
 - Added a `Copy Path` action for the active file reference in the detail pane.

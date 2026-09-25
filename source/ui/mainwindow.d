@@ -68,7 +68,7 @@ import std.algorithm : sort;
 import std.array : appender;
 import std.base64 : Base64;
 import std.conv : to;
-import std.file : exists;
+import std.file : exists, isDir;
 import std.format : format;
 import std.path : absolutePath, baseName, buildNormalizedPath, dirName, isAbsolute;
 import std.process : Config, ProcessException, spawnProcess;
@@ -2123,7 +2123,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 auto label = format("%s. %s", idx + 1, recentPath);
                 menu.append(new MenuItem((MenuItem _) {
                     auto document = openDocumentFromPath(recentPath, true, true);
-                    if (document.loadedRows.length == 0)
+                    if (document !is null && document.loadedRows.length == 0)
                     {
                         loadDocument(document, true);
                     }
@@ -2605,6 +2605,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
 
             auto document = openDocumentFromPath(nextPath, false, false);
+            if (document is null)
+                continue;
             loadDocument(document, true);
             return;
         }
@@ -2638,6 +2640,33 @@ int runMainWindow(string[] args, ref CliOptions cli)
     /** Open a document in a tab, selecting it optionally, without forcing a reload. */
     openDocumentFromPath = (string filePath, bool selectTab, bool addToRecent) {
         auto normalizedPath = normalizeDocumentPath(filePath);
+        if (isRepositorySource(normalizedPath))
+        {
+            auto repositoryRoot = Repository.findRoot(normalizedPath);
+            if (repositoryRoot.length == 0)
+            {
+                logLine("[open] no repository root found for ", normalizedPath);
+                return null;
+            }
+            normalizedPath = repositoryRoot;
+        }
+        else
+        {
+            if (!exists(normalizedPath) || isDir(normalizedPath))
+            {
+                logLine("[open] not a JSON file: ", normalizedPath);
+                return null;
+            }
+            try
+            {
+                loadDocumentSource(normalizedPath);
+            }
+            catch (Exception ex)
+            {
+                logLine("[open] invalid JSON file ", normalizedPath, ": ", ex.msg);
+                return null;
+            }
+        }
         auto document = findDocumentByPath(normalizedPath);
         if (document is null)
         {
