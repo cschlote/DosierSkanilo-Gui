@@ -15,6 +15,40 @@ struct ToolbarBindingsCallbacks
     void delegate() clearCurrentFilter;
 }
 
+void bindToolbarButtons(Button btnReload, Button btnRelayout, Button btnCancelLoad,
+    Button btnApplyFilter, Button btnClearFilter, ToolbarBindingsCallbacks callbacks)
+{
+    btnReload.addOnClicked((Button _) { callbacks.reloadCurrentDocument(); });
+    btnRelayout.addOnClicked((Button _) { callbacks.relayoutCurrentDocument(); });
+    btnCancelLoad.addOnClicked((Button _) { callbacks.cancelPendingLoad(); });
+    btnApplyFilter.addOnClicked((Button _) { callbacks.applyFilterFromEntry(); });
+    btnClearFilter.addOnClicked((Button _) { callbacks.clearCurrentFilter(); });
+}
+
+void bindToolbarButtons(Button btnReload, Button btnRelayout, Button btnCancelLoad,
+    ToolbarBindingsCallbacks callbacks)
+{
+    btnReload.addOnClicked((Button _) { callbacks.reloadCurrentDocument(); });
+    btnRelayout.addOnClicked((Button _) { callbacks.relayoutCurrentDocument(); });
+    btnCancelLoad.addOnClicked((Button _) { callbacks.cancelPendingLoad(); });
+}
+
+void bindFilterSignals(Entry filterEntry, ToggleButton filterVideo, ToggleButton filterAudio,
+    ToggleButton filterImage, ToggleButton filterText, ToggleButton filterMediaNot,
+    ToggleButton filterFileType, ToggleButton filterArchive, ToggleButton filterTorrent,
+    void delegate() applyFilter)
+{
+    filterEntry.addOnActivate((Entry _) { applyFilter(); });
+    filterVideo.addOnToggled((ToggleButton _) { applyFilter(); });
+    filterAudio.addOnToggled((ToggleButton _) { applyFilter(); });
+    filterImage.addOnToggled((ToggleButton _) { applyFilter(); });
+    filterText.addOnToggled((ToggleButton _) { applyFilter(); });
+    filterMediaNot.addOnToggled((ToggleButton _) { applyFilter(); });
+    filterFileType.addOnToggled((ToggleButton _) { applyFilter(); });
+    filterArchive.addOnToggled((ToggleButton _) { applyFilter(); });
+    filterTorrent.addOnToggled((ToggleButton _) { applyFilter(); });
+}
+
 /** Bind toolbar buttons and filter controls to their handlers.
  *
  * Params:
@@ -54,19 +88,8 @@ void bindToolbarSignals(
     ToolbarBindingsCallbacks callbacks
 )
 {
-    btnReload.addOnClicked((Button _) { callbacks.reloadCurrentDocument(); });
-    btnRelayout.addOnClicked((Button _) { callbacks.relayoutCurrentDocument(); });
-    btnCancelLoad.addOnClicked((Button _) { callbacks.cancelPendingLoad(); });
-    btnApplyFilter.addOnClicked((Button _) { callbacks.applyFilterFromEntry(); });
-    btnClearFilter.addOnClicked((Button _) { callbacks.clearCurrentFilter(); });
-
-    filterEntry.addOnActivate((Entry _) { callbacks.applyFilterFromEntry(); });
-    filterVideo.addOnToggled((ToggleButton _) { callbacks.applyFilterFromEntry(); });
-    filterAudio.addOnToggled((ToggleButton _) { callbacks.applyFilterFromEntry(); });
-    filterImage.addOnToggled((ToggleButton _) { callbacks.applyFilterFromEntry(); });
-    filterText.addOnToggled((ToggleButton _) { callbacks.applyFilterFromEntry(); });
-    filterMediaNot.addOnToggled((ToggleButton _) { callbacks.applyFilterFromEntry(); });
-    filterFileType.addOnToggled((ToggleButton _) { callbacks.applyFilterFromEntry(); });
-    filterArchive.addOnToggled((ToggleButton _) { callbacks.applyFilterFromEntry(); });
-    filterTorrent.addOnToggled((ToggleButton _) { callbacks.applyFilterFromEntry(); });
+    bindToolbarButtons(btnReload, btnRelayout, btnCancelLoad, btnApplyFilter, btnClearFilter, callbacks);
+    bindFilterSignals(filterEntry, filterVideo, filterAudio, filterImage, filterText,
+        filterMediaNot, filterFileType, filterArchive, filterTorrent,
+        callbacks.applyFilterFromEntry);
 }

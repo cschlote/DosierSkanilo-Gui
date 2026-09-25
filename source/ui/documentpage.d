@@ -8,6 +8,7 @@ import gtk.Label;
 import gtk.ComboBoxText;
 
 import ui.builderutils : builderObject, builderObjectOrNull, loadUiBuilder;
+import ui.filterbar : loadFilterBarUi;
 import ui.documenttab : DocumentTab;
 
 /** Widgets from the document page layout. */
@@ -32,6 +33,19 @@ DocumentPageUi loadDocumentPageUi(DocumentTab document)
 
     DocumentPageUi ui;
     ui.pageRoot = builderObject!Box(pageBuilder, "page", "pageRoot");
+    document.filterSlot = builderObject!Box(pageBuilder, "page", "filterSlot");
+    auto filterUi = loadFilterBarUi(document.filterSlot);
+    document.filterEntry = filterUi.filterEntry;
+    document.filterVideoWidget = filterUi.filterVideo;
+    document.filterAudioWidget = filterUi.filterAudio;
+    document.filterImageWidget = filterUi.filterImage;
+    document.filterTextWidget = filterUi.filterText;
+    document.filterMediaNotWidget = filterUi.filterMediaNot;
+    document.filterFileTypeWidget = filterUi.filterFileType;
+    document.filterArchiveWidget = filterUi.filterArchive;
+    document.filterTorrentWidget = filterUi.filterTorrent;
+    document.btnApplyFilter = filterUi.btnApplyFilter;
+    document.btnClearFilter = filterUi.btnClearFilter;
     ui.splitSlot = builderObject!Box(pageBuilder, "page", "splitSlot");
     ui.pageBar = builderObject!Box(pageBuilder, "page", "pageBar");
     document.pageBar = ui.pageBar;

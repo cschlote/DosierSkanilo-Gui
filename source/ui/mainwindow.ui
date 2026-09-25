@@ -247,17 +247,6 @@
                   </packing>
                 </child>
                 <child>
-                  <object class="GtkBox" id="filterSlot">
-                    <property name="can-focus">False</property>
-                    <property name="hexpand">True</property>
-                  </object>
-                  <packing>
-                    <property name="expand">False</property>
-                    <property name="fill">True</property>
-                    <property name="position">4</property>
-                  </packing>
-                </child>
-                <child>
                   <object class="GtkProgressBar" id="progressBar">
                     <property name="can-focus">False</property>
                     <property name="hexpand">True</property>

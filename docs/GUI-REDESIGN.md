@@ -47,6 +47,7 @@ Known limitations:
 - Expanded-directory state is held per tab and persisted in `AppState`.
 - The table remains a transitional implementation of the alternative blob view.
 - A per-tab view switch now selects separate Tree or Blob-table notebook pages.
+- Each document tab now owns its filter bar and filter controls.
 
 ## JSON and Jsonizer
 

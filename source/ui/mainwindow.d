@@ -85,7 +85,6 @@ import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, Fil
     FileNode, ProjectedDirectorySource, buildDirectoryTree;
 import ui.appstate : AppState, loadAppState, saveAppState;
 import ui.builderutils : builderObject;
-import ui.filterbar : loadFilterBarUi;
 import ui.detailpane : DetailPaneCallbacks, bindDetailPaneSignals, loadDetailPaneUi;
 import ui.detailpreview : DetailPreviewCallbacks, bindDetailPreviewSignals, loadDetailPreviewUi;
 import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL_FILE_TYPE, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_INDEX, COL_INDEX_SORT, COL_MEDIA_INFO, DocumentTab, PreviewScaleMode, TreeSortOrder, clampPreviewScaleMode;
@@ -104,7 +103,7 @@ import ui.preferencesdialog : PreferencesDialogCallbacks, showPreferencesDialog;
 import ui.selectionstatus : boolStatusIcon, checksumStatusSummary, clearSelectionDetails,
     mediaInfoStatusSummary, metadataPresenceSummary, resetFilterState, resetPerfMetrics, updateFileMetaStatus, updatePerfStatus;
 import ui.styles : installApplicationCss;
-import ui.toolbarbindings : ToolbarBindingsCallbacks, bindToolbarSignals;
+import ui.toolbarbindings : ToolbarBindingsCallbacks, bindFilterSignals, bindToolbarButtons;
 import ui.windowlifecycle : WindowLifecycleCallbacks, bindWindowLifecycleSignals;
 import ui.startupworkflow : scheduleSelfTestQuit, startStartupWorkflow;
 import ui.previewprogress : PreviewProgressCallbacks, startPreviewProgressTimer;
@@ -820,19 +819,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
     auto btnRelayout = builderObject!Button(mainBuilder, "main", "btnRelayout");
     auto btnCancelLoad = builderObject!Button(mainBuilder, "main", "btnCancelLoad");
     auto loadSpinner = builderObject!Spinner(mainBuilder, "main", "loadSpinner");
-    auto filterSlot = builderObject!Box(mainBuilder, "main", "filterSlot");
-    auto filterUi = loadFilterBarUi(filterSlot);
-    auto filterEntry = filterUi.filterEntry;
-    auto filterMediaNot = filterUi.filterMediaNot;
-    auto filterVideo = filterUi.filterVideo;
-    auto filterAudio = filterUi.filterAudio;
-    auto filterImage = filterUi.filterImage;
-    auto filterText = filterUi.filterText;
-    auto filterFileType = filterUi.filterFileType;
-    auto filterArchive = filterUi.filterArchive;
-    auto filterTorrent = filterUi.filterTorrent;
-    auto btnApplyFilter = filterUi.btnApplyFilter;
-    auto btnClearFilter = filterUi.btnClearFilter;
+    Entry filterEntry;
+    CheckButton filterMediaNot;
+    CheckButton filterVideo;
+    CheckButton filterAudio;
+    CheckButton filterImage;
+    CheckButton filterText;
+    CheckButton filterFileType;
+    CheckButton filterArchive;
+    CheckButton filterTorrent;
     auto progressBar = builderObject!ProgressBar(mainBuilder, "main", "progressBar");
     auto notebook = builderObject!Notebook(mainBuilder, "main", "notebook");
 
@@ -880,14 +875,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         prefCaseSensitiveFilter = true;
     }
 
-    if (cli.filterOnStart.length > 0)
-    {
-        filterEntry.setText(cli.filterOnStart is null ? "" : cli.filterOnStart);
-    }
-    else
-    {
-        filterEntry.setText("");
-    }
     logLineVerbose("[startup] initial filter text length=", cli.filterOnStart.length,
         ", verbose=", cli.argVerboseOutputs);
     logLineVerbose("[startup] self-test mode=", cli.selfTestMode ? "yes" : "no",
@@ -1046,18 +1033,21 @@ int runMainWindow(string[] args, ref CliOptions cli)
         fileOpenRepositoryMenuItem.setSensitive(!isLoading);
         fileQuitMenuItem.setSensitive(true);
         recentFilesMenuItem.setSensitive(!isLoading && recentFilePaths.length > 0);
-        filterEntry.setSensitive(!isLoading);
-        filterVideo.setSensitive(!isLoading && hasCurrentDocument);
-        filterAudio.setSensitive(!isLoading && hasCurrentDocument);
-        filterImage.setSensitive(!isLoading && hasCurrentDocument);
-        filterText.setSensitive(!isLoading && hasCurrentDocument);
-        filterMediaNot.setSensitive(!isLoading && hasCurrentDocument);
-        filterFileType.setSensitive(!isLoading && hasCurrentDocument);
-        filterArchive.setSensitive(!isLoading && hasCurrentDocument);
-        filterTorrent.setSensitive(!isLoading && hasCurrentDocument);
-        btnApplyFilter.setSensitive(!isLoading && hasCurrentDocument);
+        if (hasCurrentDocument)
+        {
+            filterEntry.setSensitive(!isLoading);
+            filterVideo.setSensitive(!isLoading);
+            filterAudio.setSensitive(!isLoading);
+            filterImage.setSensitive(!isLoading);
+            filterText.setSensitive(!isLoading);
+            filterMediaNot.setSensitive(!isLoading);
+            filterFileType.setSensitive(!isLoading);
+            filterArchive.setSensitive(!isLoading);
+            filterTorrent.setSensitive(!isLoading);
+            currentDocument().btnApplyFilter.setSensitive(!isLoading);
+            currentDocument().btnClearFilter.setSensitive(!isLoading);
+        }
         editApplyFilterMenuItem.setSensitive(!isLoading && hasCurrentDocument);
-        btnClearFilter.setSensitive(!isLoading && hasCurrentDocument);
         editClearFilterMenuItem.setSensitive(!isLoading && hasCurrentDocument);
         editPreferencesMenuItem.setSensitive(!isLoading);
         editResetMetricsMenuItem.setSensitive(hasCurrentDocument);
@@ -1072,18 +1062,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto document = currentDocument();
         if (document is null)
         {
-            filterVideo.setActive(false);
-            filterAudio.setActive(false);
-            filterImage.setActive(false);
-            filterText.setActive(false);
-            filterMediaNot.setActive(false);
-            filterFileType.setActive(false);
-            filterArchive.setActive(false);
-            filterTorrent.setActive(false);
             syncToolbarSensitivity();
             isSyncingToolbarState = false;
             return;
         }
+        filterEntry = document.filterEntry;
+        filterVideo = document.filterVideoWidget;
+        filterAudio = document.filterAudioWidget;
+        filterImage = document.filterImageWidget;
+        filterText = document.filterTextWidget;
+        filterMediaNot = document.filterMediaNotWidget;
+        filterFileType = document.filterFileTypeWidget;
+        filterArchive = document.filterArchiveWidget;
+        filterTorrent = document.filterTorrentWidget;
 
         // pathEntry entfernt
         filterEntry.setText(document.filterQuery is null ? "" : document.filterQuery);
@@ -1172,7 +1163,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
             (Timeout value) { progressPulseTimer = value; },
             () { syncToolbarSensitivity(); },
             (DocumentTab target, bool resizable) { setTableColumnsResizable(target, resizable); },
-            (bool visible) { filterSlot.setVisible(visible); }
+            (bool visible) {
+                auto document = currentDocument();
+                if (document !is null)
+                    document.filterSlot.setVisible(visible);
+            }
         );
     }
 
@@ -1420,7 +1415,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 }
             }
         }
-        auto filterQueryText = filterEntry.getText();
+        auto filterQueryText = filterEntry is null ? cli.filterOnStart : filterEntry.getText();
         document.filterQuery = filterQueryText is null ? "" : filterQueryText;
         document.previewScaleMode = previewScaleMode;
         document.previewVideoAutostart = previewVideoAutostart;
@@ -1803,6 +1798,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto pageUi = loadDocumentPageUi(document);
         document.treeSortCombo.setActive(cast(int) document.treeSortOrder);
         document.viewModeCombo.setActive(document.viewMode);
+        bindFilterSignals(document.filterEntry, document.filterVideoWidget,
+            document.filterAudioWidget, document.filterImageWidget,
+            document.filterTextWidget, document.filterMediaNotWidget,
+            document.filterFileTypeWidget, document.filterArchiveWidget,
+            document.filterTorrentWidget, () {
+                auto text = document.filterEntry.getText();
+                document.filterQuery = text is null ? "" : text;
+                if (applyFilterForDocument !is null)
+                    applyFilterForDocument(document);
+            });
         void applyViewMode()
         {
             auto page = document.viewMode == 1 ? 1 : 0;
@@ -3284,21 +3289,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     // Apply persisted splitter orientation/position to any tabs created later.
 
-    bindToolbarSignals(
+    bindToolbarButtons(
         btnReload,
         btnRelayout,
         btnCancelLoad,
-        btnApplyFilter,
-        btnClearFilter,
-        filterEntry,
-        filterVideo,
-        filterAudio,
-        filterImage,
-        filterText,
-        filterMediaNot,
-        filterFileType,
-        filterArchive,
-        filterTorrent,
         ToolbarBindingsCallbacks(
             () {
                 reloadCurrentDocument(DocumentActionCallbacks(

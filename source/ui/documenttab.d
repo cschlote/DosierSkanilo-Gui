@@ -105,6 +105,18 @@ class DocumentTab
     bool filterTorrent;
 
     Box pageRoot;
+    Box filterSlot;
+    Entry filterEntry;
+    CheckButton filterVideoWidget;
+    CheckButton filterAudioWidget;
+    CheckButton filterImageWidget;
+    CheckButton filterTextWidget;
+    CheckButton filterMediaNotWidget;
+    CheckButton filterFileTypeWidget;
+    CheckButton filterArchiveWidget;
+    CheckButton filterTorrentWidget;
+    Button btnApplyFilter;
+    Button btnClearFilter;
     Paned split;
     Builder pageBuilder;
     Builder detailBuilder;
