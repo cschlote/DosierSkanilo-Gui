@@ -111,6 +111,7 @@ import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable
 import view.textreport : countDuplicateDigestGroups, filterRowsByText;
 import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, NamedBinaryBlob;
 import dosierskanilo.repository.types : RepositoryBlobFlags;
+import dosierskanilo.repository.repository : Repository;
 import cli.logging;
 
 /** Configure the transitional directory tree columns. */
@@ -932,9 +933,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
     Widget createDocumentTabLabel(string filePath)
     {
         auto labelBox = new Box(Orientation.HORIZONTAL, 4);
-        auto icon = new Image(isRepositorySource(filePath) ? "folder" : "text-x-generic",
+        auto repositorySource = isRepositorySource(filePath);
+        auto displayPath = repositorySource ? Repository.findRoot(filePath) : filePath;
+        auto icon = new Image(repositorySource ? "folder" : "text-x-generic",
             GtkIconSize.MENU);
-        auto label = new Label(baseName(filePath));
+        auto label = new Label(baseName(displayPath));
         auto closeButton = new Button();
         closeButton.setLabel("x");
         closeButton.setTooltipText("Close tab");
@@ -951,8 +954,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         labelBox.packStart(icon, false, false, 0);
         labelBox.packStart(label, false, false, 0);
         labelBox.packStart(closeButton, false, false, 0);
-        labelBox.setTooltipText((isRepositorySource(filePath) ? "SQLite repository: " : "JSON file: ")
-            ~ filePath);
+        labelBox.setTooltipText((repositorySource ? "SQLite repository: " : "JSON file: ")
+            ~ displayPath);
         labelBox.showAll();
         return labelBox;
     }

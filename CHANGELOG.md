@@ -57,6 +57,8 @@ All notable changes to this project are documented in this file.
 - Added a per-tab view switch for `Tree + table`, `Tree only`, and `Blob table
   only`.
 - The selected view mode is now persisted per document path in `AppState`.
+- Repository tabs now use the discovered repository root name, even when the
+  user opened a nested directory below that root.
 - Activating a File node in the TreeView now opens its source-relative path in
   the configured external application.
 - Added a `Copy Path` action for the active file reference in the detail pane.
