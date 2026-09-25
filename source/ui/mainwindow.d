@@ -81,7 +81,7 @@ import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
 import model.datasource : SourceQuery, isRepositorySource, loadDocumentDetails,
     loadDocumentPage, loadDocumentSource, openRepositoryDirectorySource;
-import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, FileInput,
+import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, FileCursor, FileInput,
     FileNode, ProjectedDirectorySource, buildDirectoryTree;
 import ui.appstate : AppState, loadAppState, saveAppState;
 import ui.builderutils : builderObject;
@@ -174,7 +174,7 @@ private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
     store.setValue(iter, 3, node.id);
     store.setValue(iter, 5, node.relativePath);
     if (sortedDirectories(source, node.id, order).length > 0
-        || sortedFiles(source, node.id, 0, 1, filter, order).length > 0)
+        || source.listFilesPage(node.id, FileCursor(), 1, filter).files.length > 0)
     {
         auto loadingIter = store.createIter(iter);
         store.setValue(loadingIter, 0, "Loading...");
@@ -185,7 +185,7 @@ private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
 }
 
 private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
-    TreeIter parent, string directoryId, size_t offset = 0, bool includeDirectories = true,
+    TreeIter parent, string directoryId, FileCursor cursor = FileCursor(), bool includeDirectories = true,
     string filter = "", TreeSortOrder order = TreeSortOrder.nameAscending)
 {
     if (includeDirectories)
@@ -193,7 +193,14 @@ private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
         foreach (child; sortedDirectories(source, directoryId, order))
             appendDirectoryTreeNode(store, source, child, parent, filter, order);
     }
-    auto files = sortedFiles(source, directoryId, offset, 251, filter, order);
+    auto page = source.listFilesPage(directoryId, cursor, 251, filter);
+    auto files = page.files;
+    sort!((a, b) {
+        if (order == TreeSortOrder.sizeAscending) return a.size < b.size;
+        if (order == TreeSortOrder.sizeDescending) return a.size > b.size;
+        if (order == TreeSortOrder.nameDescending) return a.name > b.name;
+        return a.name < b.name;
+    })(files);
     auto fileLimit = files.length > 250 ? 250 : files.length;
     foreach (file; files[0 .. fileLimit])
     {
@@ -204,14 +211,15 @@ private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
         store.setValue(fileIter, 3, file.id);
         store.setValue(fileIter, 5, file.relativePath);
     }
-    if (files.length > fileLimit)
+    if (page.hasMore)
     {
         auto moreIter = store.createIter(parent);
         store.setValue(moreIter, 0, "More files available...");
         store.setValue(moreIter, 1, "Page");
         store.setValue(moreIter, 2, "");
         store.setValue(moreIter, 3, directoryId);
-        store.setValue(moreIter, 4, fileLimit.to!string);
+        store.setValue(moreIter, 4, page.nextCursor.relativePath);
+        store.setValue(moreIter, 5, page.nextCursor.id);
     }
 }
 
@@ -404,7 +412,7 @@ struct AsyncDirectoryResult
 {
     string filePath;
     string directoryId;
-    size_t offset;
+    bool initial;
     DirectoryNode[] directories;
     FileNode[] files;
     string error;
@@ -1559,20 +1567,21 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 });
             }).start();
         };
-        void delegate(TreePath, string, size_t, TreePath) loadRemoteDirectory;
-        loadRemoteDirectory = (TreePath parentPath, string directoryId, size_t offset,
+        void delegate(TreePath, string, FileCursor, TreePath) loadRemoteDirectory;
+        loadRemoteDirectory = (TreePath parentPath, string directoryId, FileCursor cursor,
             TreePath rowToRemovePath) {
             auto filePath = document.filePath;
             new Thread({
                 AsyncDirectoryResult result;
                 result.filePath = filePath;
                 result.directoryId = directoryId;
-                result.offset = offset;
+                result.initial = cursor.id.length == 0;
                 try
                 {
                     auto source = openRepositoryDirectorySource(filePath);
                     result.directories = source.listDirectories(directoryId);
-                    result.files = source.listFiles(directoryId, offset, 251, document.filterQuery);
+                    auto page = source.listFilesPage(directoryId, cursor, 251, document.filterQuery);
+                    result.files = page.files;
                     source.close();
                 }
                 catch (Exception ex)
@@ -1588,7 +1597,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     if (!model.getIter(parent, parentPath)
                         || !model.getIter(rowToRemove, rowToRemovePath))
                         return false;
-                    if (result.offset == 0)
+                    if (result.initial)
                     {
                         TreeIter child;
                         if (!model.iterChildren(child, parent)
@@ -1608,7 +1617,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     else
                     {
                         populateDirectoryTreeRows(document.directoryTreeStore, parent,
-                            result.directories, result.files, result.offset == 0,
+                            result.directories, result.files, result.initial,
                             document.treeSortOrder);
                         restoreExpandedDirectories(document.directoryTreeView,
                             document.expandedDirectoryIds);
@@ -1638,12 +1647,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.expandedDirectoryIds ~= directoryId;
             if (document.directorySourceRemote)
             {
-                loadRemoteDirectory(model.getPath(iter), directoryId, 0, model.getPath(child));
+                loadRemoteDirectory(model.getPath(iter), directoryId, FileCursor(),
+                    model.getPath(child));
                 return;
             }
             document.directoryTreeStore.remove(child);
             populateDirectoryTreeNode(document.directoryTreeStore, document.directorySource,
-                iter, directoryId, 0, true, document.filterQuery, document.treeSortOrder);
+                iter, directoryId, FileCursor(), true, document.filterQuery,
+                document.treeSortOrder);
             restoreExpandedDirectories(document.directoryTreeView,
                 document.expandedDirectoryIds);
             selectPendingTreeFile(document);
@@ -1678,15 +1689,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
             if (!model.iterParent(parentIter, pageIter))
                 return;
             auto directoryId = model.getValueString(pageIter, 3);
-            auto offsetText = model.getValueString(pageIter, 4);
-            auto offset = offsetText.length > 0 ? to!size_t(offsetText) : 0;
+            FileCursor cursor;
+            cursor.relativePath = model.getValueString(pageIter, 4);
+            cursor.id = model.getValueString(pageIter, 5);
             if (document.directorySourceRemote)
-                loadRemoteDirectory(model.getPath(parentIter), directoryId, offset, path);
+                loadRemoteDirectory(model.getPath(parentIter), directoryId, cursor, path);
             else
             {
                 document.directoryTreeStore.remove(pageIter);
                 populateDirectoryTreeNode(document.directoryTreeStore,
-                    document.directorySource, parentIter, directoryId, offset, false,
+                    document.directorySource, parentIter, directoryId, cursor, false,
                     document.filterQuery, document.treeSortOrder);
             }
         });
