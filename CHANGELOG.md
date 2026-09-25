@@ -75,6 +75,9 @@ All notable changes to this project are documented in this file.
   Path button to a checksum expander.
 - Fixed the `Details below` layout restoring a zero-height list area after
   loading by deferring vertical splitter positioning until GTK allocates it.
+- Added a close button directly to each document tab label.
+- The filter bar now hides while loading so the progress bar is the active
+  toolbar content and reappears when loading finishes.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and

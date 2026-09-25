@@ -4,6 +4,7 @@ module ui.loadingstatus;
 import glib.Timeout;
 import gtk.ProgressBar;
 import gtk.Spinner;
+import gtk.Widget;
 
 import ui.documenttab : DocumentTab;
 
@@ -18,6 +19,7 @@ struct LoadingStatusCallbacks
     void delegate(Timeout) setProgressPulseTimer;
     void delegate() syncToolbarSensitivity;
     void delegate(DocumentTab, bool) setTableColumnsResizable;
+    void delegate(bool) setFilterVisible;
 }
 
 /** Publish a global busy state while a tab-specific worker is active.
@@ -47,6 +49,7 @@ void setLoadingState(
 
     // Spalten bleiben nicht-resizable, damit die gemessenen Breiten stabil bleiben.
     callbacks.setTableColumnsResizable(document, false);
+    callbacks.setFilterVisible(!loading);
 
     if (loading)
     {

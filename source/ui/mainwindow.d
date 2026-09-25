@@ -939,6 +939,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         return absolutePath(filePath);
     }
 
+    void delegate(DocumentTab) closeDocumentTab;
+
     /** Build a compact mode-aware notebook tab label with a useful tooltip. */
     Widget createDocumentTabLabel(string filePath)
     {
@@ -946,8 +948,22 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto icon = new Image(isRepositorySource(filePath) ? "folder" : "text-x-generic",
             GtkIconSize.MENU);
         auto label = new Label(baseName(filePath));
+        auto closeButton = new Button();
+        closeButton.setLabel("x");
+        closeButton.setTooltipText("Close tab");
+        closeButton.addOnClicked((Button _) {
+            foreach (document; documents)
+            {
+                if (document.filePath == filePath && closeDocumentTab !is null)
+                {
+                    closeDocumentTab(document);
+                    break;
+                }
+            }
+        });
         labelBox.packStart(icon, false, false, 0);
         labelBox.packStart(label, false, false, 0);
+        labelBox.packStart(closeButton, false, false, 0);
         labelBox.setTooltipText((isRepositorySource(filePath) ? "SQLite repository: " : "JSON file: ")
             ~ filePath);
         labelBox.showAll();
@@ -1155,7 +1171,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             () { return progressPulseTimer; },
             (Timeout value) { progressPulseTimer = value; },
             () { syncToolbarSensitivity(); },
-            (DocumentTab target, bool resizable) { setTableColumnsResizable(target, resizable); }
+            (DocumentTab target, bool resizable) { setTableColumnsResizable(target, resizable); },
+            (bool visible) { filterSlot.setVisible(visible); }
         );
     }
 
@@ -2594,6 +2611,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
             return;
         }
     }
+
+    closeDocumentTab = (DocumentTab document) {
+        auto pageIndex = notebook.pageNum(document.pageRoot);
+        if (pageIndex < 0)
+            return;
+        if (document.directorySource !is null)
+            document.directorySource.close();
+        notebook.removePage(pageIndex);
+        documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $];
+        syncToolbarFromCurrentDocument();
+        persistCurrentState(clearSavedWindowGeometryOnExit);
+    };
 
     /** Open a document in a tab, selecting it optionally, without forcing a reload. */
     openDocumentFromPath = (string filePath, bool selectTab, bool addToRecent) {
