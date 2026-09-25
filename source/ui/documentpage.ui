@@ -87,9 +87,8 @@
             <property name="can-focus">False</property>
             <property name="active">0</property>
             <items>
-              <item translatable="yes">Tree + table</item>
-              <item translatable="yes">Tree only</item>
-              <item translatable="yes">Blob table only</item>
+              <item translatable="yes">Tree view</item>
+              <item translatable="yes">Blob table</item>
             </items>
           </object>
         </child>

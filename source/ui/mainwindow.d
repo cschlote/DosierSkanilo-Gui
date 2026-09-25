@@ -1412,7 +1412,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 try
                 {
                     auto viewValue = to!int(viewText);
-                    if (viewValue >= 0 && viewValue <= 2)
+                    if (viewValue >= 0 && viewValue <= 1)
                         document.viewMode = viewValue;
                 }
                 catch (Exception)
@@ -1795,9 +1795,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
         directoryScroll.setVexpand(false);
         directoryScroll.setSizeRequest(-1, 220);
         directoryScroll.add(document.directoryTreeView);
-        auto resultViews = new Box(Orientation.VERTICAL, 6);
-        resultViews.packStart(directoryScroll, false, true, 0);
-        resultViews.packStart(scroll, true, true, 0);
+        auto resultViews = new Notebook();
+        resultViews.appendPage(directoryScroll, new Label("Directory tree"));
+        resultViews.appendPage(scroll, new Label("Blob table"));
         auto previewUi = loadDetailPreviewUi(document);
         auto detailUi = loadDetailPaneUi(document);
         auto pageUi = loadDocumentPageUi(document);
@@ -1805,14 +1805,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.viewModeCombo.setActive(document.viewMode);
         void applyViewMode()
         {
-            auto showTree = document.viewMode != 2;
-            auto showTable = document.viewMode != 1;
-            directoryScroll.setVisible(showTree);
-            scroll.setVisible(showTable);
+            auto page = document.viewMode == 1 ? 1 : 0;
+            resultViews.setCurrentPage(page);
         }
         document.viewModeCombo.addOnChanged((ComboBoxText combo) {
             auto active = combo.getActive();
-            if (active < 0 || active > 2)
+            if (active < 0 || active > 1)
                 return;
             document.viewMode = active;
             applyViewMode();

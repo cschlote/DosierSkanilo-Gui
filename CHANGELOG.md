@@ -78,6 +78,8 @@ All notable changes to this project are documented in this file.
 - Added a close button directly to each document tab label.
 - The filter bar now hides while loading so the progress bar is the active
   toolbar content and reappears when loading finishes.
+- Tree and Blob views are now separate pages in a per-document `GtkNotebook`
+  instead of being shown simultaneously.
 - Added a repository-directory chooser. It searches the selected directory and
   its parents for `.dosierskanilo` and opens the matching SQLite repository.
 - Added First/Prev/Next/Last repository navigation, selectable page sizes, and

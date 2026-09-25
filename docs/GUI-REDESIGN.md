@@ -46,7 +46,7 @@ Known limitations:
   or size is available per tab.
 - Expanded-directory state is held per tab and persisted in `AppState`.
 - The table remains a transitional implementation of the alternative blob view.
-- A per-tab view switch now supports Tree + table, Tree only, and Blob table only.
+- A per-tab view switch now selects separate Tree or Blob-table notebook pages.
 
 ## JSON and Jsonizer
 
