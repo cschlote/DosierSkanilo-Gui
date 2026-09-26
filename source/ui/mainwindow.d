@@ -109,6 +109,7 @@ import ui.toolbarbindings : ToolbarBindingsCallbacks, bindFilterSignals, bindToo
 import ui.windowlifecycle : WindowLifecycleCallbacks, bindWindowLifecycleSignals;
 import ui.startupworkflow : scheduleSelfTestQuit, startStartupWorkflow;
 import ui.previewprogress : PreviewProgressCallbacks, startPreviewProgressTimer;
+import ui.virtualblobtable : VirtualBlobTableModel;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : countDuplicateDigestGroups, filterRowsByText;
 import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, NamedBinaryBlob;
@@ -135,6 +136,36 @@ void configureDirectoryTreeColumns(TreeView treeView)
     addColumn("Kind", 1, false);
     addColumn("Size", 2, false);
     treeView.setHeadersClickable(false);
+}
+
+private void setBlobTableVirtualMode(TreeView treeView, bool virtualMode)
+{
+    treeView.setFixedHeightMode(false);
+    auto widths = [55, 95, 90, 45, 90, MAIN_TABLE_FIXED_COLUMN_WIDTH,
+        MAIN_TABLE_FIXED_COLUMN_WIDTH];
+    foreach (index; 0 .. cast(int) treeView.getNColumns())
+    {
+        auto column = treeView.getColumn(index);
+        if (column is null)
+            continue;
+        if (virtualMode)
+        {
+            column.setSizing(GtkTreeViewColumnSizing.FIXED);
+            if (index < widths.length)
+                column.setFixedWidth(widths[index]);
+        }
+        else if (index == 5 || index == 6)
+        {
+            column.setSizing(GtkTreeViewColumnSizing.FIXED);
+            column.setFixedWidth(MAIN_TABLE_FIXED_COLUMN_WIDTH);
+        }
+        else
+        {
+            column.setSizing(GtkTreeViewColumnSizing.AUTOSIZE);
+        }
+    }
+    if (virtualMode)
+        treeView.setFixedHeightMode(true);
 }
 
 private DirectoryNode[] sortedDirectories(DirectorySource source, string parentId,
@@ -1587,16 +1618,22 @@ int runMainWindow(string[] args, ref CliOptions cli)
             GType.STRING,
             GType.STRING,
             GType.STRING,
-            GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING,
-            GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING,
-            GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING,
+            GType.STRING,
+            GType.STRING,
+            GType.STRING,
+            GType.STRING,
+            GType.STRING,
+            GType.STRING,
+            GType.STRING,
             GType.STRING
         ]);
         document.tableView = new TreeView(document.tableStore);
         configureTableColumns(document.tableView);
         document.directoryTreeStore = new TreeStore([
             GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING,
-            GType.STRING, GType.STRING, GType.STRING
+            GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING,
+            GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING,
+            GType.STRING
         ]);
         document.directoryTreeView = new TreeView(document.directoryTreeStore);
         configureDirectoryTreeColumns(document.directoryTreeView);
@@ -2544,6 +2581,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
     void renderRows(DocumentTab document, const(BlobRow)[] rows, string filterLabel = "",
         bool appendRows = false)
     {
+        if (!appendRows)
+            setBlobTableVirtualMode(document.tableView, false);
         if (document.filePath.length == 0)
         {
             document.tableStore.clear();
@@ -3364,7 +3403,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
         logLineVerbose("[relayout] manual relayout requested for ", document.filePath);
         document.pendingColumnMeasurement = true;
-        document.tableView.setModel(document.tableStore);
+        document.tableView.setModel(document.repositoryTableModel is null
+            ? cast(TreeModelIF) document.tableStore : document.repositoryTableModel);
         document.tableView.queueResize();
     }
 
@@ -3657,16 +3697,41 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.pendingLoadElapsedMs = result.elapsedMs;
                 document.lastLoadElapsedMs = result.elapsedMs;
                 updatePerfStatus(document);
-                document.drainAfterRender = result.pagedSource && document.drainRepositoryPages
-                    && result.hasMore;
+                document.drainAfterRender = false;
 
                 if (isRepositorySource(document.filePath))
                 {
                     if (document.drainRepositoryPages)
-                        renderRows(document, result.allRows, "", result.pageOffset > 0);
+                    {
+                        SourceQuery tableQuery;
+                        tableQuery.text = document.filterQuery;
+                        tableQuery.video = document.filterVideo;
+                        tableQuery.audio = document.filterAudio;
+                        tableQuery.image = document.filterImage;
+                        tableQuery.textStream = document.filterText;
+                        tableQuery.mediaNegated = document.filterMediaNegated;
+                        tableQuery.fileType = document.filterFileType;
+                        tableQuery.archive = document.filterArchive;
+                        tableQuery.torrent = document.filterTorrent;
+                        document.loadedRows = [];
+                        document.visibleRows = [];
+                        document.repositoryTableModel = new VirtualBlobTableModel(
+                            document.filePath, tableQuery, document.pageSize, result.allRows,
+                            result.pageTotal, result.nextBlobId, result.hasMore);
+                        setBlobTableVirtualMode(document.tableView, true);
+                        document.tableView.setModel(document.repositoryTableModel);
+                        if (busyDocument is document)
+                            setLoadingState(document, false);
+                        document.status.setText(format(
+                            "Showing %s matching blobs; more rows load while scrolling",
+                            result.pageTotal));
+                    }
                     else
+                    {
+                        document.tableView.setFixedHeightMode(false);
                         renderRows(document, filterRowsByText(document.loadedRows,
                             document.filterQuery, prefCaseSensitiveFilter));
+                    }
                 }
                 else if (prefAutoApplyFilter && (
                     document.filterQuery.length > 0 ||

@@ -88,6 +88,8 @@ All notable changes to this project are documented in this file.
   the GUI no longer retains all summary-row arrays during SQL chunk draining.
 - During repository table draining, summary `BlobRow` arrays are no longer
   retained across chunks; table selection resolves details by hidden stable blob ID.
+- The repository Blob table now uses a virtual `GtkTreeModel` with a bounded
+  asynchronous cursor-page cache; uncached rows load as the user scrolls.
 - Repository `FileNode` projections now carry metadata-presence flags from the
   backend for the shared filter model.
 - Tree file queries now apply the same typed media, file-type, archive, and

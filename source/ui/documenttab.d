@@ -21,6 +21,7 @@ import gtk.TextView;
 import gtk.ScrolledWindow;
 import gtk.TreeView;
 import gtk.TreeStore;
+import gtk.TreeModelIF;
 import gtk.ToggleButton;
 import gtk.Scale;
 import gtk.CheckButton;
@@ -133,6 +134,7 @@ class DocumentTab
     Builder detailBuilder;
     Builder previewBuilder;
     ListStore tableStore;
+    TreeModelIF repositoryTableModel;
     TreeView tableView;
     TreeStore directoryTreeStore;
     TreeView directoryTreeView;

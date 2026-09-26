@@ -36,6 +36,8 @@ Implemented:
   materialized.
 - Asynchronous details for repository files outside the current table page,
   rendered directly from the selected Tree file.
+- Repository Blob-table view uses a virtual GTK TreeModel with a bounded async
+  cursor-page cache instead of retaining a GTK row per catalog result.
 - Previous/Next navigation for multiple known file references.
 - Archive and torrent detail sections render their entry paths as nested trees.
 
