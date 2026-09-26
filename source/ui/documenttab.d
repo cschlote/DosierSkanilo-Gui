@@ -52,8 +52,10 @@ enum int COL_HAS_TORRENT = 6;
 enum int COL_INDEX_SORT = 7;
 /** Sort column index for the file size column. */
 enum int COL_FILE_SIZE_SORT = 8;
+/** Stable repository blob ID carried as hidden table metadata. */
+enum int COL_SOURCE_ID = 9;
 /** Total number of columns in the main table model. */
-enum int COL_COUNT = 9;
+enum int COL_COUNT = 10;
 
 enum PreviewScaleMode : int
 {
@@ -253,11 +255,13 @@ class DocumentTab
 
     size_t pageOffset;
     size_t pageTotal;
+    size_t repositoryRowsLoaded;
     size_t pageSize = 250;
     bool loadAllRows;
     bool drainRepositoryPages;
     bool drainPageRequest;
     bool drainAfterRender;
+    bool sourceLoaded;
 
     ulong loadRequestId;
     ulong filterRequestId;

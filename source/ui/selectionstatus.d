@@ -173,6 +173,9 @@ void resetPerfMetrics(DocumentTab document)
  */
 void clearSelectionDetails(DocumentTab document)
 {
+    document.hasDirectSelectedRow = false;
+    document.directSelectedRow = BlobRow.init;
+    document.directSelectedIndex = "";
     document.selectedSha1 = "";
     document.selectedFileName = "";
     document.selectedFilePath = "";

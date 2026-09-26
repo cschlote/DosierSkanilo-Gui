@@ -87,7 +87,7 @@ import ui.appstate : AppState, loadAppState, saveAppState;
 import ui.builderutils : builderObject;
 import ui.detailpane : DetailPaneCallbacks, bindDetailPaneSignals, loadDetailPaneUi;
 import ui.detailpreview : DetailPreviewCallbacks, bindDetailPreviewSignals, loadDetailPreviewUi;
-import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL_FILE_TYPE, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_INDEX, COL_INDEX_SORT, COL_MEDIA_INFO, DocumentTab, PreviewScaleMode, TreeSortOrder, clampPreviewScaleMode;
+import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL_FILE_TYPE, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_INDEX, COL_INDEX_SORT, COL_MEDIA_INFO, COL_SOURCE_ID, DocumentTab, PreviewScaleMode, TreeSortOrder, clampPreviewScaleMode;
 import ui.documentpage : loadDocumentPageUi;
 import ui.detailswidgets : setDetailEntry,
     setMetadataStatusLabel, setMetadataDetails, setKnownFilesTable, setMediaPreview,
@@ -1485,6 +1485,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             GType.STRING,
             GType.STRING,
             GType.STRING,
+            GType.STRING,
             GType.STRING
         ]);
         document.tableView = new TreeView(document.tableStore);
@@ -1795,6 +1796,25 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 if (selectedTreeFileName.length > 0)
                     document.selectedFileName = selectedTreeFileName;
                 return;
+            }
+            if (document.directorySourceRemote)
+            {
+                TreeIter tableIter;
+                auto tableModel = document.tableView.getModel();
+                if (tableModel !is null && tableModel.getIterFirst(tableIter))
+                {
+                    do
+                    {
+                        if (tableModel.getValueString(tableIter, COL_SOURCE_ID) == selectedId)
+                        {
+                            document.tableView.getSelection().selectIter(tableIter);
+                            if (selectedTreeFileName.length > 0)
+                                document.selectedFileName = selectedTreeFileName;
+                            return;
+                        }
+                    }
+                    while (tableModel.iterNext(tableIter));
+                }
             }
             if (document.directorySourceRemote && selectedId.length > 0)
             {
@@ -2264,7 +2284,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 auto label = format("%s. %s", idx + 1, recentPath);
                 menu.append(new MenuItem((MenuItem _) {
                     auto document = openDocumentFromPath(recentPath, true, true);
-                    if (document !is null && document.loadedRows.length == 0)
+                    if (document !is null && !document.sourceLoaded)
                     {
                         loadDocument(document, true);
                     }
@@ -2340,7 +2360,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
             ": rows=", rowsCopyData.length,
             ", filter=", filterLabel.length > 0 ? filterLabel : "<none>");
 
-        auto startingRowCount = appendRows ? document.visibleRows.length : 0;
+        auto startingRowCount = appendRows
+            ? (isRepositorySource(document.filePath) && document.drainRepositoryPages
+                ? document.pageOffset : document.visibleRows.length)
+            : 0;
 
         // Performance hack: un-couple TreeView for bulk-imports
         TreeModelIF oldModel = document.tableView.getModel();
@@ -2391,12 +2414,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     [
                     COL_INDEX, COL_FILE_SIZE, COL_CHECKSUM_SET, COL_FILE_TYPE,
                     COL_MEDIA_INFO, COL_HAS_ARCHIVE, COL_HAS_TORRENT,
-                    COL_INDEX_SORT, COL_FILE_SIZE_SORT
+                    COL_INDEX_SORT, COL_FILE_SIZE_SORT, COL_SOURCE_ID
                 ],
                     [
                     indexText, sizeText, checksumsText, fileTypeText,
                     mediaInfoText, archiveText, torrentText, indexSortText,
-                    sizeSortText
+                    sizeSortText, row.sourceId >= 0 ? row.sourceId.to!string : ""
                 ]
                 );
             }
@@ -2409,7 +2432,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 return true;
             }
 
-            if (appendRows)
+            if (isRepositorySource(document.filePath) && document.drainRepositoryPages)
+                document.visibleRows = [];
+            else if (appendRows)
                 document.visibleRows ~= rowsCopyData;
             else
                 document.visibleRows = rowsCopyData.dup;
@@ -2420,13 +2445,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 ": rows=", rowsCopyData.length,
                 ", elapsedMs=", document.lastRenderElapsedMs);
 
+            auto visibleCount = isRepositorySource(document.filePath)
+                && document.drainRepositoryPages ? document.repositoryRowsLoaded
+                : document.visibleRows.length;
+            auto totalCount = isRepositorySource(document.filePath)
+                && document.drainRepositoryPages ? document.pageTotal
+                : document.loadedRows.length;
             string baseStatus;
             if (filterLabel.length > 0)
             {
                 baseStatus = format(
                     "Showing %s/%s rows (duplicate digest groups: %s, filter: %s, case-sensitive: %s)",
-                    document.visibleRows.length,
-                    document.loadedRows.length,
+                    visibleCount,
+                    totalCount,
                     document.loadedDuplicateGroups,
                     filterLabel,
                     prefCaseSensitiveFilter ? "yes" : "no"
@@ -2436,8 +2467,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 baseStatus = format(
                     "Showing %s/%s rows (duplicate digest groups: %s)",
-                    document.visibleRows.length,
-                    document.loadedRows.length,
+                    visibleCount,
+                    totalCount,
                     document.loadedDuplicateGroups
                 );
             }
@@ -2456,8 +2487,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
             // Nach dem Laden: Spaltenbreiten einmal festziehen, danach bleiben sie stabil.
             document.pendingColumnMeasurement =
-                document.tableNaturalWidth <= 0 && filterLabel.length == 0 && rowsCopyData.length == document
-                    .loadedRows.length;
+                document.tableNaturalWidth <= 0 && filterLabel.length == 0
+                && (document.drainRepositoryPages ? document.pageOffset == 0
+                    : rowsCopyData.length == document.loadedRows.length);
 
             // Nach dem Befüllen TreeView wieder verbinden und eine neue Layout-Runde anstoßen.
             document.tableView.setModel(document.tableStore);
@@ -2478,12 +2510,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
             if (document.drainAfterRender)
             {
                 document.drainAfterRender = false;
-                if (document.loadedRows.length < document.pageTotal)
+                if (document.repositoryRowsLoaded < document.pageTotal)
                 {
-                    document.pageOffset = document.loadedRows.length;
+                    document.pageOffset = document.repositoryRowsLoaded;
                     document.drainPageRequest = true;
                     document.status.setText(format("Loading rows: %s/%s ...",
-                        document.loadedRows.length, document.pageTotal));
+                        document.repositoryRowsLoaded, document.pageTotal));
                     new Idle({ loadDocument(document, false); return false; });
                 }
             }
@@ -2503,6 +2535,25 @@ int runMainWindow(string[] args, ref CliOptions cli)
         TreeIter iter;
         auto selection = document.tableView.getSelection();
         auto hasTableSelection = selection.getSelected(model, iter);
+        if (hasTableSelection && document.directorySourceRemote)
+        {
+            auto sourceIdText = model.getValueString(iter, COL_SOURCE_ID);
+            if (sourceIdText.length > 0)
+            {
+                auto sourceId = to!long(sourceIdText);
+                if (!document.hasDirectSelectedRow
+                    || document.directSelectedRow.sourceId != sourceId)
+                {
+                    BlobRow summary;
+                    summary.sourceId = sourceId;
+                    summary.detailsLoaded = false;
+                    summary.fileSize = to!ulong(model.getValueString(iter, COL_FILE_SIZE));
+                    document.directSelectedRow = summary;
+                    document.hasDirectSelectedRow = true;
+                    document.directSelectedIndex = model.getValueString(iter, COL_INDEX);
+                }
+            }
+        }
         if (!hasTableSelection && !document.hasDirectSelectedRow)
         {
             clearSelectionDetails(document);
@@ -2611,20 +2662,34 @@ int runMainWindow(string[] args, ref CliOptions cli)
                             "Failed to load selected details: %s", error));
                         return false;
                     }
-                    foreach (ref candidate; document.loadedRows)
+                    if (document.hasDirectSelectedRow
+                        && document.directSelectedRow.sourceId == sourceId)
                     {
-                        if (candidate.sourceId == sourceId)
+                        auto rows = extractRowsFromBlobs([details]);
+                        if (rows.length > 0)
                         {
-                            candidate.sourceBlob = details;
-                            candidate.detailsLoaded = true;
+                            document.directSelectedRow = rows[0];
+                            document.directSelectedRow.sourceId = sourceId;
+                            document.directSelectedRow.detailsLoaded = true;
                         }
                     }
-                    foreach (ref candidate; document.visibleRows)
+                    else
                     {
-                        if (candidate.sourceId == sourceId)
+                        foreach (ref candidate; document.loadedRows)
                         {
-                            candidate.sourceBlob = details;
-                            candidate.detailsLoaded = true;
+                            if (candidate.sourceId == sourceId)
+                            {
+                                candidate.sourceBlob = details;
+                                candidate.detailsLoaded = true;
+                            }
+                        }
+                        foreach (ref candidate; document.visibleRows)
+                        {
+                            if (candidate.sourceId == sourceId)
+                            {
+                                candidate.sourceBlob = details;
+                                candidate.detailsLoaded = true;
+                            }
                         }
                     }
                     updateSelectedRowDetails(document);
@@ -2900,18 +2965,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 "Background operation in progress. Please wait before filtering.");
             return;
         }
+        if (isRepositorySource(document.filePath))
+        {
+            document.pageOffset = 0;
+            document.drainPageRequest = false;
+            loadDocument(document, false);
+            return;
+        }
         if (document.loadedRows.length == 0)
         {
             document.status.setText("No loaded rows to filter.");
             return;
         }
-        if (isRepositorySource(document.filePath))
-        {
-            renderRows(document, filterRowsByText(document.loadedRows,
-                document.filterQuery, prefCaseSensitiveFilter));
-            return;
-        }
-
         /* Abort async filter results from previous requests, if any, by invalidating their requestId with a new one. */
         auto requestId = ++document.filterRequestId;
 
@@ -3018,6 +3083,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 }
                 if (result.error.length > 0)
                 {
+                    document.sourceLoaded = false;
                     setLoadingState(document, false, format("Filtering failed: %s", result.error));
                     return false;
                 }
@@ -3075,7 +3141,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
         resetFilterState(document);
         syncToolbarFromCurrentDocument();
-        renderRows(document, document.loadedRows);
+        if (isRepositorySource(document.filePath))
+        {
+            document.pageOffset = 0;
+            document.drainPageRequest = false;
+            loadDocument(document, false);
+        }
+        else
+            renderRows(document, document.loadedRows);
     }
 
     /** Load and normalize the JSON file for one open document tab.
@@ -3113,6 +3186,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 document.drainRepositoryPages = true;
                 document.pageOffset = 0;
+                document.repositoryRowsLoaded = 0;
                 document.loadedRows = [];
             }
             document.drainPageRequest = false;
@@ -3272,14 +3346,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     return false;
                 }
 
+                document.sourceLoaded = true;
                 document.loadedDuplicateGroups = result.duplicateGroups;
-                if (result.pagedSource && document.drainRepositoryPages
-                    && result.pageOffset > 0)
-                    document.loadedRows ~= result.allRows;
-                else
-                    document.loadedRows = result.allRows;
                 if (result.pagedSource && document.drainRepositoryPages)
-                    document.loadedDuplicateGroups = countDuplicateDigestGroups(document.loadedRows);
+                {
+                    document.repositoryRowsLoaded = result.pageOffset + result.allRows.length;
+                    document.loadedRows = [];
+                }
+                else
+                {
+                    document.repositoryRowsLoaded = 0;
+                    document.loadedRows = result.allRows;
+                }
                 document.directoryTree = result.directoryTree;
                 document.directorySource = isRepositorySource(document.filePath)
                     ? openRepositoryDirectorySource(document.filePath)
@@ -3301,13 +3379,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.pageFirstButton.setSensitive(result.pageOffset > 0);
                 document.pagePreviousButton.setSensitive(result.pageOffset > 0);
                 document.pageNextButton.setSensitive(
-                    result.pageOffset + document.loadedRows.length < result.pageTotal);
+                    !document.drainRepositoryPages
+                    && result.pageOffset + result.allRows.length < result.pageTotal);
                 document.pageLastButton.setSensitive(
-                    result.pageOffset + document.loadedRows.length < result.pageTotal);
+                    !document.drainRepositoryPages
+                    && result.pageOffset + result.allRows.length < result.pageTotal);
                 if (result.pagedSource)
                 {
                     auto first = result.pageTotal == 0 ? 0 : result.pageOffset + 1;
-                    auto last = result.pageOffset + document.loadedRows.length;
+                    auto last = result.pageOffset + result.allRows.length;
                     document.pageStatus.setText(format("Rows %s-%s of %s", first, last,
                         result.pageTotal));
                 }
@@ -3316,7 +3396,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.lastLoadElapsedMs = result.elapsedMs;
                 updatePerfStatus(document);
                 document.drainAfterRender = result.pagedSource && document.drainRepositoryPages
-                    && document.loadedRows.length < result.pageTotal;
+                    && document.repositoryRowsLoaded < result.pageTotal;
 
                 if (isRepositorySource(document.filePath))
                 {
@@ -3458,14 +3538,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     editApplyFilterMenuItem.addOnActivate((MenuItem _) { applyFilterFromEntry(); });
 
     editClearFilterMenuItem.addOnActivate((MenuItem _) {
-        auto document = currentDocument();
-        if (document is null)
-        {
-            return;
-        }
-        resetFilterState(document);
-        syncToolbarFromCurrentDocument();
-        renderRows(document, document.loadedRows);
+        clearCurrentFilter();
     });
 
     editPreferencesMenuItem.addOnActivate((MenuItem _) {

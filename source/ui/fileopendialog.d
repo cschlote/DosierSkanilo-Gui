@@ -52,7 +52,7 @@ void chooseAndLoadPath(Window window, FileOpenDialogCallbacks callbacks)
         if (selectedPath.length > 0)
         {
             auto document = callbacks.openDocumentFromPath(selectedPath, true, true);
-            if (document !is null && document.loadedRows.length == 0)
+            if (document !is null && !document.sourceLoaded)
             {
                 callbacks.loadDocument(document, true);
             }
@@ -88,7 +88,7 @@ void chooseAndLoadRepository(Window window, FileOpenDialogCallbacks callbacks)
         if (selectedPath.length > 0)
         {
             auto document = callbacks.openDocumentFromPath(selectedPath, true, true);
-            if (document !is null && document.loadedRows.length == 0)
+            if (document !is null && !document.sourceLoaded)
                 callbacks.loadDocument(document, true);
         }
     }
