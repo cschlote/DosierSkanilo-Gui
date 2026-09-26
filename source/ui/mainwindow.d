@@ -82,7 +82,7 @@ import model.blobrow : BlobRow, extractRowsFromBlobs;
 import model.datasource : SourceQuery, isRepositorySource, loadDocumentDetails,
     loadDocumentPage, loadDocumentSource, openRepositoryDirectorySource;
 import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, FileCursor, FileInput,
-    FileNode, ProjectedDirectorySource, buildDirectoryTree;
+    FileFilter, FileNode, ProjectedDirectorySource, buildDirectoryTree;
 import ui.appstate : AppState, loadAppState, saveAppState;
 import ui.builderutils : builderObject;
 import ui.detailpane : DetailPaneCallbacks, bindDetailPaneSignals, loadDetailPaneUi;
@@ -147,24 +147,23 @@ private DirectoryNode[] sortedDirectories(DirectorySource source, string parentI
     return result;
 }
 
-private FileNode[] sortedFiles(DirectorySource source, string directoryId, size_t offset,
-    size_t limit, string filter, TreeSortOrder order)
+private FileFilter treeFilterForDocument(DocumentTab document)
 {
-    auto result = source.listFiles(directoryId, offset, limit, filter);
-    sort!((a, b) {
-        if (order == TreeSortOrder.sizeAscending)
-            return a.size < b.size;
-        if (order == TreeSortOrder.sizeDescending)
-            return a.size > b.size;
-        if (order == TreeSortOrder.nameDescending)
-            return a.name > b.name;
-        return a.name < b.name;
-    })(result);
-    return result;
+    FileFilter filter;
+    filter.text = document.filterQuery;
+    filter.video = document.filterVideo;
+    filter.audio = document.filterAudio;
+    filter.image = document.filterImage;
+    filter.textStream = document.filterText;
+    filter.mediaNegated = document.filterMediaNegated;
+    filter.fileType = document.filterFileType;
+    filter.archive = document.filterArchive;
+    filter.torrent = document.filterTorrent;
+    return filter;
 }
 
 private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
-    const DirectoryNode node, TreeIter parent, string filter = "",
+    const DirectoryNode node, TreeIter parent, FileFilter filter = FileFilter(),
     TreeSortOrder order = TreeSortOrder.nameAscending)
 {
     auto iter = store.createIter(parent);
@@ -174,7 +173,7 @@ private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
     store.setValue(iter, 3, node.id);
     store.setValue(iter, 5, node.relativePath);
     if (sortedDirectories(source, node.id, order).length > 0
-        || source.listFilesPage(node.id, FileCursor(), 1, filter).files.length > 0)
+        || source.listFilteredFilesPage(node.id, FileCursor(), 1, filter).files.length > 0)
     {
         auto loadingIter = store.createIter(iter);
         store.setValue(loadingIter, 0, "Loading...");
@@ -186,14 +185,14 @@ private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
 
 private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
     TreeIter parent, string directoryId, FileCursor cursor = FileCursor(), bool includeDirectories = true,
-    string filter = "", TreeSortOrder order = TreeSortOrder.nameAscending)
+    FileFilter filter = FileFilter(), TreeSortOrder order = TreeSortOrder.nameAscending)
 {
     if (includeDirectories)
     {
         foreach (child; sortedDirectories(source, directoryId, order))
             appendDirectoryTreeNode(store, source, child, parent, filter, order);
     }
-    auto page = source.listFilesPage(directoryId, cursor, 251, filter);
+    auto page = source.listFilteredFilesPage(directoryId, cursor, 251, filter);
     auto files = page.files;
     sort!((a, b) {
         if (order == TreeSortOrder.sizeAscending) return a.size < b.size;
@@ -362,7 +361,7 @@ private void selectPendingTreeFile(DocumentTab document)
 
 /** Render the projection into a GTK tree store and restore per-tab expansion. */
 void renderDirectoryTree(TreeStore store, DirectorySource source, TreeView treeView,
-    string[] expandedIds, string filter = "",
+    string[] expandedIds, FileFilter filter = FileFilter(),
     TreeSortOrder order = TreeSortOrder.nameAscending)
 {
     store.clear();
@@ -1575,6 +1574,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         loadRemoteDirectory = (TreePath parentPath, string directoryId, FileCursor cursor,
             TreePath rowToRemovePath) {
             auto filePath = document.filePath;
+            auto fileFilter = treeFilterForDocument(document);
             new Thread({
                 AsyncDirectoryResult result;
                 result.filePath = filePath;
@@ -1584,7 +1584,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 {
                     auto source = openRepositoryDirectorySource(filePath);
                     result.directories = source.listDirectories(directoryId);
-                    auto page = source.listFilesPage(directoryId, cursor, 251, document.filterQuery);
+                    auto page = source.listFilteredFilesPage(directoryId, cursor, 251, fileFilter);
                     result.files = page.files;
                     source.close();
                 }
@@ -1657,7 +1657,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
             document.directoryTreeStore.remove(child);
             populateDirectoryTreeNode(document.directoryTreeStore, document.directorySource,
-                iter, directoryId, FileCursor(), true, document.filterQuery,
+                iter, directoryId, FileCursor(), true, treeFilterForDocument(document),
                 document.treeSortOrder);
             restoreExpandedDirectories(document.directoryTreeView,
                 document.expandedDirectoryIds);
@@ -1703,7 +1703,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.directoryTreeStore.remove(pageIter);
                 populateDirectoryTreeNode(document.directoryTreeStore,
                     document.directorySource, parentIter, directoryId, cursor, false,
-                    document.filterQuery, document.treeSortOrder);
+                    treeFilterForDocument(document), document.treeSortOrder);
             }
         });
         document.directoryTreeView.getSelection().addOnChanged((TreeSelection _) {
@@ -1895,7 +1895,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             if (document.directorySource !is null)
                 renderDirectoryTree(document.directoryTreeStore, document.directorySource,
                     document.directoryTreeView, document.expandedDirectoryIds,
-                    document.filterQuery, document.treeSortOrder);
+                    treeFilterForDocument(document), document.treeSortOrder);
         });
 
         syncPreviewToolbarFromDocument(document);
@@ -2329,7 +2329,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 renderDirectoryTree(document.directoryTreeStore, document.directorySource,
                     document.directoryTreeView, document.expandedDirectoryIds,
-                    document.filterQuery, document.treeSortOrder);
+                    treeFilterForDocument(document), document.treeSortOrder);
             }
             if (document.pendingColumnMeasurement)
             {
@@ -3147,7 +3147,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.directorySourceRemote = isRepositorySource(document.filePath);
                 renderDirectoryTree(document.directoryTreeStore, document.directorySource,
                     document.directoryTreeView, document.expandedDirectoryIds,
-                    document.filterQuery, document.treeSortOrder);
+                    treeFilterForDocument(document), document.treeSortOrder);
                 if (document.pendingTreeRevealFileId.length > 0 && revealTreeFile !is null)
                     revealTreeFile(document, document.pendingTreeRevealFileId);
                 selectPendingTreeFile(document);

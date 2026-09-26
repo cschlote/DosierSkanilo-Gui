@@ -159,6 +159,7 @@ final class RepositoryDirectorySource : DirectorySource
         query.audio = filter.audio;
         query.image = filter.image;
         query.textStream = filter.textStream;
+        query.mediaNegated = filter.mediaNegated;
         query.fileType = filter.fileType;
         query.archive = filter.archive;
         query.torrent = filter.torrent;

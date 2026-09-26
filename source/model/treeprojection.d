@@ -67,6 +67,7 @@ struct FileFilter
     bool audio;
     bool image;
     bool textStream;
+    bool mediaNegated;
     bool fileType;
     bool archive;
     bool torrent;
@@ -78,13 +79,16 @@ private bool matchesFileFilter(const FileNode file, FileFilter filter)
         && !file.name.toLower.canFind(filter.text.toLower)
         && !file.relativePath.toLower.canFind(filter.text.toLower))
         return false;
-    if (filter.video && !file.hasVideo) return false;
-    if (filter.audio && !file.hasAudio) return false;
-    if (filter.image && !file.hasImage) return false;
-    if (filter.textStream && !file.hasText) return false;
-    if (filter.fileType && !file.hasFileType) return false;
-    if (filter.archive && !file.hasArchive) return false;
-    if (filter.torrent && !file.hasTorrent) return false;
+    auto hasMediaFilter = filter.video || filter.audio || filter.image || filter.textStream;
+    auto matchesMedia = (filter.video && file.hasVideo) || (filter.audio && file.hasAudio)
+        || (filter.image && file.hasImage) || (filter.textStream && file.hasText);
+    if (hasMediaFilter && (filter.mediaNegated ? matchesMedia : !matchesMedia))
+        return false;
+    auto hasOtherFilter = filter.fileType || filter.archive || filter.torrent;
+    auto matchesOther = (filter.fileType && file.hasFileType)
+        || (filter.archive && file.hasArchive) || (filter.torrent && file.hasTorrent);
+    if (hasOtherFilter && !matchesOther)
+        return false;
     return true;
 }
 
@@ -322,4 +326,34 @@ unittest
     auto secondPage = source.listFilesPage(album[0].id, firstPage.nextCursor, 1);
     assert(secondPage.files.length == 1);
     assert(!secondPage.hasMore);
+}
+
+@("JSON directory source applies typed presence filters")
+unittest
+{
+    auto tree = buildDirectoryTree([
+        FileInput("album/song.mp3", 10, true, true, false, true, false, false, false, false),
+        FileInput("album/cover.jpg", 5, true, true, false, false, true, false, false, false),
+        FileInput("album/archive.zip", 20, true, false, false, false, false, false, true, false),
+    ]);
+    auto source = new ProjectedDirectorySource(tree);
+    auto album = source.listDirectories("root")[0];
+
+    FileFilter audioFilter;
+    audioFilter.audio = true;
+    auto audioPage = source.listFilteredFilesPage(album.id, FileCursor(), 20, audioFilter);
+    assert(audioPage.files.length == 1);
+    assert(audioPage.files[0].name == "song.mp3");
+
+    FileFilter notAudio;
+    notAudio.audio = true;
+    notAudio.mediaNegated = true;
+    auto notAudioPage = source.listFilteredFilesPage(album.id, FileCursor(), 20, notAudio);
+    assert(notAudioPage.files.length == 2);
+
+    FileFilter eitherType;
+    eitherType.fileType = true;
+    eitherType.archive = true;
+    auto eitherPage = source.listFilteredFilesPage(album.id, FileCursor(), 20, eitherType);
+    assert(eitherPage.files.length == 3);
 }
