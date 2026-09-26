@@ -86,7 +86,7 @@ DetailPaneUi loadDetailPaneUi(DocumentTab document)
     document.detailArchiveStatus = builderObject!Label(detailBuilder, "detail", "detailArchiveStatus");
     document.detailArchiveView = builderObject!TextView(detailBuilder, "detail", "detailArchiveView");
     document.detailArchiveTreeStore = new TreeStore([GType.STRING, GType.STRING,
-        GType.STRING, GType.STRING]);
+        GType.STRING, GType.STRING, GType.STRING, GType.STRING]);
     document.detailArchiveTreeView = builderObject!TreeView(detailBuilder, "detail",
         "detailArchiveTreeView");
     document.detailArchiveTreeView.setModel(document.detailArchiveTreeStore);
@@ -95,7 +95,7 @@ DetailPaneUi loadDetailPaneUi(DocumentTab document)
     document.detailTorrentStatus = builderObject!Label(detailBuilder, "detail", "detailTorrentStatus");
     document.detailTorrentView = builderObject!TextView(detailBuilder, "detail", "detailTorrentView");
     document.detailTorrentTreeStore = new TreeStore([GType.STRING, GType.STRING,
-        GType.STRING, GType.STRING]);
+        GType.STRING, GType.STRING, GType.STRING, GType.STRING]);
     document.detailTorrentTreeView = builderObject!TreeView(detailBuilder, "detail",
         "detailTorrentTreeView");
     document.detailTorrentTreeView.setModel(document.detailTorrentTreeStore);

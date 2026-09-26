@@ -39,6 +39,7 @@ import gstinterfaces.VideoOverlay;
 import pango.c.types : PangoEllipsizeMode;
 
 import std.file : exists;
+import std.conv : to;
 import std.format : format;
 import std.path : absolutePath, buildNormalizedPath, dirName, extension, isAbsolute;
 import std.string : join, split, startsWith, toLower;
@@ -187,6 +188,20 @@ private void populateArchiveEntryTree(DocumentTab document, const(BlobRow) row)
 {
     document.detailArchiveTreeStore.clear();
     document.archiveTreeEntries = [];
+    if (document.directorySourceRemote && row.sourceId >= 0 && row.hasArchive)
+    {
+        auto root = document.detailArchiveTreeStore.createIter(null);
+        document.detailArchiveTreeStore.setValue(root, 0, "Archive entries");
+        document.detailArchiveTreeStore.setValue(root, 1, "");
+        document.detailArchiveTreeStore.setValue(root, 2, "");
+        document.detailArchiveTreeStore.setValue(root, 3, "ArchiveRoot");
+        document.detailArchiveTreeStore.setValue(root, 4, row.sourceId.to!string);
+        auto loading = document.detailArchiveTreeStore.createIter(root);
+        document.detailArchiveTreeStore.setValue(loading, 0, "Loading...");
+        document.detailArchiveTreeStore.setValue(loading, 3, "Loading");
+        document.detailArchiveTreeView.setVisible(true);
+        return;
+    }
     TreeIter[string] directories;
     if (row.sourceBlob !is null)
     {
@@ -208,6 +223,20 @@ private void populateTorrentFileTree(DocumentTab document, const(BlobRow) row)
 {
     document.detailTorrentTreeStore.clear();
     document.torrentTreeEntries = [];
+    if (document.directorySourceRemote && row.sourceId >= 0 && row.hasTorrent)
+    {
+        auto root = document.detailTorrentTreeStore.createIter(null);
+        document.detailTorrentTreeStore.setValue(root, 0, "Torrent files");
+        document.detailTorrentTreeStore.setValue(root, 1, "");
+        document.detailTorrentTreeStore.setValue(root, 2, "");
+        document.detailTorrentTreeStore.setValue(root, 3, "TorrentRoot");
+        document.detailTorrentTreeStore.setValue(root, 4, row.sourceId.to!string);
+        auto loading = document.detailTorrentTreeStore.createIter(root);
+        document.detailTorrentTreeStore.setValue(loading, 0, "Loading...");
+        document.detailTorrentTreeStore.setValue(loading, 3, "Loading");
+        document.detailTorrentTreeView.setVisible(true);
+        return;
+    }
     TreeIter[string] directories;
     if (row.sourceBlob !is null && row.sourceBlob.torrentInfo !is null)
     {

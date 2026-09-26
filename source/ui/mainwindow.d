@@ -73,16 +73,18 @@ import std.format : format;
 import std.path : absolutePath, baseName, buildNormalizedPath, dirName, isAbsolute;
 import std.process : Config, ProcessException, spawnProcess;
 import std.stdio : writeln;
-import std.string : join;
+import std.string : join, replace, split;
 import gstreamer.GStreamer : GStreamer;
 import gstreamer.c.types : GstState, GstStateChangeReturn;
 
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
 import model.datasource : SourceQuery, isRepositorySource, loadDocumentDetails,
-    loadDocumentPage, loadDocumentSource, openRepositoryDirectorySource;
+    loadDocumentPage, loadDocumentSource, loadRepositoryArchiveEntries,
+    loadRepositoryTorrentFiles, openRepositoryDirectorySource;
 import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, FileCursor, FileInput,
-    FileFilter, FileNode, FilePage, FileSortOrder, ProjectedDirectorySource, buildDirectoryTree;
+    FileFilter, FileNode, FilePage, FileSortOrder, NestedFileNode,
+    ProjectedDirectorySource, buildDirectoryTree;
 import ui.appstate : AppState, loadAppState, saveAppState;
 import ui.builderutils : builderObject;
 import ui.detailpane : DetailPaneCallbacks, bindDetailPaneSignals, loadDetailPaneUi;
@@ -299,6 +301,74 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
     }
 }
 
+private bool findNestedDirectoryChild(TreeModelIF model, TreeIter parent, string relativePath,
+    out TreeIter match)
+{
+    TreeIter child;
+    if (!model.iterChildren(child, parent))
+        return false;
+    do
+    {
+        if (model.getValueString(child, 3) == "Directory"
+            && model.getValueString(child, 2) == relativePath)
+        {
+            match = child;
+            return true;
+        }
+    }
+    while (model.iterNext(child));
+    return false;
+}
+
+private void appendNestedEntry(TreeStore store, TreeModelIF model, TreeIter rootParent,
+    NestedFileNode entry, string blobId)
+{
+    auto normalizedPath = entry.relativePath.replace('\\', '/');
+    auto parts = normalizedPath.split("/");
+    if (parts.length == 0)
+        return;
+    TreeIter parent = rootParent;
+    string directoryPath;
+    foreach (part; parts[0 .. $ - 1])
+    {
+        if (part.length == 0)
+            continue;
+        directoryPath = directoryPath.length == 0 ? part : directoryPath ~ "/" ~ part;
+        TreeIter directory;
+        if (!findNestedDirectoryChild(model, parent, directoryPath, directory))
+        {
+            directory = store.createIter(parent);
+            store.setValue(directory, 0, part);
+            store.setValue(directory, 1, "");
+            store.setValue(directory, 2, directoryPath);
+            store.setValue(directory, 3, "Directory");
+            store.setValue(directory, 4, blobId);
+        }
+        parent = directory;
+    }
+    auto fileName = parts[$ - 1];
+    if (fileName.length == 0)
+        return;
+    auto file = store.createIter(parent);
+    store.setValue(file, 0, fileName);
+    store.setValue(file, 1, format("%s bytes", entry.size));
+    store.setValue(file, 2, normalizedPath);
+    store.setValue(file, 3, "File");
+    store.setValue(file, 4, blobId);
+}
+
+private void appendNestedPageMarker(TreeStore store, TreeIter parent, string blobId,
+    bool archive, size_t offset)
+{
+    auto marker = store.createIter(parent);
+    store.setValue(marker, 0, "More entries available...");
+    store.setValue(marker, 1, "");
+    store.setValue(marker, 2, "");
+    store.setValue(marker, 3, archive ? "ArchivePage" : "TorrentPage");
+    store.setValue(marker, 4, blobId);
+    store.setValue(marker, 5, offset.to!string);
+}
+
 private bool findDirectoryTreeIter(TreeModelIF model, TreeIter parent, bool hasParent,
     string id, ref TreeIter result)
 {
@@ -459,6 +529,17 @@ struct AsyncDirectoryResult
     bool initial;
     DirectoryNode[] directories;
     FileNode[] files;
+    string error;
+}
+
+struct AsyncNestedEntryResult
+{
+    string filePath;
+    string blobId;
+    bool archive;
+    size_t offset;
+    NestedFileNode[] entries;
+    bool hasMore;
     string error;
 }
 
@@ -1994,6 +2075,89 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto previewSlot = detailUi.previewSlot;
         auto pageRoot = pageUi.pageRoot;
         auto splitSlot = pageUi.splitSlot;
+
+        void delegate(TreeView, TreeStore, bool, TreePath, TreePath, string, size_t)
+            loadNestedEntryPage;
+        loadNestedEntryPage = (TreeView treeView, TreeStore store, bool archive,
+            TreePath parentPath, TreePath removePath, string blobId, size_t offset) {
+            auto sourcePath = document.filePath;
+            new Thread({
+                AsyncNestedEntryResult result;
+                result.filePath = sourcePath;
+                result.blobId = blobId;
+                result.archive = archive;
+                result.offset = offset;
+                try
+                {
+                    result.entries = archive
+                        ? loadRepositoryArchiveEntries(sourcePath, to!long(blobId), offset, 251)
+                        : loadRepositoryTorrentFiles(sourcePath, to!long(blobId), offset, 251);
+                    if (result.entries.length > 250)
+                    {
+                        result.hasMore = true;
+                        result.entries = result.entries[0 .. 250];
+                    }
+                }
+                catch (Exception ex)
+                    result.error = ex.msg;
+                new Idle({
+                    if (result.filePath != document.filePath)
+                        return false;
+                    auto model = treeView.getModel();
+                    auto parent = new TreeIter();
+                    auto remove = new TreeIter();
+                    if (!model.getIter(parent, parentPath) || !model.getIter(remove, removePath))
+                        return false;
+                    store.remove(remove);
+                    if (result.error.length > 0)
+                    {
+                        auto error = store.createIter(parent);
+                        store.setValue(error, 0, "Failed to load: " ~ result.error);
+                        store.setValue(error, 3, "Error");
+                        return false;
+                    }
+                    foreach (entry; result.entries)
+                        appendNestedEntry(store, model, parent, entry, blobId);
+                    if (result.hasMore)
+                        appendNestedPageMarker(store, parent, blobId, archive,
+                            offset + result.entries.length);
+                    return false;
+                });
+            }).start();
+        };
+
+        void bindNestedEntryTree(TreeView treeView, TreeStore store, bool archive)
+        {
+            treeView.addOnRowExpanded((TreeIter iter, TreePath path, TreeView _) {
+                auto model = treeView.getModel();
+                auto kind = model.getValueString(iter, 3);
+                if (kind != (archive ? "ArchiveRoot" : "TorrentRoot"))
+                    return;
+                TreeIter child;
+                if (!model.iterChildren(child, iter) || model.getValueString(child, 3) != "Loading")
+                    return;
+                loadNestedEntryPage(treeView, store, archive, path, model.getPath(child),
+                    model.getValueString(iter, 4), 0);
+            });
+            treeView.addOnRowActivated((TreePath path, TreeViewColumn column, TreeView activatedView) {
+                auto model = treeView.getModel();
+                auto page = new TreeIter();
+                if (!model.getIter(page, path))
+                    return;
+                auto pageKind = archive ? "ArchivePage" : "TorrentPage";
+                if (model.getValueString(page, 3) != pageKind)
+                    return;
+                TreeIter parent;
+                if (!model.iterParent(parent, page))
+                    return;
+                auto offsetText = model.getValueString(page, 5);
+                auto offset = offsetText.length > 0 ? to!size_t(offsetText) : 0;
+                loadNestedEntryPage(treeView, store, archive, model.getPath(parent), path,
+                    model.getValueString(page, 4), offset);
+            });
+        }
+        bindNestedEntryTree(document.detailArchiveTreeView, document.detailArchiveTreeStore, true);
+        bindNestedEntryTree(document.detailTorrentTreeView, document.detailTorrentTreeStore, false);
 
         document.pageFirstButton.addOnClicked((Button _) {
             if (document.pageOffset == 0)

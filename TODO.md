@@ -4,8 +4,8 @@
 
 - Replace visible SQL paging with opaque source cursors and logical append-on-demand loading.
 - Persist and restore the current file cursor used by Previous/Next navigation.
-- Replace archive/torrent detail-tree population from fully loaded blob details
-  with bounded asynchronous source-adapter pages.
+- Avoid loading complete archive/torrent entry arrays with repository blob
+  details; keep nested-tree metadata lazy from the outset.
 - Add specialized detail renderers and explicit analysis operations.
 
 - The top-level splitter still snaps back to the maximum width after loading a file, so the current layout clamping is not stable enough.
