@@ -96,6 +96,7 @@ final class RepositoryDirectorySource : DirectorySource
         query.parentId = parentId == "root" ? 0 : to!long(parentId);
         query.limit = size_t.max;
         query.text = filter.text;
+        query.caseSensitive = filter.caseSensitive;
         query.video = filter.video;
         query.audio = filter.audio;
         query.image = filter.image;
@@ -191,6 +192,7 @@ final class RepositoryDirectorySource : DirectorySource
         query.directoryId = directoryId == "root" ? 0 : to!long(directoryId);
         query.limit = limit;
         query.text = filter.text;
+        query.caseSensitive = filter.caseSensitive;
         query.video = filter.video;
         query.audio = filter.audio;
         query.image = filter.image;

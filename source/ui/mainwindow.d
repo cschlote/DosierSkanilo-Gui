@@ -147,10 +147,11 @@ private DirectoryNode[] sortedDirectories(DirectorySource source, string parentI
     return result;
 }
 
-private FileFilter treeFilterForDocument(DocumentTab document)
+private FileFilter treeFilterForDocument(DocumentTab document, bool caseSensitive)
 {
     FileFilter filter;
     filter.text = document.filterQuery;
+    filter.caseSensitive = caseSensitive;
     filter.video = document.filterVideo;
     filter.audio = document.filterAudio;
     filter.image = document.filterImage;
@@ -1615,7 +1616,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         loadRemoteDirectory = (TreePath parentPath, string directoryId, FileCursor cursor,
             TreePath rowToRemovePath) {
             auto filePath = document.filePath;
-            auto fileFilter = treeFilterForDocument(document);
+            auto fileFilter = treeFilterForDocument(document, prefCaseSensitiveFilter);
             auto fileSortOrder = sourceFileSortOrder(document.treeSortOrder);
             new Thread({
                 AsyncDirectoryResult result;
@@ -1700,7 +1701,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
             document.directoryTreeStore.remove(child);
             populateDirectoryTreeNode(document.directoryTreeStore, document.directorySource,
-                iter, directoryId, FileCursor(), true, treeFilterForDocument(document),
+                iter, directoryId, FileCursor(), true, treeFilterForDocument(document, prefCaseSensitiveFilter),
                 document.treeSortOrder);
             restoreExpandedDirectories(document.directoryTreeView,
                 document.expandedDirectoryIds);
@@ -1749,7 +1750,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.directoryTreeStore.remove(pageIter);
                 populateDirectoryTreeNode(document.directoryTreeStore,
                     document.directorySource, parentIter, directoryId, cursor, false,
-                    treeFilterForDocument(document), document.treeSortOrder);
+                    treeFilterForDocument(document, prefCaseSensitiveFilter), document.treeSortOrder);
             }
         });
         document.directoryTreeView.getSelection().addOnChanged((TreeSelection _) {
@@ -1903,7 +1904,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             auto sourcePath = document.filePath;
             auto directoryId = document.selectedTreeDirectoryId;
             auto cursor = document.selectedTreeCursor;
-            auto filter = treeFilterForDocument(document);
+            auto filter = treeFilterForDocument(document, prefCaseSensitiveFilter);
             auto order = sourceFileSortOrder(document.treeSortOrder);
             document.treePreviousFileButton.setSensitive(false);
             document.treeNextFileButton.setSensitive(false);
@@ -2040,7 +2041,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             if (document.directorySource !is null)
                 renderDirectoryTree(document.directoryTreeStore, document.directorySource,
                     document.directoryTreeView, document.expandedDirectoryIds,
-                    treeFilterForDocument(document), document.treeSortOrder);
+                    treeFilterForDocument(document, prefCaseSensitiveFilter), document.treeSortOrder);
         });
 
         syncPreviewToolbarFromDocument(document);
@@ -2497,7 +2498,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 renderDirectoryTree(document.directoryTreeStore, document.directorySource,
                     document.directoryTreeView, document.expandedDirectoryIds,
-                    treeFilterForDocument(document), document.treeSortOrder);
+                    treeFilterForDocument(document, prefCaseSensitiveFilter), document.treeSortOrder);
             }
             if (document.pendingColumnMeasurement)
             {
@@ -3365,7 +3366,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.directorySourceRemote = isRepositorySource(document.filePath);
                 renderDirectoryTree(document.directoryTreeStore, document.directorySource,
                     document.directoryTreeView, document.expandedDirectoryIds,
-                    treeFilterForDocument(document), document.treeSortOrder);
+                    treeFilterForDocument(document, prefCaseSensitiveFilter), document.treeSortOrder);
                 if (document.pendingTreeRevealFileId.length > 0 && revealTreeFile !is null)
                     revealTreeFile(document, document.pendingTreeRevealFileId);
                 selectPendingTreeFile(document);

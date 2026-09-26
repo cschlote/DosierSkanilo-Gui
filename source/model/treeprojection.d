@@ -73,6 +73,7 @@ struct FilePage
 struct FileFilter
 {
     string text;
+    bool caseSensitive;
     bool video;
     bool audio;
     bool image;
@@ -85,10 +86,14 @@ struct FileFilter
 
 private bool matchesFileFilter(const FileNode file, FileFilter filter)
 {
-    if (filter.text.length > 0
-        && !file.name.toLower.canFind(filter.text.toLower)
-        && !file.relativePath.toLower.canFind(filter.text.toLower))
-        return false;
+    if (filter.text.length > 0)
+    {
+        auto name = filter.caseSensitive ? file.name : file.name.toLower;
+        auto path = filter.caseSensitive ? file.relativePath : file.relativePath.toLower;
+        auto query = filter.caseSensitive ? filter.text : filter.text.toLower;
+        if (!name.canFind(query) && !path.canFind(query))
+            return false;
+    }
     auto hasMediaFilter = filter.video || filter.audio || filter.image || filter.textStream;
     auto matchesMedia = (filter.video && file.hasVideo) || (filter.audio && file.hasAudio)
         || (filter.image && file.hasImage) || (filter.textStream && file.hasText);
@@ -417,6 +422,10 @@ unittest
     assert(visibleRootDirectories.length == 1);
     assert(visibleRootDirectories[0].name == "music");
     nestedFileFilter.text = "not-present";
+    assert(source.listDirectories("root", nestedFileFilter).length == 0);
+    nestedFileFilter.text = "SONG.FLAC";
+    assert(source.listDirectories("root", nestedFileFilter).length == 1);
+    nestedFileFilter.caseSensitive = true;
     assert(source.listDirectories("root", nestedFileFilter).length == 0);
     auto firstPage = source.listFilesPage(album[0].id, FileCursor(), 1);
     assert(firstPage.files.length == 1);
