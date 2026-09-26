@@ -65,6 +65,8 @@ All notable changes to this project are documented in this file.
   numeric SQL offsets are no longer required by the TreeView integration.
 - Tree file cursor queries now carry the per-tab sort order into JSON and SQLite
   sources so ordering remains stable across chunks.
+- The GUI source interface now exposes backward as well as forward filtered,
+  sorted file-page navigation for JSON and SQLite.
 - Tree paging now preserves the size component of the opaque cursor, keeping
   size-sorted continuation correct across chunk boundaries.
 - Repository Blob-table loading now drains internal SQL chunks automatically,

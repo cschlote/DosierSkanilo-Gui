@@ -137,6 +137,9 @@ interface DirectorySource
     FilePage listFilteredFilesPage(string directoryId, FileCursor cursor = FileCursor(),
         size_t limit = 250, FileFilter filter = FileFilter(),
         FileSortOrder sortOrder = FileSortOrder.pathAscending);
+    FilePage listPreviousFilteredFilesPage(string directoryId, FileCursor cursor,
+        size_t limit = 250, FileFilter filter = FileFilter(),
+        FileSortOrder sortOrder = FileSortOrder.pathAscending);
     void close();
 }
 
@@ -252,6 +255,38 @@ final class ProjectedDirectorySource : DirectorySource
         page.files = allFiles[offset .. end].dup;
         page.hasMore = end < allFiles.length;
         if (page.hasMore) { auto last = page.files[$ - 1]; page.nextCursor = FileCursor(last.relativePath, last.id, last.size); }
+        return page;
+    }
+
+    override FilePage listPreviousFilteredFilesPage(string directoryId, FileCursor cursor,
+        size_t limit = 250, FileFilter filter = FileFilter(),
+        FileSortOrder sortOrder = FileSortOrder.pathAscending)
+    {
+        FileNode[] allFiles;
+        foreach (file; tree.listFiles(directoryId))
+            if (matchesFileFilter(file, filter))
+                allFiles ~= file;
+        sort!((a, b) {
+            final switch (sortOrder)
+            {
+            case FileSortOrder.pathAscending: return a.relativePath < b.relativePath || (a.relativePath == b.relativePath && a.id < b.id);
+            case FileSortOrder.pathDescending: return a.relativePath > b.relativePath || (a.relativePath == b.relativePath && a.id > b.id);
+            case FileSortOrder.sizeAscending: return a.size < b.size || (a.size == b.size && a.relativePath < b.relativePath);
+            case FileSortOrder.sizeDescending: return a.size > b.size || (a.size == b.size && a.relativePath < b.relativePath);
+            }
+        })(allFiles);
+        size_t cursorIndex;
+        foreach (index, file; allFiles)
+            if (file.id == cursor.id && file.relativePath == cursor.relativePath) { cursorIndex = index; break; }
+        auto start = cursorIndex > limit ? cursorIndex - limit : 0;
+        FilePage page;
+        page.files = allFiles[start .. cursorIndex].dup;
+        page.hasMore = start > 0;
+        if (page.hasMore && page.files.length > 0)
+        {
+            auto first = page.files[0];
+            page.nextCursor = FileCursor(first.relativePath, first.id, first.size);
+        }
         return page;
     }
 
@@ -416,4 +451,9 @@ unittest
         smallestPage.nextCursor, 1, FileFilter(), FileSortOrder.sizeAscending);
     assert(nextSizePage.files.length == 1);
     assert(nextSizePage.files[0].size >= smallestPage.files[0].size);
+    auto previousSizePage = source.listPreviousFilteredFilesPage(album.id,
+        FileCursor(nextSizePage.files[0].relativePath, nextSizePage.files[0].id,
+            nextSizePage.files[0].size), 1, FileFilter(), FileSortOrder.sizeAscending);
+    assert(previousSizePage.files.length == 1);
+    assert(previousSizePage.files[0].id == smallestPage.files[0].id);
 }

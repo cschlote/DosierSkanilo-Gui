@@ -191,6 +191,39 @@ final class RepositoryDirectorySource : DirectorySource
         return result;
     }
 
+    override FilePage listPreviousFilteredFilesPage(string directoryId, FileCursor cursor,
+        size_t limit = 250, FileFilter filter = FileFilter(),
+        FileSortOrder sortOrder = FileSortOrder.pathAscending)
+    {
+        RepositoryFileQuery query;
+        query.directoryId = directoryId == "root" ? 0 : to!long(directoryId);
+        query.limit = limit;
+        query.text = filter.text;
+        query.video = filter.video;
+        query.audio = filter.audio;
+        query.image = filter.image;
+        query.textStream = filter.textStream;
+        query.mediaNegated = filter.mediaNegated;
+        query.fileType = filter.fileType;
+        query.archive = filter.archive;
+        query.torrent = filter.torrent;
+        query.sortOrder = cast(RepositoryFileSortOrder) sortOrder;
+        auto backendCursor = RepositoryFileCursor(cursor.relativePath,
+            to!long(cursor.id), cursor.size);
+        auto page = repository.previousFilesPage(query, backendCursor);
+        FilePage result;
+        result.hasMore = page.hasMore;
+        foreach (file; page.files)
+            result.files ~= FileNode(file.blobId.to!string, directoryId, file.name,
+                file.relativePath, file.size, file.hasFileType, file.hasMedia,
+                file.hasVideo, file.hasAudio, file.hasImage, file.hasText,
+                file.hasArchive, file.hasTorrent);
+        if (page.hasMore)
+            result.nextCursor = FileCursor(page.nextCursor.relativePath,
+                page.nextCursor.id.to!string, page.nextCursor.size);
+        return result;
+    }
+
     override void close()
     {
         if (repository !is null)
