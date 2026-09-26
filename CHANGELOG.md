@@ -51,6 +51,7 @@ All notable changes to this project are documented in this file.
   of relying only on large raw text blocks.
 - Repository archive and torrent TreeViews fetch their first 250 entries
   asynchronously and expose a continuation row for later chunks.
+- Activating an archive or torrent file leaf copies its full nested entry path.
 - The active text filter is now applied to TreeView file children for both JSON
   and repository sources.
 - Directory and file nodes now support per-tab sorting by name or size through

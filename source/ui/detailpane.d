@@ -159,6 +159,22 @@ private void configureNestedEntryTree(TreeView treeView)
  */
 void bindDetailPaneSignals(DocumentTab document, DetailPaneCallbacks callbacks)
 {
+    void bindNestedEntryActivation(TreeView treeView, string entryLabel)
+    {
+        treeView.addOnRowActivated((TreePath path, TreeViewColumn column, TreeView activatedView) {
+            auto model = activatedView.getModel();
+            auto iter = new TreeIter();
+            if (!model.getIter(iter, path) || model.getValueString(iter, 3) != "File")
+                return;
+            auto entryPath = model.getValueString(iter, 2);
+            if (entryPath.length > 0)
+                callbacks.copyTextToClipboard(entryLabel, entryPath, document);
+        });
+    }
+
+    bindNestedEntryActivation(document.detailArchiveTreeView, "archive entry path");
+    bindNestedEntryActivation(document.detailTorrentTreeView, "torrent file path");
+
     void selectRelativeFile(bool next)
     {
         TreeModelIF model;
