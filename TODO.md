@@ -3,7 +3,8 @@
 ## Directory Tree Redesign
 
 - Replace the Blob table's fully accumulated GtkListStore with a virtual or
-  bounded-window model backed by opaque source cursors.
+  bounded-window model backed by opaque source cursors; current cursor draining
+  still grows the GTK model with all displayed rows.
 - Persist and restore the current file cursor used by Previous/Next navigation.
 - Avoid loading complete archive/torrent entry arrays with repository blob
   details; keep nested-tree metadata lazy from the outset.

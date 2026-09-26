@@ -271,6 +271,7 @@ class DocumentTab
     size_t pageOffset;
     size_t pageTotal;
     size_t repositoryRowsLoaded;
+    long repositoryBlobCursor;
     size_t pageSize = 250;
     bool loadAllRows;
     bool drainRepositoryPages;

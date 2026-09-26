@@ -20,6 +20,8 @@ struct SourcePage
     RepositoryBlobFlags[] flags;
     size_t offset;
     size_t total;
+    long nextBlobId;
+    bool hasMore;
 }
 
 /** Filter state translated into repository query options. */
@@ -404,6 +406,42 @@ SourcePage loadDocumentPage(string path, size_t offset, size_t limit,
         offset, total);
 }
 
+/** Load one source-opaque repository catalog chunk using its stable blob cursor. */
+SourcePage loadDocumentCursorPage(string path, long afterBlobId, size_t limit,
+    SourceQuery query = SourceQuery())
+{
+    auto repository = Repository.open(path);
+    scope (exit)
+        repository.close();
+
+    RepositoryQueryOptions options;
+    options.limit = limit;
+    options.afterBlobId = afterBlobId;
+    options.useCursor = true;
+    options.text = query.text;
+    options.video = query.video;
+    options.audio = query.audio;
+    options.image = query.image;
+    options.textStream = query.textStream;
+    options.mediaNegated = query.mediaNegated;
+    options.fileType = query.fileType;
+    options.archive = query.archive;
+    options.torrent = query.torrent;
+
+    JsonExportOptions exportOptions;
+    exportOptions.absolutePaths = true;
+    exportOptions.includeDetails = false;
+    auto page = repository.loadCatalogQueryCursorPage(options, exportOptions);
+    SourcePage result;
+    result.blobs = page.blobs;
+    result.blobIds = page.blobIds;
+    result.flags = page.flags;
+    result.total = page.total;
+    result.nextBlobId = page.nextCursor;
+    result.hasMore = page.hasMore;
+    return result;
+}
+
 @("repository source detection")
 unittest
 {
@@ -451,6 +489,12 @@ unittest
     assert(directorySource.root().name == baseName(root));
     assert(directorySource.listFiles("root").length == 3);
     assert(directorySource.listFiles("root", 0, 250, "one.txt").length == 1);
+    auto catalogPage = loadDocumentCursorPage(root, 0, 1);
+    assert(catalogPage.blobs.length == 1);
+    assert(catalogPage.hasMore);
+    auto nextCatalogPage = loadDocumentCursorPage(root, catalogPage.nextBlobId, 1);
+    assert(nextCatalogPage.blobs.length == 1);
+    assert(nextCatalogPage.blobIds[0] > catalogPage.blobIds[0]);
     auto firstPage = directorySource.listFilesPage("root", FileCursor(), 1);
     assert(firstPage.files.length == 1);
     assert(firstPage.hasMore);

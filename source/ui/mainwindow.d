@@ -80,7 +80,7 @@ import gstreamer.c.types : GstState, GstStateChangeReturn;
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
 import model.datasource : SourceQuery, isRepositorySource, loadDocumentDetails,
-    loadDocumentPage, loadDocumentSource, loadRepositoryArchiveEntries,
+    loadDocumentCursorPage, loadDocumentPage, loadDocumentSource, loadRepositoryArchiveEntries,
     loadRepositoryTorrentFiles, openRepositoryDirectorySource;
 import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, FileCursor, FileInput,
     FileFilter, FileNode, FilePage, FileSortOrder, NestedFileNode,
@@ -534,6 +534,8 @@ struct AsyncLoadResult
     size_t pageOffset;
     size_t pageTotal;
     bool pagedSource;
+    long nextBlobId;
+    bool hasMore;
     long[] blobIds;
     RepositoryBlobFlags[] blobFlags;
 }
@@ -3423,6 +3425,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.drainRepositoryPages = true;
                 document.pageOffset = 0;
                 document.repositoryRowsLoaded = 0;
+                document.repositoryBlobCursor = 0;
                 document.loadedRows = [];
             }
             document.drainPageRequest = false;
@@ -3451,7 +3454,29 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 NamedBinaryBlob[] blobs;
                 if (isRepositorySource(document.filePath))
                 {
-                    if (document.loadAllRows && !document.drainRepositoryPages)
+                    if (document.drainRepositoryPages)
+                    {
+                        SourceQuery sourceQuery;
+                        sourceQuery.text = document.filterQuery;
+                        sourceQuery.video = document.filterVideo;
+                        sourceQuery.audio = document.filterAudio;
+                        sourceQuery.image = document.filterImage;
+                        sourceQuery.textStream = document.filterText;
+                        sourceQuery.mediaNegated = document.filterMediaNegated;
+                        sourceQuery.fileType = document.filterFileType;
+                        sourceQuery.archive = document.filterArchive;
+                        sourceQuery.torrent = document.filterTorrent;
+                        result.pageOffset = document.repositoryRowsLoaded;
+                        auto page = loadDocumentCursorPage(document.filePath,
+                            document.repositoryBlobCursor, document.pageSize, sourceQuery);
+                        blobs = page.blobs;
+                        result.blobIds = page.blobIds;
+                        result.blobFlags = page.flags;
+                        result.pageTotal = page.total;
+                        result.nextBlobId = page.nextBlobId;
+                        result.hasMore = page.hasMore;
+                    }
+                    else if (document.loadAllRows)
                     {
                         SourceQuery sourceQuery;
                         sourceQuery.text = document.filterQuery;
@@ -3587,6 +3612,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 if (result.pagedSource && document.drainRepositoryPages)
                 {
                     document.repositoryRowsLoaded = result.pageOffset + result.allRows.length;
+                    document.repositoryBlobCursor = result.nextBlobId;
                     document.loadedRows = [];
                 }
                 else
@@ -3632,7 +3658,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.lastLoadElapsedMs = result.elapsedMs;
                 updatePerfStatus(document);
                 document.drainAfterRender = result.pagedSource && document.drainRepositoryPages
-                    && document.repositoryRowsLoaded < result.pageTotal;
+                    && result.hasMore;
 
                 if (isRepositorySource(document.filePath))
                 {
