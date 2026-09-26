@@ -83,6 +83,7 @@ All notable changes to this project are documented in this file.
   clearing and rebuilding all previously rendered rows after each chunk.
 - Repository Blob-table loading now advances with stable blob-ID keyset cursors
   rather than SQL offsets; the GUI source adapter has cursor continuation tests.
+- GUI repository cursor tests now cover first, middle and terminal chunks.
 - Repository Blob-table selection now resolves details by hidden stable blob ID;
   the GUI no longer retains all summary-row arrays during SQL chunk draining.
 - During repository table draining, summary `BlobRow` arrays are no longer

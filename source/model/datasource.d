@@ -495,6 +495,9 @@ unittest
     auto nextCatalogPage = loadDocumentCursorPage(root, catalogPage.nextBlobId, 1);
     assert(nextCatalogPage.blobs.length == 1);
     assert(nextCatalogPage.blobIds[0] > catalogPage.blobIds[0]);
+    auto finalCatalogPage = loadDocumentCursorPage(root, nextCatalogPage.nextBlobId, 10);
+    assert(finalCatalogPage.blobs.length == 1);
+    assert(!finalCatalogPage.hasMore);
     auto firstPage = directorySource.listFilesPage("root", FileCursor(), 1);
     assert(firstPage.files.length == 1);
     assert(firstPage.hasMore);
