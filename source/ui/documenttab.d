@@ -33,6 +33,7 @@ import gstreamer.Element;
 import gstinterfaces.VideoOverlay;
 import model.blobrow : BlobRow;
 import model.treeprojection : DirectorySource, DirectoryTree, FileCursor;
+import model.treeprojection : NestedFileNode;
 
 /** Column index for the row number in the main table model. */
 enum int COL_INDEX = 0;
@@ -194,6 +195,8 @@ class DocumentTab
     TreeView detailArchiveTreeView;
     TreeStore detailTorrentTreeStore;
     TreeView detailTorrentTreeView;
+    NestedFileNode[] archiveTreeEntries;
+    NestedFileNode[] torrentTreeEntries;
     ListStore detailFileNamesStore;
     TreeView detailFileNamesView;
     Element previewVideoPlayer;

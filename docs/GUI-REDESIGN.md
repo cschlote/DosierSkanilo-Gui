@@ -37,11 +37,10 @@ Implemented:
 - Asynchronous details for repository files outside the current table page,
   rendered directly from the selected Tree file.
 - Previous/Next navigation for multiple known file references.
+- Archive and torrent detail sections render their entry paths as nested trees.
 
 Known limitations:
 
-- A table selection does not yet automatically expand collapsed directories to
-  reveal its TreeView file.
 - Tree text filtering is unified with the table filter; TreeView sorting by name
   or size is available per tab.
 - Directory nodes without matching visible descendants are pruned for active
@@ -50,6 +49,8 @@ Known limitations:
 - The table remains a transitional implementation of the alternative blob view.
 - A per-tab view switch now selects separate Tree or Blob-table notebook pages.
 - Each document tab now owns its filter bar and filter controls.
+- Archive and torrent TreeViews currently use the detail data already loaded for
+  the selected blob; bounded asynchronous detail-tree fetching is still pending.
 
 The source adapter is intentionally opaque. JSON and SQLite expose the same
 logical result set to the GUI. SQLite may fetch internal chunks, but those

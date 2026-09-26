@@ -47,6 +47,7 @@ import std.uri : encode;
 
 import dosierskanilo.metadata.mediainfosig : MediaInfoAudio, MediaInfoSig, MediaInfoText, MediaInfoVideo;
 import model.blobrow : BlobRow;
+import model.treeprojection : NestedFileNode;
 import ui.documenttab : DocumentTab, PreviewScaleMode;
 
 /** Normalize empty field values in the details form.
@@ -185,14 +186,19 @@ private void appendNestedPath(TreeStore store, string path, string sizeText,
 private void populateArchiveEntryTree(DocumentTab document, const(BlobRow) row)
 {
     document.detailArchiveTreeStore.clear();
+    document.archiveTreeEntries = [];
     TreeIter[string] directories;
     if (row.sourceBlob !is null)
     {
         foreach (entry; row.sourceBlob.archiveSpecs)
         {
             if (entry !is null && entry.fileName.length > 0)
+            {
+                document.archiveTreeEntries ~= NestedFileNode(entry.fileName, entry.fileName,
+                    entry.fileName, cast(ulong) entry.fileSize, entry.timeLastModified);
                 appendNestedPath(document.detailArchiveTreeStore, entry.fileName,
                     format("%s bytes", entry.fileSize), directories);
+            }
         }
     }
     document.detailArchiveTreeView.setVisible(document.detailArchiveTreeStore.iterNChildren(null) > 0);
@@ -201,14 +207,20 @@ private void populateArchiveEntryTree(DocumentTab document, const(BlobRow) row)
 private void populateTorrentFileTree(DocumentTab document, const(BlobRow) row)
 {
     document.detailTorrentTreeStore.clear();
+    document.torrentTreeEntries = [];
     TreeIter[string] directories;
     if (row.sourceBlob !is null && row.sourceBlob.torrentInfo !is null)
     {
         foreach (entry; row.sourceBlob.torrentInfo.files)
         {
             if (entry !is null && entry.path.length > 0)
+            {
+                auto relativePath = entry.path.join("/");
+                document.torrentTreeEntries ~= NestedFileNode(relativePath, relativePath,
+                    relativePath, entry.length, "");
                 appendNestedPath(document.detailTorrentTreeStore, entry.path.join("/"),
                     format("%s bytes", entry.length), directories);
+            }
         }
     }
     document.detailTorrentTreeView.setVisible(document.detailTorrentTreeStore.iterNChildren(null) > 0);

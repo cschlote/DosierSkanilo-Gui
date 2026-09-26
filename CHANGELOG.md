@@ -47,6 +47,8 @@ All notable changes to this project are documented in this file.
   restored when tabs are recreated.
 - The selected TreeView file is now persisted per document path and revealed
   after the source is loaded again.
+- Archive and torrent detail sections now show nested path TreeViews instead
+  of relying only on large raw text blocks.
 - The active text filter is now applied to TreeView file children for both JSON
   and repository sources.
 - Directory and file nodes now support per-tab sorting by name or size through
