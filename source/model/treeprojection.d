@@ -251,4 +251,10 @@ unittest
     assert(source.listDirectories("directory:music").length == 1);
     assert(source.listFiles(album[0].id).length == 2);
     assert(source.listFiles("root", 0, 250, "readme").length == 1);
+    auto firstPage = source.listFilesPage(album[0].id, FileCursor(), 1);
+    assert(firstPage.files.length == 1);
+    assert(firstPage.hasMore);
+    auto secondPage = source.listFilesPage(album[0].id, firstPage.nextCursor, 1);
+    assert(secondPage.files.length == 1);
+    assert(!secondPage.hasMore);
 }

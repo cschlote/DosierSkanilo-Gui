@@ -313,6 +313,15 @@ unittest
     assert(directorySource.root().name == baseName(root));
     assert(directorySource.listFiles("root").length == 3);
     assert(directorySource.listFiles("root", 0, 250, "one.txt").length == 1);
+    auto firstPage = directorySource.listFilesPage("root", FileCursor(), 1);
+    assert(firstPage.files.length == 1);
+    assert(firstPage.hasMore);
+    auto secondPage = directorySource.listFilesPage("root", firstPage.nextCursor, 1);
+    assert(secondPage.files.length == 1);
+    assert(secondPage.hasMore);
+    auto thirdPage = directorySource.listFilesPage("root", secondPage.nextCursor, 1);
+    assert(thirdPage.files.length == 1);
+    assert(!thirdPage.hasMore);
     directorySource.close();
     SourceQuery filteredQuery;
     filteredQuery.text = "one.txt";
