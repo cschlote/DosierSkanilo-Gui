@@ -2309,7 +2309,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
     }
 
     /** Re-render one document's row set into its list model in GTK-friendly batches. */
-    void renderRows(DocumentTab document, const(BlobRow)[] rows, string filterLabel = "")
+    void renderRows(DocumentTab document, const(BlobRow)[] rows, string filterLabel = "",
+        bool appendRows = false)
     {
         if (document.filePath.length == 0)
         {
@@ -2339,13 +2340,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
             ": rows=", rowsCopyData.length,
             ", filter=", filterLabel.length > 0 ? filterLabel : "<none>");
 
+        auto startingRowCount = appendRows ? document.visibleRows.length : 0;
+
         // Performance hack: un-couple TreeView for bulk-imports
         TreeModelIF oldModel = document.tableView.getModel();
         document.tableView.setModel(null);
 
-        document.tableStore.clear();
-        document.visibleRows = [];
-        clearSelectionDetails(document);
+        if (!appendRows)
+        {
+            document.tableStore.clear();
+            document.visibleRows = [];
+            clearSelectionDetails(document);
+            startingRowCount = 0;
+        }
 
         size_t nextIndex = 0;
         bool delegate() renderStep;
@@ -2365,7 +2372,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             foreach (idx; nextIndex .. endIndex)
             {
                 auto row = rowsCopyData[idx];
-                auto indexText = to!string(idx + 1);
+                auto globalIndex = startingRowCount + idx;
+                auto indexText = to!string(globalIndex + 1);
                 auto sizeText = to!string(row.fileSize);
                 auto checksumsText = checksumSetStatus(row);
                 auto fileTypeText = boolStatusIcon(row.hasFileType);
@@ -2373,7 +2381,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 auto archiveText = boolStatusIcon(row.hasArchive);
                 auto torrentText = boolStatusIcon(row.hasTorrent);
 
-                auto indexSortText = format("%020d", cast(ulong) idx + 1);
+                auto indexSortText = format("%020d", cast(ulong) globalIndex + 1);
                 auto sizeSortText = format("%020d", row.fileSize);
 
                 TreeIter iter;
@@ -2401,7 +2409,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 return true;
             }
 
-            document.visibleRows = rowsCopyData.dup;
+            if (appendRows)
+                document.visibleRows ~= rowsCopyData;
+            else
+                document.visibleRows = rowsCopyData.dup;
             document.lastRenderElapsedMs = cast(long)(MonoTime.currTime - renderStarted)
                 .total!"msecs";
             updatePerfStatus(document);
@@ -2414,7 +2425,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 baseStatus = format(
                     "Showing %s/%s rows (duplicate digest groups: %s, filter: %s, case-sensitive: %s)",
-                    rowsCopyData.length,
+                    document.visibleRows.length,
                     document.loadedRows.length,
                     document.loadedDuplicateGroups,
                     filterLabel,
@@ -2425,7 +2436,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 baseStatus = format(
                     "Showing %s/%s rows (duplicate digest groups: %s)",
-                    rowsCopyData.length,
+                    document.visibleRows.length,
                     document.loadedRows.length,
                     document.loadedDuplicateGroups
                 );
@@ -2450,7 +2461,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
             // Nach dem Befüllen TreeView wieder verbinden und eine neue Layout-Runde anstoßen.
             document.tableView.setModel(document.tableStore);
-            if (document.directorySource !is null)
+            if (document.directorySource !is null && !appendRows)
             {
                 renderDirectoryTree(document.directoryTreeStore, document.directorySource,
                     document.directoryTreeView, document.expandedDirectoryIds,
@@ -3309,8 +3320,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
                 if (isRepositorySource(document.filePath))
                 {
-                    renderRows(document, filterRowsByText(document.loadedRows,
-                        document.filterQuery, prefCaseSensitiveFilter));
+                    if (document.drainRepositoryPages)
+                        renderRows(document, result.allRows, "", result.pageOffset > 0);
+                    else
+                        renderRows(document, filterRowsByText(document.loadedRows,
+                            document.filterQuery, prefCaseSensitiveFilter));
                 }
                 else if (prefAutoApplyFilter && (
                     document.filterQuery.length > 0 ||
