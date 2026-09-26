@@ -514,3 +514,52 @@ unittest
     assert(filtered.total == 1);
     assert(filtered.blobs.length == 1);
 }
+
+@("repository detail adapter keeps archive and torrent entries lazy")
+unittest
+{
+    import std.file : copy, exists, mkdirRecurse, rmdirRecurse, tempDir, write;
+    import std.path : buildPath;
+    import std.process : execute;
+    import std.uuid : randomUUID;
+
+    auto root = buildPath(tempDir(), "gui-lazy-details-" ~ randomUUID().toString());
+    mkdirRecurse(root);
+    scope (exit)
+    {
+        if (exists(root))
+            rmdirRecurse(root);
+    }
+
+    auto archivePayload = buildPath(root, "payload.txt");
+    auto archivePath = buildPath(root, "payload.zip");
+    write(archivePayload, "archive payload\n");
+    assert(execute(["zip", "-q", "-j", archivePath, archivePayload]).status == 0);
+    auto torrentPath = buildPath(root, "sample.torrent");
+    copy("../DosierSkanilo/test/example.torrent", torrentPath);
+
+    auto repository = Repository.initialize(root);
+    repository.scan();
+    MetadataScanOptions metadataOptions;
+    metadataOptions.scanArchives = true;
+    metadataOptions.scanTorrents = true;
+    metadataOptions.deepArchiveScan = true;
+    repository.updateMetadata(metadataOptions);
+    RepositoryFileQuery archiveQuery;
+    archiveQuery.archive = true;
+    auto archiveFile = repository.listFiles(archiveQuery)[0];
+    RepositoryFileQuery torrentQuery;
+    torrentQuery.torrent = true;
+    auto torrentFile = repository.listFiles(torrentQuery)[0];
+    repository.close();
+
+    auto archiveDetails = loadDocumentDetails(root, archiveFile.blobId);
+    assert(archiveDetails !is null);
+    assert(archiveDetails.archiveSpecs.length == 0);
+    assert(loadRepositoryArchiveEntries(root, archiveFile.blobId).length > 0);
+
+    auto torrentDetails = loadDocumentDetails(root, torrentFile.blobId);
+    assert(torrentDetails !is null && torrentDetails.torrentInfo !is null);
+    assert(torrentDetails.torrentInfo.files.length == 0);
+    assert(loadRepositoryTorrentFiles(root, torrentFile.blobId).length > 0);
+}
