@@ -1,7 +1,7 @@
 /** GTK-independent directory tree projection for source adapters. */
 module model.treeprojection;
 
-import std.algorithm : any, canFind, count, countUntil, filter;
+import std.algorithm : any, canFind, count, countUntil, filter, sort;
 import std.array : array;
 import std.conv : to;
 import std.path : baseName, dirName, buildNormalizedPath;
@@ -51,6 +51,15 @@ struct FileCursor
 {
     string relativePath;
     string id;
+    ulong size;
+}
+
+enum FileSortOrder : int
+{
+    pathAscending = 0,
+    pathDescending = 1,
+    sizeAscending = 2,
+    sizeDescending = 3,
 }
 
 struct FilePage
@@ -126,7 +135,8 @@ interface DirectorySource
     FilePage listFilesPage(string directoryId, FileCursor cursor = FileCursor(),
         size_t limit = 250, string filter = "");
     FilePage listFilteredFilesPage(string directoryId, FileCursor cursor = FileCursor(),
-        size_t limit = 250, FileFilter filter = FileFilter());
+        size_t limit = 250, FileFilter filter = FileFilter(),
+        FileSortOrder sortOrder = FileSortOrder.pathAscending);
     void close();
 }
 
@@ -212,9 +222,26 @@ final class ProjectedDirectorySource : DirectorySource
     }
 
     override FilePage listFilteredFilesPage(string directoryId, FileCursor cursor = FileCursor(),
-        size_t limit = 250, FileFilter filter = FileFilter())
+        size_t limit = 250, FileFilter filter = FileFilter(),
+        FileSortOrder sortOrder = FileSortOrder.pathAscending)
     {
-        auto allFiles = tree.listFiles(directoryId).filter!(file => matchesFileFilter(file, filter)).array;
+        FileNode[] allFiles;
+        foreach (file; tree.listFiles(directoryId))
+            if (matchesFileFilter(file, filter))
+                allFiles ~= file;
+        sort!((a, b) {
+            final switch (sortOrder)
+            {
+            case FileSortOrder.pathAscending:
+                return a.relativePath < b.relativePath || (a.relativePath == b.relativePath && a.id < b.id);
+            case FileSortOrder.pathDescending:
+                return a.relativePath > b.relativePath || (a.relativePath == b.relativePath && a.id > b.id);
+            case FileSortOrder.sizeAscending:
+                return a.size < b.size || (a.size == b.size && a.relativePath < b.relativePath);
+            case FileSortOrder.sizeDescending:
+                return a.size > b.size || (a.size == b.size && a.relativePath < b.relativePath);
+            }
+        })(allFiles);
         size_t offset;
         if (cursor.id.length > 0)
             foreach (index, file; allFiles)
@@ -224,7 +251,7 @@ final class ProjectedDirectorySource : DirectorySource
         if (end > allFiles.length) end = allFiles.length;
         page.files = allFiles[offset .. end].dup;
         page.hasMore = end < allFiles.length;
-        if (page.hasMore) { auto last = page.files[$ - 1]; page.nextCursor = FileCursor(last.relativePath, last.id); }
+        if (page.hasMore) { auto last = page.files[$ - 1]; page.nextCursor = FileCursor(last.relativePath, last.id, last.size); }
         return page;
     }
 
@@ -379,4 +406,13 @@ unittest
     eitherType.archive = true;
     auto eitherPage = source.listFilteredFilesPage(album.id, FileCursor(), 20, eitherType);
     assert(eitherPage.files.length == 3);
+
+    auto smallestPage = source.listFilteredFilesPage(album.id, FileCursor(), 1,
+        FileFilter(), FileSortOrder.sizeAscending);
+    assert(smallestPage.files.length == 1);
+    assert(smallestPage.files[0].name == "cover.jpg");
+    auto nextSizePage = source.listFilteredFilesPage(album.id,
+        smallestPage.nextCursor, 1, FileFilter(), FileSortOrder.sizeAscending);
+    assert(nextSizePage.files.length == 1);
+    assert(nextSizePage.files[0].size >= smallestPage.files[0].size);
 }

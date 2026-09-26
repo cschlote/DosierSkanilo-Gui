@@ -63,6 +63,8 @@ All notable changes to this project are documented in this file.
   projections for internal chunk navigation across JSON and SQLite adapters.
 - Tree file chunks now use `FileCursor` continuation state in the loading path;
   numeric SQL offsets are no longer required by the TreeView integration.
+- Tree file cursor queries now carry the per-tab sort order into JSON and SQLite
+  sources so ordering remains stable across chunks.
 - Repository Blob-table loading now drains internal SQL chunks automatically,
   so the alternative view no longer exposes SQL page controls by default.
 - Repository `FileNode` projections now carry metadata-presence flags from the

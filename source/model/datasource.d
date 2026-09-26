@@ -10,7 +10,7 @@ import dosierskanilo;
 import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob,
     deserializeDataClassJsonFile;
 import model.treeprojection : DirectoryNode, DirectorySource, FileCursor, FileFilter, FileInput, FileNode,
-    FilePage, NestedFileNode, DirectoryTree, buildDirectoryTree;
+    FilePage, FileSortOrder, NestedFileNode, DirectoryTree, buildDirectoryTree;
 
 /** One bounded source result page. */
 struct SourcePage
@@ -158,7 +158,8 @@ final class RepositoryDirectorySource : DirectorySource
     }
 
     override FilePage listFilteredFilesPage(string directoryId, FileCursor cursor = FileCursor(),
-        size_t limit = 250, FileFilter filter = FileFilter())
+        size_t limit = 250, FileFilter filter = FileFilter(),
+        FileSortOrder sortOrder = FileSortOrder.pathAscending)
     {
         RepositoryFileQuery query;
         query.directoryId = directoryId == "root" ? 0 : to!long(directoryId);
@@ -172,8 +173,10 @@ final class RepositoryDirectorySource : DirectorySource
         query.fileType = filter.fileType;
         query.archive = filter.archive;
         query.torrent = filter.torrent;
+        query.sortOrder = cast(RepositoryFileSortOrder) sortOrder;
         query.afterPath = cursor.relativePath;
         query.afterId = cursor.id.length > 0 ? to!long(cursor.id) : 0;
+        query.afterSize = cursor.size;
         auto page = repository.listFilesPage(query);
         FilePage result;
         result.hasMore = page.hasMore;
@@ -184,7 +187,7 @@ final class RepositoryDirectorySource : DirectorySource
                 file.hasArchive, file.hasTorrent);
         if (page.hasMore)
             result.nextCursor = FileCursor(page.nextCursor.relativePath,
-                page.nextCursor.id.to!string);
+                page.nextCursor.id.to!string, page.nextCursor.size);
         return result;
     }
 

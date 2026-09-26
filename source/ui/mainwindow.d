@@ -82,7 +82,7 @@ import model.blobrow : BlobRow, extractRowsFromBlobs;
 import model.datasource : SourceQuery, isRepositorySource, loadDocumentDetails,
     loadDocumentPage, loadDocumentSource, openRepositoryDirectorySource;
 import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, FileCursor, FileInput,
-    FileFilter, FileNode, ProjectedDirectorySource, buildDirectoryTree;
+    FileFilter, FileNode, FileSortOrder, ProjectedDirectorySource, buildDirectoryTree;
 import ui.appstate : AppState, loadAppState, saveAppState;
 import ui.builderutils : builderObject;
 import ui.detailpane : DetailPaneCallbacks, bindDetailPaneSignals, loadDetailPaneUi;
@@ -162,6 +162,17 @@ private FileFilter treeFilterForDocument(DocumentTab document)
     return filter;
 }
 
+private FileSortOrder sourceFileSortOrder(TreeSortOrder order)
+{
+    final switch (order)
+    {
+    case TreeSortOrder.nameAscending: return FileSortOrder.pathAscending;
+    case TreeSortOrder.nameDescending: return FileSortOrder.pathDescending;
+    case TreeSortOrder.sizeAscending: return FileSortOrder.sizeAscending;
+    case TreeSortOrder.sizeDescending: return FileSortOrder.sizeDescending;
+    }
+}
+
 private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
     const DirectoryNode node, TreeIter parent, FileFilter filter = FileFilter(),
     TreeSortOrder order = TreeSortOrder.nameAscending)
@@ -173,7 +184,8 @@ private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
     store.setValue(iter, 3, node.id);
     store.setValue(iter, 5, node.relativePath);
     if (sortedDirectories(source, node.id, order, filter).length > 0
-        || source.listFilteredFilesPage(node.id, FileCursor(), 1, filter).files.length > 0)
+        || source.listFilteredFilesPage(node.id, FileCursor(), 1, filter,
+            sourceFileSortOrder(order)).files.length > 0)
     {
         auto loadingIter = store.createIter(iter);
         store.setValue(loadingIter, 0, "Loading...");
@@ -192,14 +204,9 @@ private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
         foreach (child; sortedDirectories(source, directoryId, order, filter))
             appendDirectoryTreeNode(store, source, child, parent, filter, order);
     }
-    auto page = source.listFilteredFilesPage(directoryId, cursor, 251, filter);
+    auto page = source.listFilteredFilesPage(directoryId, cursor, 251, filter,
+        sourceFileSortOrder(order));
     auto files = page.files;
-    sort!((a, b) {
-        if (order == TreeSortOrder.sizeAscending) return a.size < b.size;
-        if (order == TreeSortOrder.sizeDescending) return a.size > b.size;
-        if (order == TreeSortOrder.nameDescending) return a.name > b.name;
-        return a.name < b.name;
-    })(files);
     auto fileLimit = files.length > 250 ? 250 : files.length;
     foreach (file; files[0 .. fileLimit])
     {
@@ -1575,6 +1582,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             TreePath rowToRemovePath) {
             auto filePath = document.filePath;
             auto fileFilter = treeFilterForDocument(document);
+            auto fileSortOrder = sourceFileSortOrder(document.treeSortOrder);
             new Thread({
                 AsyncDirectoryResult result;
                 result.filePath = filePath;
@@ -1584,7 +1592,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 {
                     auto source = openRepositoryDirectorySource(filePath);
                     result.directories = source.listDirectories(directoryId, fileFilter);
-                    auto page = source.listFilteredFilesPage(directoryId, cursor, 251, fileFilter);
+                    auto page = source.listFilteredFilesPage(directoryId, cursor, 251,
+                        fileFilter, fileSortOrder);
                     result.files = page.files;
                     source.close();
                 }
