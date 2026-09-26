@@ -118,7 +118,9 @@ final class RepositoryDirectorySource : DirectorySource
         foreach (file; repository.listFiles(query))
         {
             result ~= FileNode(file.blobId.to!string, directoryId, file.name,
-                file.relativePath, file.size);
+                file.relativePath, file.size, file.hasFileType, file.hasMedia,
+                file.hasVideo, file.hasAudio, file.hasImage, file.hasText,
+                file.hasArchive, file.hasTorrent);
         }
         return result;
     }
@@ -137,7 +139,9 @@ final class RepositoryDirectorySource : DirectorySource
         result.hasMore = page.hasMore;
         foreach (file; page.files)
             result.files ~= FileNode(file.blobId.to!string, directoryId, file.name,
-                file.relativePath, file.size);
+                file.relativePath, file.size, file.hasFileType, file.hasMedia,
+                file.hasVideo, file.hasAudio, file.hasImage, file.hasText,
+                file.hasArchive, file.hasTorrent);
         if (page.hasMore)
             result.nextCursor = FileCursor(page.nextCursor.relativePath,
                 page.nextCursor.id.to!string);

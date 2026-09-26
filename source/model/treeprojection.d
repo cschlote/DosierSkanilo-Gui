@@ -27,6 +27,14 @@ struct FileNode
     string name;
     string relativePath;
     ulong size;
+    bool hasFileType;
+    bool hasMedia;
+    bool hasVideo;
+    bool hasAudio;
+    bool hasImage;
+    bool hasText;
+    bool hasArchive;
+    bool hasTorrent;
 }
 
 /** Lazy nested entry projection used by archive and torrent detail trees. */
