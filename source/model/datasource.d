@@ -355,6 +355,8 @@ NamedBinaryBlob loadDocumentDetails(string path, long blobId)
         repository.close();
     JsonExportOptions options;
     options.absolutePaths = true;
+    options.includeArchiveEntries = false;
+    options.includeTorrentFiles = false;
     return repository.loadBlobDetails(blobId, options);
 }
 

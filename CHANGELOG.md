@@ -81,6 +81,8 @@ All notable changes to this project are documented in this file.
   objects after projection; full references and metadata remain lazy on selection.
 - Repository chunks now append incrementally to the Blob table instead of
   clearing and rebuilding all previously rendered rows after each chunk.
+- Repository Blob-table selection now resolves details by hidden stable blob ID;
+  the GUI no longer retains all summary-row arrays during SQL chunk draining.
 - During repository table draining, summary `BlobRow` arrays are no longer
   retained across chunks; table selection resolves details by hidden stable blob ID.
 - Repository `FileNode` projections now carry metadata-presence flags from the

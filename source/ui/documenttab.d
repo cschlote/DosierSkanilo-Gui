@@ -55,8 +55,16 @@ enum int COL_INDEX_SORT = 7;
 enum int COL_FILE_SIZE_SORT = 8;
 /** Stable repository blob ID carried as hidden table metadata. */
 enum int COL_SOURCE_ID = 9;
+enum int COL_HAS_FILE_TYPE_FLAG = 10;
+enum int COL_HAS_MEDIA_FLAG = 11;
+enum int COL_HAS_VIDEO_FLAG = 12;
+enum int COL_HAS_AUDIO_FLAG = 13;
+enum int COL_HAS_IMAGE_FLAG = 14;
+enum int COL_HAS_TEXT_FLAG = 15;
+enum int COL_HAS_ARCHIVE_FLAG = 16;
+enum int COL_HAS_TORRENT_FLAG = 17;
 /** Total number of columns in the main table model. */
-enum int COL_COUNT = 10;
+enum int COL_COUNT = 18;
 
 enum PreviewScaleMode : int
 {

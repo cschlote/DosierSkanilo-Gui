@@ -89,7 +89,7 @@ import ui.appstate : AppState, loadAppState, saveAppState;
 import ui.builderutils : builderObject;
 import ui.detailpane : DetailPaneCallbacks, bindDetailPaneSignals, loadDetailPaneUi;
 import ui.detailpreview : DetailPreviewCallbacks, bindDetailPreviewSignals, loadDetailPreviewUi;
-import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL_FILE_TYPE, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_INDEX, COL_INDEX_SORT, COL_MEDIA_INFO, COL_SOURCE_ID, DocumentTab, PreviewScaleMode, TreeSortOrder, clampPreviewScaleMode;
+import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL_FILE_TYPE, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_HAS_FILE_TYPE_FLAG, COL_HAS_MEDIA_FLAG, COL_HAS_VIDEO_FLAG, COL_HAS_AUDIO_FLAG, COL_HAS_IMAGE_FLAG, COL_HAS_TEXT_FLAG, COL_HAS_ARCHIVE_FLAG, COL_HAS_TORRENT_FLAG, COL_INDEX, COL_INDEX_SORT, COL_MEDIA_INFO, COL_SOURCE_ID, DocumentTab, PreviewScaleMode, TreeSortOrder, clampPreviewScaleMode;
 import ui.documentpage : loadDocumentPageUi;
 import ui.detailswidgets : setDetailEntry,
     setMetadataStatusLabel, setMetadataDetails, setKnownFilesTable, setMediaPreview,
@@ -221,6 +221,14 @@ private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
         store.setValue(fileIter, 5, file.relativePath);
         store.setValue(fileIter, 6, file.cursorId);
         store.setValue(fileIter, 7, file.size.to!string);
+        store.setValue(fileIter, 8, file.hasFileType ? "1" : "0");
+        store.setValue(fileIter, 9, file.hasMedia ? "1" : "0");
+        store.setValue(fileIter, 10, file.hasVideo ? "1" : "0");
+        store.setValue(fileIter, 11, file.hasAudio ? "1" : "0");
+        store.setValue(fileIter, 12, file.hasImage ? "1" : "0");
+        store.setValue(fileIter, 13, file.hasText ? "1" : "0");
+        store.setValue(fileIter, 14, file.hasArchive ? "1" : "0");
+        store.setValue(fileIter, 15, file.hasTorrent ? "1" : "0");
     }
     if (page.hasMore)
     {
@@ -289,6 +297,14 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
         store.setValue(fileIter, 5, file.relativePath);
         store.setValue(fileIter, 6, file.cursorId);
         store.setValue(fileIter, 7, file.size.to!string);
+        store.setValue(fileIter, 8, file.hasFileType ? "1" : "0");
+        store.setValue(fileIter, 9, file.hasMedia ? "1" : "0");
+        store.setValue(fileIter, 10, file.hasVideo ? "1" : "0");
+        store.setValue(fileIter, 11, file.hasAudio ? "1" : "0");
+        store.setValue(fileIter, 12, file.hasImage ? "1" : "0");
+        store.setValue(fileIter, 13, file.hasText ? "1" : "0");
+        store.setValue(fileIter, 14, file.hasArchive ? "1" : "0");
+        store.setValue(fileIter, 15, file.hasTorrent ? "1" : "0");
     }
     if (sortedFileRows.length > fileLimit)
     {
@@ -1568,6 +1584,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
             GType.STRING,
             GType.STRING,
             GType.STRING,
+            GType.STRING,
+            GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING,
+            GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING,
+            GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING,
             GType.STRING
         ]);
         document.tableView = new TreeView(document.tableStore);
@@ -1859,6 +1879,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     ? to!ulong(fileSizeText) : 0;
             }
             auto selectedTreeFileName = model.getValueString(treeIter, 0);
+            auto hasFileType = model.getValueString(treeIter, 8) == "1";
+            auto hasMedia = model.getValueString(treeIter, 9) == "1";
+            auto hasVideo = model.getValueString(treeIter, 10) == "1";
+            auto hasAudio = model.getValueString(treeIter, 11) == "1";
+            auto hasImage = model.getValueString(treeIter, 12) == "1";
+            auto hasText = model.getValueString(treeIter, 13) == "1";
+            auto hasArchive = model.getValueString(treeIter, 14) == "1";
+            auto hasTorrent = model.getValueString(treeIter, 15) == "1";
             foreach (rowIndex, row; document.visibleRows)
             {
                 auto rowId = row.sourceId >= 0
@@ -1929,6 +1957,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         auto row = rows[0];
                         row.sourceId = sourceId;
                         row.detailsLoaded = true;
+                        row.hasSummaryFlags = true;
+                        row.summaryHasFileType = hasFileType;
+                        row.summaryHasMedia = hasMedia;
+                        row.summaryHasVideo = hasVideo;
+                        row.summaryHasAudio = hasAudio;
+                        row.summaryHasImage = hasImage;
+                        row.summaryHasText = hasText;
+                        row.summaryHasArchive = hasArchive;
+                        row.summaryHasTorrent = hasTorrent;
                         document.tableView.getSelection().unselectAll();
                         document.directSelectedRow = row;
                         document.hasDirectSelectedRow = true;
@@ -2033,6 +2070,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
                                 document.directoryTreeStore.setValue(targetIter, 5, target.relativePath);
                                 document.directoryTreeStore.setValue(targetIter, 6, target.cursorId);
                                 document.directoryTreeStore.setValue(targetIter, 7, target.size.to!string);
+                                document.directoryTreeStore.setValue(targetIter, 8, target.hasFileType ? "1" : "0");
+                                document.directoryTreeStore.setValue(targetIter, 9, target.hasMedia ? "1" : "0");
+                                document.directoryTreeStore.setValue(targetIter, 10, target.hasVideo ? "1" : "0");
+                                document.directoryTreeStore.setValue(targetIter, 11, target.hasAudio ? "1" : "0");
+                                document.directoryTreeStore.setValue(targetIter, 12, target.hasImage ? "1" : "0");
+                                document.directoryTreeStore.setValue(targetIter, 13, target.hasText ? "1" : "0");
+                                document.directoryTreeStore.setValue(targetIter, 14, target.hasArchive ? "1" : "0");
+                                document.directoryTreeStore.setValue(targetIter, 15, target.hasTorrent ? "1" : "0");
                             }
                         }
                         document.directoryTreeView.getSelection().selectIter(targetIter);
@@ -2579,12 +2624,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     [
                     COL_INDEX, COL_FILE_SIZE, COL_CHECKSUM_SET, COL_FILE_TYPE,
                     COL_MEDIA_INFO, COL_HAS_ARCHIVE, COL_HAS_TORRENT,
-                    COL_INDEX_SORT, COL_FILE_SIZE_SORT, COL_SOURCE_ID
+                    COL_INDEX_SORT, COL_FILE_SIZE_SORT, COL_SOURCE_ID,
+                    COL_HAS_FILE_TYPE_FLAG, COL_HAS_MEDIA_FLAG, COL_HAS_VIDEO_FLAG,
+                    COL_HAS_AUDIO_FLAG, COL_HAS_IMAGE_FLAG, COL_HAS_TEXT_FLAG,
+                    COL_HAS_ARCHIVE_FLAG, COL_HAS_TORRENT_FLAG
                 ],
                     [
                     indexText, sizeText, checksumsText, fileTypeText,
                     mediaInfoText, archiveText, torrentText, indexSortText,
-                    sizeSortText, row.sourceId >= 0 ? row.sourceId.to!string : ""
+                    sizeSortText, row.sourceId >= 0 ? row.sourceId.to!string : "",
+                    row.hasFileType ? "1" : "0", row.hasMedia ? "1" : "0",
+                    row.hasVideo ? "1" : "0", row.hasAudio ? "1" : "0",
+                    row.hasImage ? "1" : "0", row.hasText ? "1" : "0",
+                    row.hasArchive ? "1" : "0", row.hasTorrent ? "1" : "0"
                 ]
                 );
             }
@@ -2713,6 +2765,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     summary.sourceId = sourceId;
                     summary.detailsLoaded = false;
                     summary.fileSize = to!ulong(model.getValueString(iter, COL_FILE_SIZE));
+                    summary.hasSummaryFlags = true;
+                    summary.summaryHasFileType = model.getValueString(iter, COL_HAS_FILE_TYPE_FLAG) == "1";
+                    summary.summaryHasMedia = model.getValueString(iter, COL_HAS_MEDIA_FLAG) == "1";
+                    summary.summaryHasVideo = model.getValueString(iter, COL_HAS_VIDEO_FLAG) == "1";
+                    summary.summaryHasAudio = model.getValueString(iter, COL_HAS_AUDIO_FLAG) == "1";
+                    summary.summaryHasImage = model.getValueString(iter, COL_HAS_IMAGE_FLAG) == "1";
+                    summary.summaryHasText = model.getValueString(iter, COL_HAS_TEXT_FLAG) == "1";
+                    summary.summaryHasArchive = model.getValueString(iter, COL_HAS_ARCHIVE_FLAG) == "1";
+                    summary.summaryHasTorrent = model.getValueString(iter, COL_HAS_TORRENT_FLAG) == "1";
                     document.directSelectedRow = summary;
                     document.hasDirectSelectedRow = true;
                     document.directSelectedIndex = model.getValueString(iter, COL_INDEX);
@@ -2833,9 +2894,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         auto rows = extractRowsFromBlobs([details]);
                         if (rows.length > 0)
                         {
+                            auto flags = document.directSelectedRow;
                             document.directSelectedRow = rows[0];
                             document.directSelectedRow.sourceId = sourceId;
                             document.directSelectedRow.detailsLoaded = true;
+                            document.directSelectedRow.hasSummaryFlags = flags.hasSummaryFlags;
+                            document.directSelectedRow.summaryHasFileType = flags.summaryHasFileType;
+                            document.directSelectedRow.summaryHasMedia = flags.summaryHasMedia;
+                            document.directSelectedRow.summaryHasVideo = flags.summaryHasVideo;
+                            document.directSelectedRow.summaryHasAudio = flags.summaryHasAudio;
+                            document.directSelectedRow.summaryHasImage = flags.summaryHasImage;
+                            document.directSelectedRow.summaryHasText = flags.summaryHasText;
+                            document.directSelectedRow.summaryHasArchive = flags.summaryHasArchive;
+                            document.directSelectedRow.summaryHasTorrent = flags.summaryHasTorrent;
                         }
                     }
                     else
