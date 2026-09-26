@@ -3210,6 +3210,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         row.summaryHasArchive = flags.hasArchive;
                         row.summaryHasTorrent = flags.hasTorrent;
                         row.detailsLoaded = false;
+                        // The blob table retains only the compact summary DTO.
+                        // Full file references and nested metadata are fetched
+                        // on selection through loadDocumentDetails().
+                        row.sourceBlob = null;
                     }
                 }
                 result.directoryTree = isRepositorySource(document.filePath)

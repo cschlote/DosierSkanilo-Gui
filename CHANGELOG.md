@@ -73,6 +73,8 @@ All notable changes to this project are documented in this file.
   filtered and sorted source sequence across cursor chunks.
 - Repository Blob-table loading now drains internal SQL chunks automatically,
   so the alternative view no longer exposes SQL page controls by default.
+- Repository Blob-table summaries now release temporary `NamedBinaryBlob`
+  objects after projection; full references and metadata remain lazy on selection.
 - Repository `FileNode` projections now carry metadata-presence flags from the
   backend for the shared filter model.
 - Tree file queries now apply the same typed media, file-type, archive, and
