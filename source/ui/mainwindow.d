@@ -381,10 +381,14 @@ DirectoryTree treeFromRows(const(BlobRow)[] rows)
         foreach (spec; row.sourceBlob.fileSpecs)
         {
             if (spec !is null && spec.fileName.length > 0)
-                inputs ~= FileInput(spec.fileName, cast(ulong) row.fileSize);
+                inputs ~= FileInput(spec.fileName, cast(ulong) row.fileSize,
+                    row.hasFileType, row.hasMedia, row.hasVideo, row.hasAudio,
+                    row.hasImage, row.hasText, row.hasArchive, row.hasTorrent);
         }
         if (row.sourceBlob.fileSpecs.length == 0 && row.primaryFileName.length > 0)
-            inputs ~= FileInput(row.primaryFileName, row.fileSize);
+            inputs ~= FileInput(row.primaryFileName, row.fileSize,
+                row.hasFileType, row.hasMedia, row.hasVideo, row.hasAudio,
+                row.hasImage, row.hasText, row.hasArchive, row.hasTorrent);
     }
     return buildDirectoryTree(inputs);
 }

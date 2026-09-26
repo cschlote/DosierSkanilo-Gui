@@ -9,7 +9,7 @@ import std.string : empty;
 import dosierskanilo;
 import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob,
     deserializeDataClassJsonFile;
-import model.treeprojection : DirectoryNode, DirectorySource, FileCursor, FileInput, FileNode,
+import model.treeprojection : DirectoryNode, DirectorySource, FileCursor, FileFilter, FileInput, FileNode,
     FilePage, NestedFileNode, DirectoryTree, buildDirectoryTree;
 
 /** One bounded source result page. */
@@ -132,6 +132,36 @@ final class RepositoryDirectorySource : DirectorySource
         query.directoryId = directoryId == "root" ? 0 : to!long(directoryId);
         query.limit = limit;
         query.text = filter;
+        query.afterPath = cursor.relativePath;
+        query.afterId = cursor.id.length > 0 ? to!long(cursor.id) : 0;
+        auto page = repository.listFilesPage(query);
+        FilePage result;
+        result.hasMore = page.hasMore;
+        foreach (file; page.files)
+            result.files ~= FileNode(file.blobId.to!string, directoryId, file.name,
+                file.relativePath, file.size, file.hasFileType, file.hasMedia,
+                file.hasVideo, file.hasAudio, file.hasImage, file.hasText,
+                file.hasArchive, file.hasTorrent);
+        if (page.hasMore)
+            result.nextCursor = FileCursor(page.nextCursor.relativePath,
+                page.nextCursor.id.to!string);
+        return result;
+    }
+
+    override FilePage listFilteredFilesPage(string directoryId, FileCursor cursor = FileCursor(),
+        size_t limit = 250, FileFilter filter = FileFilter())
+    {
+        RepositoryFileQuery query;
+        query.directoryId = directoryId == "root" ? 0 : to!long(directoryId);
+        query.limit = limit;
+        query.text = filter.text;
+        query.video = filter.video;
+        query.audio = filter.audio;
+        query.image = filter.image;
+        query.textStream = filter.textStream;
+        query.fileType = filter.fileType;
+        query.archive = filter.archive;
+        query.torrent = filter.torrent;
         query.afterPath = cursor.relativePath;
         query.afterId = cursor.id.length > 0 ? to!long(cursor.id) : 0;
         auto page = repository.listFilesPage(query);

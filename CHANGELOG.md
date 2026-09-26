@@ -67,6 +67,8 @@ All notable changes to this project are documented in this file.
   so the alternative view no longer exposes SQL page controls by default.
 - Repository `FileNode` projections now carry metadata-presence flags from the
   backend for the shared filter model.
+- JSON tree projections now retain the same metadata-presence flags as
+  repository projections.
 - The repository TreeView root node now uses the same discovered repository
   root basename.
 - Startup restoration now advances to the next saved document after the

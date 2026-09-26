@@ -60,6 +60,34 @@ struct FilePage
     bool hasMore;
 }
 
+struct FileFilter
+{
+    string text;
+    bool video;
+    bool audio;
+    bool image;
+    bool textStream;
+    bool fileType;
+    bool archive;
+    bool torrent;
+}
+
+private bool matchesFileFilter(const FileNode file, FileFilter filter)
+{
+    if (filter.text.length > 0
+        && !file.name.toLower.canFind(filter.text.toLower)
+        && !file.relativePath.toLower.canFind(filter.text.toLower))
+        return false;
+    if (filter.video && !file.hasVideo) return false;
+    if (filter.audio && !file.hasAudio) return false;
+    if (filter.image && !file.hasImage) return false;
+    if (filter.textStream && !file.hasText) return false;
+    if (filter.fileType && !file.hasFileType) return false;
+    if (filter.archive && !file.hasArchive) return false;
+    if (filter.torrent && !file.hasTorrent) return false;
+    return true;
+}
+
 /** In-memory directory projection shared by JSON and repository adapters. */
 struct DirectoryTree
 {
@@ -93,6 +121,8 @@ interface DirectorySource
         string filter = "");
     FilePage listFilesPage(string directoryId, FileCursor cursor = FileCursor(),
         size_t limit = 250, string filter = "");
+    FilePage listFilteredFilesPage(string directoryId, FileCursor cursor = FileCursor(),
+        size_t limit = 250, FileFilter filter = FileFilter());
     void close();
 }
 
@@ -161,6 +191,23 @@ final class ProjectedDirectorySource : DirectorySource
         return page;
     }
 
+    override FilePage listFilteredFilesPage(string directoryId, FileCursor cursor = FileCursor(),
+        size_t limit = 250, FileFilter filter = FileFilter())
+    {
+        auto allFiles = tree.listFiles(directoryId).filter!(file => matchesFileFilter(file, filter)).array;
+        size_t offset;
+        if (cursor.id.length > 0)
+            foreach (index, file; allFiles)
+                if (file.id == cursor.id && file.relativePath == cursor.relativePath) { offset = index + 1; break; }
+        FilePage page;
+        auto end = offset + limit;
+        if (end > allFiles.length) end = allFiles.length;
+        page.files = allFiles[offset .. end].dup;
+        page.hasMore = end < allFiles.length;
+        if (page.hasMore) { auto last = page.files[$ - 1]; page.nextCursor = FileCursor(last.relativePath, last.id); }
+        return page;
+    }
+
     override void close() {}
 }
 
@@ -180,7 +227,9 @@ DirectoryTree buildDirectoryTree(const(FileInput)[] inputs)
         auto directoryId = ensureDirectory(tree, directoryPath);
         auto fileId = "file:" ~ index.to!string;
         tree.files ~= FileNode(fileId, directoryId, baseName(normalized),
-            normalized, input.size);
+            normalized, input.size, input.hasFileType, input.hasMedia,
+            input.hasVideo, input.hasAudio, input.hasImage, input.hasText,
+            input.hasArchive, input.hasTorrent);
         addFileToDirectory(tree, directoryId, input.size);
     }
 
@@ -197,6 +246,14 @@ struct FileInput
 {
     string path;
     ulong size;
+    bool hasFileType;
+    bool hasMedia;
+    bool hasVideo;
+    bool hasAudio;
+    bool hasImage;
+    bool hasText;
+    bool hasArchive;
+    bool hasTorrent;
 }
 
 private string ensureDirectory(ref DirectoryTree tree, string path)
