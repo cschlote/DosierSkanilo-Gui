@@ -2335,6 +2335,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 setLoadingState(document, false);
             }
+            if (document.drainAfterRender)
+            {
+                document.drainAfterRender = false;
+                if (document.loadedRows.length < document.pageTotal)
+                {
+                    document.pageOffset = document.loadedRows.length;
+                    document.drainPageRequest = true;
+                    document.status.setText(format("Loading rows: %s/%s ...",
+                        document.loadedRows.length, document.pageTotal));
+                    new Idle({ loadDocument(document, false); return false; });
+                }
+            }
             if (!isLoading && pendingStartupPaths.length > 0 && advanceStartupQueue !is null)
                 new Idle({ advanceStartupQueue(); return false; });
             document.status.setText(baseStatus);
@@ -2954,6 +2966,17 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
 
         auto requestId = ++document.loadRequestId;
+        auto repositorySource = isRepositorySource(document.filePath);
+        if (repositorySource)
+        {
+            if (!document.drainPageRequest)
+            {
+                document.drainRepositoryPages = true;
+                document.pageOffset = 0;
+                document.loadedRows = [];
+            }
+            document.drainPageRequest = false;
+        }
         document.tableNaturalWidth = -1;
         document.tableMinimumWidth = -1;
         document.fitHorizontalSplitAfterLoad = fitHorizontalSplitAfterLoad;
@@ -2978,7 +3001,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 NamedBinaryBlob[] blobs;
                 if (isRepositorySource(document.filePath))
                 {
-                    if (document.loadAllRows)
+                    if (document.loadAllRows && !document.drainRepositoryPages)
                     {
                         SourceQuery sourceQuery;
                         sourceQuery.text = document.filterQuery;
@@ -3106,7 +3129,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 }
 
                 document.loadedDuplicateGroups = result.duplicateGroups;
-                document.loadedRows = result.allRows;
+                if (result.pagedSource && document.drainRepositoryPages
+                    && result.pageOffset > 0)
+                    document.loadedRows ~= result.allRows;
+                else
+                    document.loadedRows = result.allRows;
+                if (result.pagedSource && document.drainRepositoryPages)
+                    document.loadedDuplicateGroups = countDuplicateDigestGroups(document.loadedRows);
                 document.directoryTree = result.directoryTree;
                 document.directorySource = isRepositorySource(document.filePath)
                     ? openRepositoryDirectorySource(document.filePath)
@@ -3124,7 +3153,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 : "-";
                 document.pageOffset = result.pageOffset;
                 document.pageTotal = result.pageTotal;
-                document.pageBar.setVisible(result.pagedSource);
+                document.pageBar.setVisible(result.pagedSource && !document.drainRepositoryPages);
                 document.pageFirstButton.setSensitive(result.pageOffset > 0);
                 document.pagePreviousButton.setSensitive(result.pageOffset > 0);
                 document.pageNextButton.setSensitive(
@@ -3142,6 +3171,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.pendingLoadElapsedMs = result.elapsedMs;
                 document.lastLoadElapsedMs = result.elapsedMs;
                 updatePerfStatus(document);
+                document.drainAfterRender = result.pagedSource && document.drainRepositoryPages
+                    && document.loadedRows.length < result.pageTotal;
 
                 if (isRepositorySource(document.filePath))
                 {

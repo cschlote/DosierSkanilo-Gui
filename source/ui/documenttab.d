@@ -251,6 +251,9 @@ class DocumentTab
     size_t pageTotal;
     size_t pageSize = 250;
     bool loadAllRows;
+    bool drainRepositoryPages;
+    bool drainPageRequest;
+    bool drainAfterRender;
 
     ulong loadRequestId;
     ulong filterRequestId;

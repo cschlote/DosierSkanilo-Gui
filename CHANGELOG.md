@@ -63,6 +63,8 @@ All notable changes to this project are documented in this file.
   projections for internal chunk navigation across JSON and SQLite adapters.
 - Tree file chunks now use `FileCursor` continuation state in the loading path;
   numeric SQL offsets are no longer required by the TreeView integration.
+- Repository Blob-table loading now drains internal SQL chunks automatically,
+  so the alternative view no longer exposes SQL page controls by default.
 - The repository TreeView root node now uses the same discovered repository
   root basename.
 - Startup restoration now advances to the next saved document after the
