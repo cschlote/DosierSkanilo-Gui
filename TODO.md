@@ -4,8 +4,8 @@
 
 - Replace visible SQL paging with opaque source cursors and logical append-on-demand loading.
 - Persist and restore the current file cursor used by Previous/Next navigation.
-- Add archive/torrent-specific details actions and nested entry trees.
-- Add archive and torrent child trees with lazy loading.
+- Use the bounded repository archive/torrent source adapters to load detail-tree
+  entries asynchronously and page large nested trees.
 - Add specialized detail renderers and explicit analysis operations.
 
 - The top-level splitter still snaps back to the maximum width after loading a file, so the current layout clamping is not stable enough.

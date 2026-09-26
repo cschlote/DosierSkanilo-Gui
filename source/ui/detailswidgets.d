@@ -16,6 +16,7 @@ import gtk.ComboBoxText;
 import gtk.Box;
 import gtk.TextView;
 import gtk.TreeIter;
+import gtk.TreeStore;
 import gtk.Widget;
 import gtk.StyleContext;
 import gtk.c.types : GtkWrapMode;
@@ -40,7 +41,7 @@ import pango.c.types : PangoEllipsizeMode;
 import std.file : exists;
 import std.format : format;
 import std.path : absolutePath, buildNormalizedPath, dirName, extension, isAbsolute;
-import std.string : join, startsWith, toLower;
+import std.string : join, split, startsWith, toLower;
 import std.exception : enforce;
 import std.uri : encode;
 
@@ -110,6 +111,8 @@ void setMetadataDetails(Expander expander, TextView view, string title, string d
 void setKnownFilesTable(DocumentTab document, const(BlobRow) row)
 {
     document.detailFileNamesStore.clear();
+    populateArchiveEntryTree(document, row);
+    populateTorrentFileTree(document, row);
     document.selectedFilePath = "";
     document.detailPreviousFileButton.setSensitive(false);
     document.detailNextFileButton.setSensitive(false);
@@ -137,6 +140,78 @@ void setKnownFilesTable(DocumentTab document, const(BlobRow) row)
             spec.fileName, lastModified
         ]);
     }
+}
+
+private void appendNestedPath(TreeStore store, string path, string sizeText,
+    ref TreeIter[string] directories)
+{
+    import std.string : replace;
+    auto normalized = path.replace('\\', '/');
+    auto parts = normalized.split("/");
+    if (parts.length == 0)
+        return;
+
+    TreeIter parent;
+    string directoryPath;
+    foreach (part; parts[0 .. $ - 1])
+    {
+        if (part.length == 0)
+            continue;
+        directoryPath = directoryPath.length == 0 ? part : directoryPath ~ "/" ~ part;
+        if (auto existing = directoryPath in directories)
+        {
+            parent = *existing;
+            continue;
+        }
+        auto directoryIter = store.createIter(parent);
+        store.setValue(directoryIter, 0, part);
+        store.setValue(directoryIter, 1, "");
+        store.setValue(directoryIter, 2, directoryPath);
+        store.setValue(directoryIter, 3, "Directory");
+        directories[directoryPath] = directoryIter;
+        parent = directoryIter;
+    }
+
+    auto fileName = parts[$ - 1];
+    if (fileName.length == 0)
+        return;
+    auto fileIter = store.createIter(parent);
+    store.setValue(fileIter, 0, fileName);
+    store.setValue(fileIter, 1, sizeText);
+    store.setValue(fileIter, 2, normalized);
+    store.setValue(fileIter, 3, "File");
+}
+
+private void populateArchiveEntryTree(DocumentTab document, const(BlobRow) row)
+{
+    document.detailArchiveTreeStore.clear();
+    TreeIter[string] directories;
+    if (row.sourceBlob !is null)
+    {
+        foreach (entry; row.sourceBlob.archiveSpecs)
+        {
+            if (entry !is null && entry.fileName.length > 0)
+                appendNestedPath(document.detailArchiveTreeStore, entry.fileName,
+                    format("%s bytes", entry.fileSize), directories);
+        }
+    }
+    document.detailArchiveTreeView.setVisible(document.detailArchiveTreeStore.iterNChildren(null) > 0);
+}
+
+private void populateTorrentFileTree(DocumentTab document, const(BlobRow) row)
+{
+    document.detailTorrentTreeStore.clear();
+    TreeIter[string] directories;
+    if (row.sourceBlob !is null && row.sourceBlob.torrentInfo !is null)
+    {
+        foreach (entry; row.sourceBlob.torrentInfo.files)
+        {
+            if (entry !is null && entry.path.length > 0)
+                appendNestedPath(document.detailTorrentTreeStore, entry.path.join("/"),
+                    format("%s bytes", entry.length), directories);
+        }
+    }
+    document.detailTorrentTreeView.setVisible(document.detailTorrentTreeStore.iterNChildren(null) > 0);
 }
 
 /** Return the most likely filesystem path for preview loading. */

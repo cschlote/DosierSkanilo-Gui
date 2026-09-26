@@ -108,6 +108,8 @@ All notable changes to this project are documented in this file.
 - File nodes now also provide an explicit `Show details` context action.
 - Added GTK-independent `NestedFileNode` projections and GUI source adapters
   for bounded repository archive-entry and torrent-file pages.
+- Archive and torrent detail expanders now show nested TreeViews built from
+  the selected blob's entry paths instead of raw text blocks.
 - Fixed a startup segmentation fault caused by registering the view-mode
   callback before the document-page Builder had created its ComboBox.
 - Fixed malformed detail-pane Builder nesting that attempted to add the Copy

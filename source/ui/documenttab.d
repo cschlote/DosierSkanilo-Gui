@@ -190,6 +190,10 @@ class DocumentTab
     TextView detailFileTypeView;
     TextView detailArchiveView;
     TextView detailTorrentView;
+    TreeStore detailArchiveTreeStore;
+    TreeView detailArchiveTreeView;
+    TreeStore detailTorrentTreeStore;
+    TreeView detailTorrentTreeView;
     ListStore detailFileNamesStore;
     TreeView detailFileNamesView;
     Element previewVideoPlayer;

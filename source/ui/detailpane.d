@@ -4,6 +4,7 @@ module ui.detailpane;
 import gtk.Box;
 import gtk.Button;
 import gtk.Builder;
+import gtk.CellRendererText;
 import gtk.Entry;
 import gtk.Expander;
 import gtk.Grid;
@@ -17,6 +18,7 @@ import gtk.TreeView;
 import gtk.TreeModelIF;
 import gtk.TreePath;
 import gtk.TreeSelection;
+import gtk.TreeStore;
 import gtk.TreeViewColumn;
 import gtk.c.types : GType;
 
@@ -83,9 +85,21 @@ DetailPaneUi loadDetailPaneUi(DocumentTab document)
     document.detailArchiveExpander = builderObject!Expander(detailBuilder, "detail", "detailArchiveExpander");
     document.detailArchiveStatus = builderObject!Label(detailBuilder, "detail", "detailArchiveStatus");
     document.detailArchiveView = builderObject!TextView(detailBuilder, "detail", "detailArchiveView");
+    document.detailArchiveTreeStore = new TreeStore([GType.STRING, GType.STRING,
+        GType.STRING, GType.STRING]);
+    document.detailArchiveTreeView = builderObject!TreeView(detailBuilder, "detail",
+        "detailArchiveTreeView");
+    document.detailArchiveTreeView.setModel(document.detailArchiveTreeStore);
+    configureNestedEntryTree(document.detailArchiveTreeView);
     document.detailTorrentExpander = builderObject!Expander(detailBuilder, "detail", "detailTorrentExpander");
     document.detailTorrentStatus = builderObject!Label(detailBuilder, "detail", "detailTorrentStatus");
     document.detailTorrentView = builderObject!TextView(detailBuilder, "detail", "detailTorrentView");
+    document.detailTorrentTreeStore = new TreeStore([GType.STRING, GType.STRING,
+        GType.STRING, GType.STRING]);
+    document.detailTorrentTreeView = builderObject!TreeView(detailBuilder, "detail",
+        "detailTorrentTreeView");
+    document.detailTorrentTreeView.setModel(document.detailTorrentTreeStore);
+    configureNestedEntryTree(document.detailTorrentTreeView);
     document.detailIndexEntry = builderObject!Entry(detailBuilder, "detail", "detailIndexEntry");
     document.detailSizeEntry = builderObject!Entry(detailBuilder, "detail", "detailSizeEntry");
     document.detailSha1HexEntry = builderObject!Entry(detailBuilder, "detail", "detailSha1HexEntry");
@@ -115,6 +129,24 @@ DetailPaneUi loadDetailPaneUi(DocumentTab document)
     });
 
     return ui;
+}
+
+private void configureNestedEntryTree(TreeView treeView)
+{
+    auto nameRenderer = new CellRendererText();
+    auto nameColumn = new TreeViewColumn();
+    nameColumn.setTitle("Entry");
+    nameColumn.packStart(nameRenderer, true);
+    nameColumn.addAttribute(nameRenderer, "text", 0);
+    nameColumn.setExpand(true);
+    treeView.appendColumn(nameColumn);
+
+    auto sizeRenderer = new CellRendererText();
+    auto sizeColumn = new TreeViewColumn();
+    sizeColumn.setTitle("Size");
+    sizeColumn.packStart(sizeRenderer, false);
+    sizeColumn.addAttribute(sizeRenderer, "text", 1);
+    treeView.appendColumn(sizeColumn);
 }
 
 /** Wire row actions and copy buttons for the detail pane.

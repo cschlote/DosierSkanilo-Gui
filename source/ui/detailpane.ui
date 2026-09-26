@@ -270,18 +270,27 @@
                       </object>
                     </child>
                     <child>
-                      <object class="GtkScrolledWindow" id="detailArchiveScroll">
+                      <object class="GtkBox" id="detailArchiveContent">
                         <property name="can-focus">False</property>
-                        <property name="hexpand">True</property>
-                        <property name="vexpand">True</property>
-                        <property name="min-content-height">180</property>
-                        <property name="propagate-natural-height">False</property>
+                        <property name="orientation">vertical</property>
+                        <child>
+                          <object class="GtkScrolledWindow" id="detailArchiveTreeScroll">
+                            <property name="can-focus">False</property>
+                            <property name="hexpand">True</property>
+                            <property name="vexpand">True</property>
+                            <property name="min-content-height">180</property>
+                            <child>
+                              <object class="GtkTreeView" id="detailArchiveTreeView">
+                                <property name="can-focus">True</property>
+                                <property name="headers-visible">True</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
                         <child>
                           <object class="GtkTextView" id="detailArchiveView">
-                            <property name="can-focus">False</property>
+                            <property name="visible">False</property>
                             <property name="editable">False</property>
-                            <property name="wrap-mode">word-char</property>
-                            <property name="monospace">True</property>
                           </object>
                         </child>
                       </object>
@@ -310,11 +319,29 @@
                       </object>
                     </child>
                     <child>
-                      <object class="GtkTextView" id="detailTorrentView">
+                      <object class="GtkBox" id="detailTorrentContent">
                         <property name="can-focus">False</property>
-                        <property name="editable">False</property>
-                        <property name="wrap-mode">word-char</property>
-                        <property name="monospace">True</property>
+                        <property name="orientation">vertical</property>
+                        <child>
+                          <object class="GtkScrolledWindow" id="detailTorrentTreeScroll">
+                            <property name="can-focus">False</property>
+                            <property name="hexpand">True</property>
+                            <property name="vexpand">True</property>
+                            <property name="min-content-height">180</property>
+                            <child>
+                              <object class="GtkTreeView" id="detailTorrentTreeView">
+                                <property name="can-focus">True</property>
+                                <property name="headers-visible">True</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkTextView" id="detailTorrentView">
+                            <property name="visible">False</property>
+                            <property name="editable">False</property>
+                          </object>
+                        </child>
                       </object>
                     </child>
                   </object>
