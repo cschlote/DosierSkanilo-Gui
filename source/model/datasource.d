@@ -90,11 +90,20 @@ final class RepositoryDirectorySource : DirectorySource
         return rootNode;
     }
 
-    override DirectoryNode[] listDirectories(string parentId)
+    override DirectoryNode[] listDirectories(string parentId, FileFilter filter = FileFilter())
     {
         RepositoryDirectoryQuery query;
         query.parentId = parentId == "root" ? 0 : to!long(parentId);
         query.limit = size_t.max;
+        query.text = filter.text;
+        query.video = filter.video;
+        query.audio = filter.audio;
+        query.image = filter.image;
+        query.textStream = filter.textStream;
+        query.mediaNegated = filter.mediaNegated;
+        query.fileType = filter.fileType;
+        query.archive = filter.archive;
+        query.torrent = filter.torrent;
         DirectoryNode[] result;
         foreach (directory; repository.listDirectories(query))
         {

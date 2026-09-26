@@ -44,6 +44,8 @@ Known limitations:
   reveal its TreeView file.
 - Tree text filtering is unified with the table filter; TreeView sorting by name
   or size is available per tab.
+- Directory nodes without matching visible descendants are pruned for active
+  file filters; source root remains visible.
 - Expanded-directory state is held per tab and persisted in `AppState`.
 - The table remains a transitional implementation of the alternative blob view.
 - A per-tab view switch now selects separate Tree or Blob-table notebook pages.

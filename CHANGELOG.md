@@ -69,6 +69,8 @@ All notable changes to this project are documented in this file.
   backend for the shared filter model.
 - Tree file queries now apply the same typed media, file-type, archive, and
   torrent filters for JSON and SQLite sources, including media-filter negation.
+- Directory nodes with no descendant files matching the active typed filter are
+  now omitted from both JSON and repository trees.
 - JSON tree projections now retain the same metadata-presence flags as
   repository projections.
 - The repository TreeView root node now uses the same discovered repository

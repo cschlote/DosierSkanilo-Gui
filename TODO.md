@@ -2,7 +2,6 @@
 
 ## Directory Tree Redesign
 
-- Hide directory nodes that have no descendants matching the active Tree filter.
 - Replace visible SQL paging with opaque source cursors and logical append-on-demand loading.
 - Add `next`/`previous` navigation over the filtered and sorted source sequence.
 - Add archive/torrent-specific details actions and nested entry trees.

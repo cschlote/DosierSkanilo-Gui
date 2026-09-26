@@ -1,7 +1,7 @@
 /** GTK-independent directory tree projection for source adapters. */
 module model.treeprojection;
 
-import std.algorithm : canFind, count, countUntil, filter;
+import std.algorithm : any, canFind, count, countUntil, filter;
 import std.array : array;
 import std.conv : to;
 import std.path : baseName, dirName, buildNormalizedPath;
@@ -120,7 +120,7 @@ struct DirectoryTree
 interface DirectorySource
 {
     DirectoryNode root();
-    DirectoryNode[] listDirectories(string parentId);
+    DirectoryNode[] listDirectories(string parentId, FileFilter filter = FileFilter());
     FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250,
         string filter = "");
     FilePage listFilesPage(string directoryId, FileCursor cursor = FileCursor(),
@@ -142,9 +142,25 @@ final class ProjectedDirectorySource : DirectorySource
 
     override DirectoryNode root() { return tree.root; }
 
-    override DirectoryNode[] listDirectories(string parentId)
+    override DirectoryNode[] listDirectories(string parentId, FileFilter filter = FileFilter())
     {
-        return tree.listDirectories(parentId).dup;
+        DirectoryNode[] result;
+        foreach (directory; tree.listDirectories(parentId))
+        {
+            if (hasMatchingFile(directory.id, filter))
+                result ~= directory;
+        }
+        return result;
+    }
+
+    private bool hasMatchingFile(string directoryId, FileFilter filter)
+    {
+        if (tree.listFiles(directoryId).any!(file => matchesFileFilter(file, filter)))
+            return true;
+        foreach (child; tree.listDirectories(directoryId))
+            if (hasMatchingFile(child.id, filter))
+                return true;
+        return false;
     }
 
     override FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250,
@@ -320,6 +336,13 @@ unittest
     assert(source.listDirectories("directory:music").length == 1);
     assert(source.listFiles(album[0].id).length == 2);
     assert(source.listFiles("root", 0, 250, "readme").length == 1);
+    FileFilter nestedFileFilter;
+    nestedFileFilter.text = "song.flac";
+    auto visibleRootDirectories = source.listDirectories("root", nestedFileFilter);
+    assert(visibleRootDirectories.length == 1);
+    assert(visibleRootDirectories[0].name == "music");
+    nestedFileFilter.text = "not-present";
+    assert(source.listDirectories("root", nestedFileFilter).length == 0);
     auto firstPage = source.listFilesPage(album[0].id, FileCursor(), 1);
     assert(firstPage.files.length == 1);
     assert(firstPage.hasMore);

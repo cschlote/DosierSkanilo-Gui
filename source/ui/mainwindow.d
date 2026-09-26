@@ -136,9 +136,9 @@ void configureDirectoryTreeColumns(TreeView treeView)
 }
 
 private DirectoryNode[] sortedDirectories(DirectorySource source, string parentId,
-    TreeSortOrder order)
+    TreeSortOrder order, FileFilter filter = FileFilter())
 {
-    auto result = source.listDirectories(parentId);
+    auto result = source.listDirectories(parentId, filter);
     sort!((a, b) {
         if (order == TreeSortOrder.nameDescending)
             return a.name > b.name;
@@ -172,7 +172,7 @@ private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
     store.setValue(iter, 2, format("%s files | %s bytes", node.fileCount, node.aggregateSize));
     store.setValue(iter, 3, node.id);
     store.setValue(iter, 5, node.relativePath);
-    if (sortedDirectories(source, node.id, order).length > 0
+    if (sortedDirectories(source, node.id, order, filter).length > 0
         || source.listFilteredFilesPage(node.id, FileCursor(), 1, filter).files.length > 0)
     {
         auto loadingIter = store.createIter(iter);
@@ -189,7 +189,7 @@ private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
 {
     if (includeDirectories)
     {
-        foreach (child; sortedDirectories(source, directoryId, order))
+        foreach (child; sortedDirectories(source, directoryId, order, filter))
             appendDirectoryTreeNode(store, source, child, parent, filter, order);
     }
     auto page = source.listFilteredFilesPage(directoryId, cursor, 251, filter);
@@ -1583,7 +1583,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 try
                 {
                     auto source = openRepositoryDirectorySource(filePath);
-                    result.directories = source.listDirectories(directoryId);
+                    result.directories = source.listDirectories(directoryId, fileFilter);
                     auto page = source.listFilteredFilesPage(directoryId, cursor, 251, fileFilter);
                     result.files = page.files;
                     source.close();
