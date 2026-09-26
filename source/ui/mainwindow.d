@@ -226,6 +226,7 @@ private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
         store.setValue(moreIter, 3, directoryId);
         store.setValue(moreIter, 4, page.nextCursor.relativePath);
         store.setValue(moreIter, 5, page.nextCursor.id);
+        store.setValue(moreIter, 6, page.nextCursor.size.to!string);
     }
 }
 
@@ -1458,7 +1459,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         configureTableColumns(document.tableView);
         document.directoryTreeStore = new TreeStore([
             GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING,
-            GType.STRING
+            GType.STRING, GType.STRING
         ]);
         document.directoryTreeView = new TreeView(document.directoryTreeStore);
         configureDirectoryTreeColumns(document.directoryTreeView);
@@ -1705,6 +1706,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
             FileCursor cursor;
             cursor.relativePath = model.getValueString(pageIter, 4);
             cursor.id = model.getValueString(pageIter, 5);
+            auto cursorSize = model.getValueString(pageIter, 6);
+            if (cursorSize.length > 0)
+                cursor.size = to!ulong(cursorSize);
             if (document.directorySourceRemote)
                 loadRemoteDirectory(model.getPath(parentIter), directoryId, cursor, path);
             else

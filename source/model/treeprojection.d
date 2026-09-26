@@ -216,7 +216,7 @@ final class ProjectedDirectorySource : DirectorySource
         if (page.hasMore && page.files.length > 0)
         {
             auto last = page.files[$ - 1];
-            page.nextCursor = FileCursor(last.relativePath, last.id);
+            page.nextCursor = FileCursor(last.relativePath, last.id, last.size);
         }
         return page;
     }
@@ -411,6 +411,7 @@ unittest
         FileFilter(), FileSortOrder.sizeAscending);
     assert(smallestPage.files.length == 1);
     assert(smallestPage.files[0].name == "cover.jpg");
+    assert(smallestPage.nextCursor.size == smallestPage.files[0].size);
     auto nextSizePage = source.listFilteredFilesPage(album.id,
         smallestPage.nextCursor, 1, FileFilter(), FileSortOrder.sizeAscending);
     assert(nextSizePage.files.length == 1);
