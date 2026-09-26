@@ -54,6 +54,8 @@ DocumentPageUi loadDocumentPageUi(DocumentTab document)
     document.pageNextButton = builderObject!Button(pageBuilder, "page", "pageNextButton");
     document.pageFirstButton = builderObject!Button(pageBuilder, "page", "pageFirstButton");
     document.pageLastButton = builderObject!Button(pageBuilder, "page", "pageLastButton");
+    document.treePreviousFileButton = builderObject!Button(pageBuilder, "page", "treePreviousFileButton");
+    document.treeNextFileButton = builderObject!Button(pageBuilder, "page", "treeNextFileButton");
     document.pageSizeCombo = builderObject!ComboBoxText(pageBuilder, "page", "pageSizeCombo");
     document.treeSortCombo = builderObject!ComboBoxText(pageBuilder, "page", "treeSortCombo");
     document.viewModeCombo = builderObjectOrNull!ComboBoxText(pageBuilder, "page", "viewModeCombo");
@@ -67,7 +69,12 @@ DocumentPageUi loadDocumentPageUi(DocumentTab document)
         document.viewModeCombo.show();
     }
     document.pageStatus = builderObject!Label(pageBuilder, "page", "pageStatus");
-    document.pageBar.setVisible(false);
+    document.pageBar.setVisible(true);
+    document.pageFirstButton.setVisible(false);
+    document.pagePreviousButton.setVisible(false);
+    document.pageNextButton.setVisible(false);
+    document.pageLastButton.setVisible(false);
+    document.pageSizeCombo.setVisible(false);
     document.rowDetails = builderObject!Label(pageBuilder, "page", "rowDetails");
     document.status = builderObject!Label(pageBuilder, "page", "status");
     document.perfStatus = builderObject!Label(pageBuilder, "page", "perfStatus");

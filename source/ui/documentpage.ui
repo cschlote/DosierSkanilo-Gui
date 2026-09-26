@@ -69,6 +69,20 @@
           </object>
         </child>
         <child>
+          <object class="GtkButton" id="treePreviousFileButton">
+            <property name="label">Previous file</property>
+            <property name="can-focus">False</property>
+            <property name="sensitive">False</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="treeNextFileButton">
+            <property name="label">Next file</property>
+            <property name="can-focus">False</property>
+            <property name="sensitive">False</property>
+          </object>
+        </child>
+        <child>
           <object class="GtkComboBoxText" id="pageSizeCombo">
             <property name="can-focus">False</property>
             <property name="active">1</property>

@@ -23,6 +23,7 @@ struct DirectoryNode
 struct FileNode
 {
     string id;
+    string cursorId;
     string directoryId;
     string name;
     string relativePath;
@@ -203,7 +204,7 @@ final class ProjectedDirectorySource : DirectorySource
         {
             foreach (index, file; allFiles)
             {
-                if (file.id == cursor.id && file.relativePath == cursor.relativePath)
+                if (file.cursorId == cursor.id && file.relativePath == cursor.relativePath)
                 {
                     offset = index + 1;
                     break;
@@ -219,7 +220,7 @@ final class ProjectedDirectorySource : DirectorySource
         if (page.hasMore && page.files.length > 0)
         {
             auto last = page.files[$ - 1];
-            page.nextCursor = FileCursor(last.relativePath, last.id, last.size);
+            page.nextCursor = FileCursor(last.relativePath, last.cursorId, last.size);
         }
         return page;
     }
@@ -236,9 +237,9 @@ final class ProjectedDirectorySource : DirectorySource
             final switch (sortOrder)
             {
             case FileSortOrder.pathAscending:
-                return a.relativePath < b.relativePath || (a.relativePath == b.relativePath && a.id < b.id);
+                return a.relativePath < b.relativePath || (a.relativePath == b.relativePath && a.cursorId < b.cursorId);
             case FileSortOrder.pathDescending:
-                return a.relativePath > b.relativePath || (a.relativePath == b.relativePath && a.id > b.id);
+                return a.relativePath > b.relativePath || (a.relativePath == b.relativePath && a.cursorId > b.cursorId);
             case FileSortOrder.sizeAscending:
                 return a.size < b.size || (a.size == b.size && a.relativePath < b.relativePath);
             case FileSortOrder.sizeDescending:
@@ -248,13 +249,13 @@ final class ProjectedDirectorySource : DirectorySource
         size_t offset;
         if (cursor.id.length > 0)
             foreach (index, file; allFiles)
-                if (file.id == cursor.id && file.relativePath == cursor.relativePath) { offset = index + 1; break; }
+                if (file.cursorId == cursor.id && file.relativePath == cursor.relativePath) { offset = index + 1; break; }
         FilePage page;
         auto end = offset + limit;
         if (end > allFiles.length) end = allFiles.length;
         page.files = allFiles[offset .. end].dup;
         page.hasMore = end < allFiles.length;
-        if (page.hasMore) { auto last = page.files[$ - 1]; page.nextCursor = FileCursor(last.relativePath, last.id, last.size); }
+        if (page.hasMore) { auto last = page.files[$ - 1]; page.nextCursor = FileCursor(last.relativePath, last.cursorId, last.size); }
         return page;
     }
 
@@ -269,15 +270,15 @@ final class ProjectedDirectorySource : DirectorySource
         sort!((a, b) {
             final switch (sortOrder)
             {
-            case FileSortOrder.pathAscending: return a.relativePath < b.relativePath || (a.relativePath == b.relativePath && a.id < b.id);
-            case FileSortOrder.pathDescending: return a.relativePath > b.relativePath || (a.relativePath == b.relativePath && a.id > b.id);
+            case FileSortOrder.pathAscending: return a.relativePath < b.relativePath || (a.relativePath == b.relativePath && a.cursorId < b.cursorId);
+            case FileSortOrder.pathDescending: return a.relativePath > b.relativePath || (a.relativePath == b.relativePath && a.cursorId > b.cursorId);
             case FileSortOrder.sizeAscending: return a.size < b.size || (a.size == b.size && a.relativePath < b.relativePath);
             case FileSortOrder.sizeDescending: return a.size > b.size || (a.size == b.size && a.relativePath < b.relativePath);
             }
         })(allFiles);
         size_t cursorIndex;
         foreach (index, file; allFiles)
-            if (file.id == cursor.id && file.relativePath == cursor.relativePath) { cursorIndex = index; break; }
+            if (file.cursorId == cursor.id && file.relativePath == cursor.relativePath) { cursorIndex = index; break; }
         auto start = cursorIndex > limit ? cursorIndex - limit : 0;
         FilePage page;
         page.files = allFiles[start .. cursorIndex].dup;
@@ -285,7 +286,7 @@ final class ProjectedDirectorySource : DirectorySource
         if (page.hasMore && page.files.length > 0)
         {
             auto first = page.files[0];
-            page.nextCursor = FileCursor(first.relativePath, first.id, first.size);
+            page.nextCursor = FileCursor(first.relativePath, first.cursorId, first.size);
         }
         return page;
     }
@@ -308,10 +309,22 @@ DirectoryTree buildDirectoryTree(const(FileInput)[] inputs)
 
         auto directoryId = ensureDirectory(tree, directoryPath);
         auto fileId = "file:" ~ index.to!string;
-        tree.files ~= FileNode(fileId, directoryId, baseName(normalized),
-            normalized, input.size, input.hasFileType, input.hasMedia,
-            input.hasVideo, input.hasAudio, input.hasImage, input.hasText,
-            input.hasArchive, input.hasTorrent);
+        FileNode file;
+        file.id = fileId;
+        file.cursorId = fileId;
+        file.directoryId = directoryId;
+        file.name = baseName(normalized);
+        file.relativePath = normalized;
+        file.size = input.size;
+        file.hasFileType = input.hasFileType;
+        file.hasMedia = input.hasMedia;
+        file.hasVideo = input.hasVideo;
+        file.hasAudio = input.hasAudio;
+        file.hasImage = input.hasImage;
+        file.hasText = input.hasText;
+        file.hasArchive = input.hasArchive;
+        file.hasTorrent = input.hasTorrent;
+        tree.files ~= file;
         addFileToDirectory(tree, directoryId, input.size);
     }
 

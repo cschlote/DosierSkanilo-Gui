@@ -69,6 +69,8 @@ All notable changes to this project are documented in this file.
   sorted file-page navigation for JSON and SQLite.
 - Tree paging now preserves the size component of the opaque cursor, keeping
   size-sorted continuation correct across chunk boundaries.
+- Added per-document Previous/Next file controls that navigate the active
+  filtered and sorted source sequence across cursor chunks.
 - Repository Blob-table loading now drains internal SQL chunks automatically,
   so the alternative view no longer exposes SQL page controls by default.
 - Repository `FileNode` projections now carry metadata-presence flags from the

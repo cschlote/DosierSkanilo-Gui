@@ -126,10 +126,22 @@ final class RepositoryDirectorySource : DirectorySource
         FileNode[] result;
         foreach (file; repository.listFiles(query))
         {
-            result ~= FileNode(file.blobId.to!string, directoryId, file.name,
-                file.relativePath, file.size, file.hasFileType, file.hasMedia,
-                file.hasVideo, file.hasAudio, file.hasImage, file.hasText,
-                file.hasArchive, file.hasTorrent);
+            FileNode node;
+            node.id = file.blobId.to!string;
+            node.cursorId = file.id.to!string;
+            node.directoryId = directoryId;
+            node.name = file.name;
+            node.relativePath = file.relativePath;
+            node.size = file.size;
+            node.hasFileType = file.hasFileType;
+            node.hasMedia = file.hasMedia;
+            node.hasVideo = file.hasVideo;
+            node.hasAudio = file.hasAudio;
+            node.hasImage = file.hasImage;
+            node.hasText = file.hasText;
+            node.hasArchive = file.hasArchive;
+            node.hasTorrent = file.hasTorrent;
+            result ~= node;
         }
         return result;
     }
@@ -147,10 +159,24 @@ final class RepositoryDirectorySource : DirectorySource
         FilePage result;
         result.hasMore = page.hasMore;
         foreach (file; page.files)
-            result.files ~= FileNode(file.blobId.to!string, directoryId, file.name,
-                file.relativePath, file.size, file.hasFileType, file.hasMedia,
-                file.hasVideo, file.hasAudio, file.hasImage, file.hasText,
-                file.hasArchive, file.hasTorrent);
+        {
+            FileNode node;
+            node.id = file.blobId.to!string;
+            node.cursorId = file.id.to!string;
+            node.directoryId = directoryId;
+            node.name = file.name;
+            node.relativePath = file.relativePath;
+            node.size = file.size;
+            node.hasFileType = file.hasFileType;
+            node.hasMedia = file.hasMedia;
+            node.hasVideo = file.hasVideo;
+            node.hasAudio = file.hasAudio;
+            node.hasImage = file.hasImage;
+            node.hasText = file.hasText;
+            node.hasArchive = file.hasArchive;
+            node.hasTorrent = file.hasTorrent;
+            result.files ~= node;
+        }
         if (page.hasMore)
             result.nextCursor = FileCursor(page.nextCursor.relativePath,
                 page.nextCursor.id.to!string);
@@ -181,10 +207,24 @@ final class RepositoryDirectorySource : DirectorySource
         FilePage result;
         result.hasMore = page.hasMore;
         foreach (file; page.files)
-            result.files ~= FileNode(file.blobId.to!string, directoryId, file.name,
-                file.relativePath, file.size, file.hasFileType, file.hasMedia,
-                file.hasVideo, file.hasAudio, file.hasImage, file.hasText,
-                file.hasArchive, file.hasTorrent);
+        {
+            FileNode node;
+            node.id = file.blobId.to!string;
+            node.cursorId = file.id.to!string;
+            node.directoryId = directoryId;
+            node.name = file.name;
+            node.relativePath = file.relativePath;
+            node.size = file.size;
+            node.hasFileType = file.hasFileType;
+            node.hasMedia = file.hasMedia;
+            node.hasVideo = file.hasVideo;
+            node.hasAudio = file.hasAudio;
+            node.hasImage = file.hasImage;
+            node.hasText = file.hasText;
+            node.hasArchive = file.hasArchive;
+            node.hasTorrent = file.hasTorrent;
+            result.files ~= node;
+        }
         if (page.hasMore)
             result.nextCursor = FileCursor(page.nextCursor.relativePath,
                 page.nextCursor.id.to!string, page.nextCursor.size);
@@ -214,10 +254,24 @@ final class RepositoryDirectorySource : DirectorySource
         FilePage result;
         result.hasMore = page.hasMore;
         foreach (file; page.files)
-            result.files ~= FileNode(file.blobId.to!string, directoryId, file.name,
-                file.relativePath, file.size, file.hasFileType, file.hasMedia,
-                file.hasVideo, file.hasAudio, file.hasImage, file.hasText,
-                file.hasArchive, file.hasTorrent);
+        {
+            FileNode node;
+            node.id = file.blobId.to!string;
+            node.cursorId = file.id.to!string;
+            node.directoryId = directoryId;
+            node.name = file.name;
+            node.relativePath = file.relativePath;
+            node.size = file.size;
+            node.hasFileType = file.hasFileType;
+            node.hasMedia = file.hasMedia;
+            node.hasVideo = file.hasVideo;
+            node.hasAudio = file.hasAudio;
+            node.hasImage = file.hasImage;
+            node.hasText = file.hasText;
+            node.hasArchive = file.hasArchive;
+            node.hasTorrent = file.hasTorrent;
+            result.files ~= node;
+        }
         if (page.hasMore)
             result.nextCursor = FileCursor(page.nextCursor.relativePath,
                 page.nextCursor.id.to!string, page.nextCursor.size);

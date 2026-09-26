@@ -32,7 +32,7 @@ import gdkpixbuf.Pixbuf;
 import gstreamer.Element;
 import gstinterfaces.VideoOverlay;
 import model.blobrow : BlobRow;
-import model.treeprojection : DirectorySource, DirectoryTree;
+import model.treeprojection : DirectorySource, DirectoryTree, FileCursor;
 
 /** Column index for the row number in the main table model. */
 enum int COL_INDEX = 0;
@@ -132,6 +132,8 @@ class DocumentTab
     bool syncingTreeSelection;
     string pendingTreeRevealFileId;
     string selectedTreeFileId;
+    string selectedTreeDirectoryId;
+    FileCursor selectedTreeCursor;
     BlobRow directSelectedRow;
     bool hasDirectSelectedRow;
     string directSelectedIndex;
@@ -203,6 +205,8 @@ class DocumentTab
     Button pageNextButton;
     Button pageFirstButton;
     Button pageLastButton;
+    Button treePreviousFileButton;
+    Button treeNextFileButton;
     ComboBoxText pageSizeCombo;
     ComboBoxText treeSortCombo;
     TreeSortOrder treeSortOrder = TreeSortOrder.nameAscending;

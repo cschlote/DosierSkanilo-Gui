@@ -82,7 +82,7 @@ import model.blobrow : BlobRow, extractRowsFromBlobs;
 import model.datasource : SourceQuery, isRepositorySource, loadDocumentDetails,
     loadDocumentPage, loadDocumentSource, openRepositoryDirectorySource;
 import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, FileCursor, FileInput,
-    FileFilter, FileNode, FileSortOrder, ProjectedDirectorySource, buildDirectoryTree;
+    FileFilter, FileNode, FilePage, FileSortOrder, ProjectedDirectorySource, buildDirectoryTree;
 import ui.appstate : AppState, loadAppState, saveAppState;
 import ui.builderutils : builderObject;
 import ui.detailpane : DetailPaneCallbacks, bindDetailPaneSignals, loadDetailPaneUi;
@@ -216,6 +216,8 @@ private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
         store.setValue(fileIter, 2, format("%s bytes", file.size));
         store.setValue(fileIter, 3, file.id);
         store.setValue(fileIter, 5, file.relativePath);
+        store.setValue(fileIter, 6, file.cursorId);
+        store.setValue(fileIter, 7, file.size.to!string);
     }
     if (page.hasMore)
     {
@@ -282,6 +284,8 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
         store.setValue(fileIter, 2, format("%s bytes", file.size));
         store.setValue(fileIter, 3, file.id);
         store.setValue(fileIter, 5, file.relativePath);
+        store.setValue(fileIter, 6, file.cursorId);
+        store.setValue(fileIter, 7, file.size.to!string);
     }
     if (sortedFileRows.length > fileLimit)
     {
@@ -316,6 +320,34 @@ private bool findDirectoryTreeIter(TreeModelIF model, TreeIter parent, bool hasP
             return true;
         }
         if (model.iterHasChild(iter) && findDirectoryTreeIter(model, iter, true, id, result))
+            return true;
+    }
+    while (model.iterNext(iter));
+    return false;
+}
+
+private bool findTreeIterByValue(TreeModelIF model, TreeIter parent, bool hasParent,
+    int column, string value, ref TreeIter result)
+{
+    TreeIter iter;
+    if (hasParent)
+    {
+        if (!model.iterChildren(iter, parent))
+            return false;
+    }
+    else if (!model.getIterFirst(iter))
+    {
+        return false;
+    }
+    do
+    {
+        if (model.getValueString(iter, column) == value)
+        {
+            result = iter;
+            return true;
+        }
+        if (model.iterHasChild(iter) && findTreeIterByValue(model, iter, true,
+            column, value, result))
             return true;
     }
     while (model.iterNext(iter));
@@ -1459,7 +1491,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         configureTableColumns(document.tableView);
         document.directoryTreeStore = new TreeStore([
             GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING,
-            GType.STRING, GType.STRING
+            GType.STRING, GType.STRING, GType.STRING
         ]);
         document.directoryTreeView = new TreeView(document.directoryTreeStore);
         configureDirectoryTreeColumns(document.directoryTreeView);
@@ -1731,6 +1763,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
             auto selectedId = model.getValueString(treeIter, 3);
             document.selectedTreeFileId = selectedId;
+            document.treePreviousFileButton.setSensitive(true);
+            document.treeNextFileButton.setSensitive(true);
+            TreeIter parentIter;
+            if (model.iterParent(parentIter, treeIter))
+            {
+                document.selectedTreeDirectoryId = model.getValueString(parentIter, 3);
+                document.selectedTreeCursor.relativePath = model.getValueString(treeIter, 5);
+                document.selectedTreeCursor.id = model.getValueString(treeIter, 6);
+                auto fileSizeText = model.getValueString(treeIter, 7);
+                document.selectedTreeCursor.size = fileSizeText.length > 0
+                    ? to!ulong(fileSizeText) : 0;
+            }
             auto selectedTreeFileName = model.getValueString(treeIter, 0);
             foreach (rowIndex, row; document.visibleRows)
             {
@@ -1831,6 +1875,74 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto pageUi = loadDocumentPageUi(document);
         document.treeSortCombo.setActive(cast(int) document.treeSortOrder);
         document.viewModeCombo.setActive(document.viewMode);
+        void navigateTreeFile(bool forward)
+        {
+            if (document.selectedTreeDirectoryId.length == 0
+                || document.selectedTreeCursor.id.length == 0)
+                return;
+            auto sourcePath = document.filePath;
+            auto directoryId = document.selectedTreeDirectoryId;
+            auto cursor = document.selectedTreeCursor;
+            auto filter = treeFilterForDocument(document);
+            auto order = sourceFileSortOrder(document.treeSortOrder);
+            document.treePreviousFileButton.setSensitive(false);
+            document.treeNextFileButton.setSensitive(false);
+            new Thread({
+                FilePage page;
+                string error;
+                try
+                {
+                    DirectorySource source = document.directorySourceRemote
+                        ? openRepositoryDirectorySource(sourcePath) : document.directorySource;
+                    page = forward
+                        ? source.listFilteredFilesPage(directoryId, cursor, 1, filter, order)
+                        : source.listPreviousFilteredFilesPage(directoryId, cursor, 1, filter, order);
+                    if (document.directorySourceRemote)
+                        source.close();
+                }
+                catch (Exception ex)
+                    error = ex.msg;
+                new Idle({
+                    if (document.filePath != sourcePath)
+                        return false;
+                    if (error.length > 0)
+                    {
+                        document.status.setText("Failed to navigate files: " ~ error);
+                    }
+                    else if (page.files.length > 0)
+                    {
+                        auto target = page.files[0];
+                        auto model = document.directoryTreeView.getModel();
+                        TreeIter targetIter;
+                        TreeIter rootSearch;
+                        if (!findTreeIterByValue(model, rootSearch, false, 6,
+                            target.cursorId, targetIter))
+                        {
+                            TreeIter root;
+                            TreeIter parent;
+                            if (findDirectoryTreeIter(model, root, false, directoryId, parent))
+                            {
+                                targetIter = document.directoryTreeStore.createIter(parent);
+                                document.directoryTreeStore.setValue(targetIter, 0, target.name);
+                                document.directoryTreeStore.setValue(targetIter, 1, "File");
+                                document.directoryTreeStore.setValue(targetIter, 2,
+                                    format("%s bytes", target.size));
+                                document.directoryTreeStore.setValue(targetIter, 3, target.id);
+                                document.directoryTreeStore.setValue(targetIter, 5, target.relativePath);
+                                document.directoryTreeStore.setValue(targetIter, 6, target.cursorId);
+                                document.directoryTreeStore.setValue(targetIter, 7, target.size.to!string);
+                            }
+                        }
+                        document.directoryTreeView.getSelection().selectIter(targetIter);
+                    }
+                    document.treePreviousFileButton.setSensitive(true);
+                    document.treeNextFileButton.setSensitive(true);
+                    return false;
+                });
+            }).start();
+        }
+        document.treePreviousFileButton.addOnClicked((Button _) { navigateTreeFile(false); });
+        document.treeNextFileButton.addOnClicked((Button _) { navigateTreeFile(true); });
         bindFilterSignals(document.filterEntry, document.filterVideoWidget,
             document.filterAudioWidget, document.filterImageWidget,
             document.filterTextWidget, document.filterMediaNotWidget,
@@ -3170,7 +3282,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 : "-";
                 document.pageOffset = result.pageOffset;
                 document.pageTotal = result.pageTotal;
-                document.pageBar.setVisible(result.pagedSource && !document.drainRepositoryPages);
+                document.pageBar.setVisible(true);
                 document.pageFirstButton.setSensitive(result.pageOffset > 0);
                 document.pagePreviousButton.setSensitive(result.pageOffset > 0);
                 document.pageNextButton.setSensitive(

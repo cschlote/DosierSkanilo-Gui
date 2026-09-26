@@ -3,7 +3,7 @@
 ## Directory Tree Redesign
 
 - Replace visible SQL paging with opaque source cursors and logical append-on-demand loading.
-- Add `next`/`previous` navigation over the filtered and sorted source sequence.
+- Persist and restore the current file cursor used by Previous/Next navigation.
 - Add archive/torrent-specific details actions and nested entry trees.
 - Add archive and torrent child trees with lazy loading.
 - Add specialized detail renderers and explicit analysis operations.
