@@ -52,6 +52,13 @@ Implemented:
 
 Known limitations:
 
+- `RepositoryDirectorySource` currently asks for all directories and file
+  references during initialization to compute the root summary. This bypasses
+  the otherwise bounded table/tree paging and must move to bounded root summary
+  queries.
+- The repository directory-source adapter retains a `Repository` connection;
+  concurrent asynchronous tree/detail operations need independent read
+  connections and an integration test.
 - Archive/torrent continuation beyond the first 250-entry chunk still needs an
   integration test with a larger fixture, including selecting and copying a path
   on a later page.
@@ -271,24 +278,36 @@ a compatibility layer around the current table UI:
 1. Define projection types and source capabilities without GTK dependencies.
 2. Implement the JSON projection using `NamedBinaryBlob` and Jsonizer.
 3. Implement the SQLite projection using repository queries.
-4. Replace the flattened table as the primary view with the directory tree. **Tree-first navigation is implemented; the blob table remains an alternative view.**
-5. Move filter, sort, selection, and paging state into each tab. **Mostly complete; current tree-file cursor persistence remains.**
-6. Add lazy file details and specialized detail renderers. **Partially complete; repository details and audio/image/video previews are implemented, with other specialized renderers still open.**
-7. Add archive and torrent entry trees. **Implemented with bounded asynchronous first-page loading and continuation markers; multi-page integration verification remains.**
+4. Replace the flattened table as the primary view with the directory tree.
+   **Tree-first navigation is implemented; the blob table remains an
+   alternative view.**
+5. Move filter, sort, selection, and paging state into each tab. **Mostly
+   complete; current tree-file cursor persistence remains.**
+6. Add lazy file details and specialized detail renderers. **Partially complete;
+   repository details and audio/image/video previews are implemented, with
+   other specialized renderers still open.**
+7. Add archive and torrent entry trees. **Implemented with bounded asynchronous
+   first-page loading and continuation markers; multi-page integration
+   verification remains.**
 8. Add explicit analysis operations through the Tools menu.
-9. Move stable, reusable projection and analysis code into `DosierSkanilo`. **Directory query DTOs and bounded queries are complete.**
+9. Move stable, reusable projection and analysis code into `DosierSkanilo`.
+   **Directory query DTOs and bounded queries are complete.**
 
 ## Immediate Plan
 
-1. Verify archive/torrent continuation over more than 250 entries, including
+1. Replace eager repository root file-reference enumeration with bounded root
+   summary/count/aggregate queries.
+2. Give concurrent asynchronous repository operations independent read
+   connections and verify concurrent tree/detail loads.
+3. Verify archive/torrent continuation over more than 250 entries, including
    stale-result rejection after selection changes and path copying from a later
    page.
-2. Exercise the virtual blob table through interactive forward/backward scrolling
-   across multiple cache evictions on a large repository.
-3. Persist the active TreeView cursor alongside per-tab filter and sort state.
-4. Complete directory/file context actions and remaining specialized detail
+4. Exercise the virtual blob table through interactive forward/backward
+   scrolling across multiple cache evictions on a large repository.
+5. Persist the active TreeView cursor alongside per-tab filter and sort state.
+6. Complete directory/file context actions and remaining specialized detail
    renderers; keep analysis and export operations explicit.
-5. Revisit splitter restoration and embedded-video layout issues listed in
+7. Revisit splitter restoration and embedded-video layout issues listed in
    `TODO.md`.
 
 The current pagination and BlobRow table are temporary implementation details.
