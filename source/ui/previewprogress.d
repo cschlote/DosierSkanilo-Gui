@@ -28,7 +28,8 @@ Timeout startPreviewProgressTimer(PreviewProgressCallbacks callbacks)
 {
     return new Timeout(250, {
         auto document = callbacks.currentDocument();
-        if (document !is null && document.selectedPreviewIsVideo && document.previewVideoPlayer !is null)
+        if (document !is null && (document.selectedPreviewIsVideo || document.selectedPreviewIsAudio)
+            && document.previewVideoPlayer !is null)
         {
             callbacks.syncVideoPreviewPosition(document);
             callbacks.syncVideoTrackSelectors(document);

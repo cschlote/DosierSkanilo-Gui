@@ -44,6 +44,8 @@ private:
     size_t[] cacheOrder;
     bool requestActive;
     size_t requestedTargetChunk;
+    size_t activeChunkIndex;
+    bool hasRequestedTargetChunk;
     string loadError;
 
 public:
@@ -97,6 +99,8 @@ public:
 
     override Value getValue(TreeIter iter, int column, Value value = null)
     {
+        if (value is null)
+            value = new Value();
         value.init(GType.STRING);
         size_t index;
         if (column < 0 || column >= getNColumns() || !getIndex(iter, index))
@@ -112,7 +116,8 @@ public:
             {
                 value.setString(columnText((*chunk)[localIndex], column, index));
                 auto prefetchAt = chunk.length > 20 ? chunk.length - 20 : 0;
-                if (localIndex >= prefetchAt && chunkIndex + 1 < chunkCursors.length)
+                if (!requestActive && localIndex >= prefetchAt
+                    && chunkIndex + 1 < chunkCursors.length)
                     requestChunk(chunkIndex + 1);
             }
             else
@@ -239,18 +244,27 @@ private:
             return;
         if (requestActive)
         {
-            if (wantedChunk > requestedTargetChunk)
+            if (wantedChunk != activeChunkIndex)
+            {
                 requestedTargetChunk = wantedChunk;
+                hasRequestedTargetChunk = true;
+            }
             return;
         }
         if (chunkCursors.length == 0)
             return;
         auto chunkIndex = wantedChunk < chunkCursors.length
             ? wantedChunk : chunkCursors.length - 1;
+        if (wantedChunk > chunkIndex)
+        {
+            requestedTargetChunk = wantedChunk;
+            hasRequestedTargetChunk = true;
+        }
         auto afterBlobId = chunkCursors[chunkIndex];
         auto path = sourcePath;
         auto queryCopy = query;
         auto size = chunkSize;
+        activeChunkIndex = chunkIndex;
         requestActive = true;
         new Thread({
             SourcePage page;
@@ -296,11 +310,17 @@ private:
                         rowChanged(getPath(iter), iter);
                     }
                 }
-                if (requestedTargetChunk > chunkIndex)
+                if (error.length == 0 && hasRequestedTargetChunk)
                 {
                     auto target = requestedTargetChunk;
-                    requestedTargetChunk = 0;
-                    requestChunk(target);
+                    if (target == chunkIndex || target in chunks || !page.hasMore)
+                    {
+                        hasRequestedTargetChunk = false;
+                    }
+                    else
+                    {
+                        requestChunk(target);
+                    }
                 }
                 return false;
             });
@@ -335,4 +355,100 @@ private:
         }
         return rows;
     }
+}
+
+@("Virtual blob model value access supports direct string lookup")
+unittest
+{
+    BlobRow row;
+    row.sourceId = 17;
+    row.fileSize = 123;
+    auto model = new VirtualBlobTableModel("", SourceQuery(), 10,
+        [row], 1, 0, false);
+    TreeIter iter;
+    assert(model.iterNthChild(iter, null, 0));
+    assert(model.getValueString(iter, COL_SOURCE_ID) == "17");
+    assert(model.getValueString(iter, COL_FILE_SIZE) == "123");
+}
+
+@("Virtual blob model follows distant rows and queued backward requests")
+unittest
+{
+    import core.thread : Thread;
+    import core.time : dur;
+    import dosierskanilo.repository.repository : Repository;
+    import glib.MainContext;
+    import model.datasource : SourceQuery, loadDocumentCursorPage;
+    import std.file : exists, mkdirRecurse, rmdirRecurse, tempDir, write;
+    import std.format : format;
+    import std.path : buildPath;
+    import std.uuid : randomUUID;
+
+    auto root = buildPath(tempDir(), "virtual-blob-model-" ~ randomUUID().toString());
+    mkdirRecurse(root);
+    auto catalogPath = buildPath(root, "catalog.json");
+    string catalog = `{"dataVersion":3,"dataArray":[`;
+    foreach (index; 0 .. 20)
+    {
+        if (index > 0)
+            catalog ~= ",";
+        catalog ~= format(
+            `{"fileName":"virtual-%02d.bin","fileSize":%d,"checkSums":{"md5sum_b64":"digest-%02d"}}`,
+            index, index + 1, index);
+    }
+    catalog ~= "]}";
+    write(catalogPath, catalog);
+
+    auto repository = Repository.initialize(root);
+    scope (exit)
+    {
+        repository.close();
+        if (exists(root))
+            rmdirRecurse(root);
+    }
+    repository.importJson(catalogPath);
+    assert(repository.blobCount == 20);
+
+    auto firstPage = loadDocumentCursorPage(root, 0, 2, SourceQuery());
+    auto firstRows = extractRowsFromBlobs(firstPage.blobs);
+    foreach (index, ref row; firstRows)
+    {
+        row.sourceId = firstPage.blobIds[index];
+        row.detailsLoaded = false;
+    }
+    auto firstBlobId = firstPage.blobIds[0];
+    auto model = new VirtualBlobTableModel(root, SourceQuery(), 2, firstRows,
+        firstPage.total, firstPage.nextBlobId, firstPage.hasMore);
+
+    TreeIter distantRow;
+    assert(model.iterNthChild(distantRow, null, 15));
+    assert(model.getValueString(distantRow, COL_SOURCE_ID) == "");
+
+    auto context = MainContext.default_();
+    size_t waitedMs;
+    while (7 !in model.chunks && waitedMs < 10_000)
+    {
+        context.iteration(false);
+        Thread.sleep(dur!"msecs"(2));
+        waitedMs += 2;
+    }
+    assert(7 in model.chunks, "The model did not load the requested distant cursor chunk.");
+    assert(model.getValueString(distantRow, COL_SOURCE_ID).length > 0);
+
+    TreeIter laterRow;
+    TreeIter firstRow;
+    assert(model.iterNthChild(laterRow, null, 19));
+    assert(model.iterNthChild(firstRow, null, 0));
+    assert(model.getValueString(laterRow, COL_SOURCE_ID) == "");
+    assert(model.getValueString(firstRow, COL_SOURCE_ID) == "");
+
+    waitedMs = 0;
+    while (0 !in model.chunks && waitedMs < 10_000)
+    {
+        context.iteration(false);
+        Thread.sleep(dur!"msecs"(2));
+        waitedMs += 2;
+    }
+    assert(0 in model.chunks, "The backward cursor request was lost during an active load.");
+    assert(model.getValueString(firstRow, COL_SOURCE_ID) == firstBlobId.to!string);
 }

@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 ## Release 0.7.0 - 2026-09-17
 
+- Audio files now use the GStreamer playback controls even when their metadata
+  also reports embedded cover art.
+- Virtual repository-table requests now continue toward the requested cursor
+  chunk and retain backward requests while another chunk is loading.
+- Selecting a row in the virtual blob table now supports direct value lookups
+  through GTK's tree-model API.
+- Late archive and torrent page results are discarded when the selected blob
+  or loading marker has changed.
 - Ignore missing paths in the recent-files list instead of terminating the GUI,
   and normalize empty filter text before passing it to GTK.
 - Added the GTK-independent directory projection and source adapter entry point

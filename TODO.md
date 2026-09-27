@@ -2,12 +2,13 @@
 
 ## Directory Tree Redesign
 
-- Validate virtual Blob-table cache behavior under long scroll-back/scroll-forward
-  sessions and tune the bounded page-cache size.
+- Validate the virtual Blob-table cache through interactive long scroll-forward
+  and scroll-back sessions on a large repository; tune the four-chunk cache only
+  if measurements show it is needed.
 - Persist and restore the current file cursor used by Previous/Next navigation.
-- Avoid loading complete archive/torrent entry arrays with repository blob
-  details; keep nested-tree metadata lazy from the outset.
-- Add specialized detail renderers and explicit analysis operations.
+- Exercise archive and torrent continuation with more than 250 nested entries,
+  including activating a later-page file and copying its full path.
+- Finish specialized detail renderers and expose analysis as explicit operations.
 
 - The top-level splitter still snaps back to the maximum width after loading a file, so the current layout clamping is not stable enough.
 - The preview pane can stay visually empty on first video selection even though audio already plays; the preview refresh path likely races widget realization and sink attachment.
@@ -25,9 +26,15 @@
 
 ## Next
 
-- Add export actions (CSV/JSON subset)
-- Add row activation action (copy path, open in file manager)
-- Add unit tests for CLI help text and startup filter parsing
+- Add an integration fixture with more than 250 archive and torrent entries and
+  verify continuation, selection changes during an in-flight request, and path
+  copying on a later page.
+- Exercise real TreeView scrolling beyond four cached blob chunks and back to an
+  evicted chunk.
+- Persist and restore the active file cursor with its filter and sort state.
+- Add directory/file context actions, including open-in-file-manager; archive
+  and torrent leaf activation already copies the nested path.
+- Add export actions (CSV/JSON subset) and unit tests for CLI help text.
 - Revisit the top-level splitter behavior and redesign it instead of patching around it
 
 ## Later

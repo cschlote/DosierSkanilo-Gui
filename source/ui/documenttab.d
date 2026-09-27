@@ -207,6 +207,7 @@ class DocumentTab
     TreeView detailTorrentTreeView;
     NestedFileNode[] archiveTreeEntries;
     NestedFileNode[] torrentTreeEntries;
+    ulong nestedEntryRequestId;
     ListStore detailFileNamesStore;
     TreeView detailFileNamesView;
     Element previewVideoPlayer;
@@ -269,6 +270,8 @@ class DocumentTab
     string loadedRootShape = "-";
     string loadedRootKeysSummary = "-";
     bool selectedPreviewIsVideo;
+    bool selectedPreviewIsAudio;
+    bool previewVideoPlayerAudioOnly;
 
     size_t pageOffset;
     size_t pageTotal;

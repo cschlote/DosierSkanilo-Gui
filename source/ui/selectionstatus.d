@@ -183,6 +183,7 @@ void clearSelectionDetails(DocumentTab document)
     document.selectedPreviewPath = "";
     document.selectedPreviewIsImage = false;
     document.selectedPreviewIsVideo = false;
+    document.selectedPreviewIsAudio = false;
     document.selectedPreviewCandidatePath = "";
     document.selectedPreviewCandidateExists = false;
     document.selectedPreviewSourcePath = "";

@@ -39,6 +39,7 @@ import gstinterfaces.VideoOverlay;
 import pango.c.types : PangoEllipsizeMode;
 
 import std.file : exists;
+import std.algorithm.searching : canFind;
 import std.conv : to;
 import std.format : format;
 import std.path : absolutePath, buildNormalizedPath, dirName, extension, isAbsolute;
@@ -113,6 +114,7 @@ void setMetadataDetails(Expander expander, TextView view, string title, string d
 void setKnownFilesTable(DocumentTab document, const(BlobRow) row)
 {
     document.detailFileNamesStore.clear();
+    ++document.nestedEntryRequestId;
     populateArchiveEntryTree(document, row);
     populateTorrentFileTree(document, row);
     document.selectedFilePath = "";
@@ -196,6 +198,7 @@ private void populateArchiveEntryTree(DocumentTab document, const(BlobRow) row)
         document.detailArchiveTreeStore.setValue(root, 2, "");
         document.detailArchiveTreeStore.setValue(root, 3, "ArchiveRoot");
         document.detailArchiveTreeStore.setValue(root, 4, row.sourceId.to!string);
+        document.detailArchiveTreeStore.setValue(root, 6, document.nestedEntryRequestId.to!string);
         auto loading = document.detailArchiveTreeStore.createIter(root);
         document.detailArchiveTreeStore.setValue(loading, 0, "Loading...");
         document.detailArchiveTreeStore.setValue(loading, 3, "Loading");
@@ -231,6 +234,7 @@ private void populateTorrentFileTree(DocumentTab document, const(BlobRow) row)
         document.detailTorrentTreeStore.setValue(root, 2, "");
         document.detailTorrentTreeStore.setValue(root, 3, "TorrentRoot");
         document.detailTorrentTreeStore.setValue(root, 4, row.sourceId.to!string);
+        document.detailTorrentTreeStore.setValue(root, 6, document.nestedEntryRequestId.to!string);
         auto loading = document.detailTorrentTreeStore.createIter(root);
         document.detailTorrentTreeStore.setValue(loading, 0, "Loading...");
         document.detailTorrentTreeStore.setValue(loading, 3, "Loading");
@@ -324,6 +328,49 @@ private bool isImagePreviewCandidate(const(BlobRow) row)
         || ext == ".svg";
 }
 
+/** Decide whether the selected row should use the audio player. */
+private bool isAudioPreviewCandidate(const(BlobRow) row)
+{
+    if (row.hasVideo)
+    {
+        return false;
+    }
+    if (row.hasAudio)
+    {
+        return true;
+    }
+
+    auto type = row.fileType.toLower;
+    if (type.canFind("audio") || type.canFind("mpeg layer") || type.canFind("flac")
+        || type.canFind("wave audio") || type.canFind("opus") || type.canFind("vorbis"))
+    {
+        return true;
+    }
+
+    auto ext = extension(row.primaryFileName.toLower);
+    return ext == ".mp3" || ext == ".m4a" || ext == ".m4b" || ext == ".aac"
+        || ext == ".flac" || ext == ".wav" || ext == ".wave" || ext == ".ogg"
+        || ext == ".oga" || ext == ".opus" || ext == ".wma" || ext == ".aiff"
+        || ext == ".aif" || ext == ".ape" || ext == ".ac3" || ext == ".alac";
+}
+
+@("Audio preview takes priority over embedded cover art")
+unittest
+{
+    BlobRow row;
+    row.primaryFileName = "album-track.mp3";
+    row.hasSummaryFlags = true;
+    row.summaryHasAudio = true;
+    row.summaryHasImage = true;
+
+    assert(isAudioPreviewCandidate(row));
+    assert(!isImagePreviewCandidate(row));
+
+    row.summaryHasVideo = true;
+    assert(isVideoPreviewCandidate(row));
+    assert(!isAudioPreviewCandidate(row));
+}
+
 /** Decide whether the selected row should use the embedded video preview. */
 private bool isVideoPreviewCandidate(const(BlobRow) row)
 {
@@ -355,17 +402,18 @@ private string unavailablePreviewSummary(const(BlobRow) row, string fileName,
     {
         reason = "The referenced file is not available at the recorded path.";
     }
-    else if (isImagePreviewCandidate(row) || isVideoPreviewCandidate(row))
+    else if (isImagePreviewCandidate(row) || isVideoPreviewCandidate(row)
+        || isAudioPreviewCandidate(row))
     {
         reason = "The file type is recognized, but no compatible preview could be opened.";
     }
-    else if (row.hasAudio || row.hasText)
+    else if (row.hasText)
     {
-        reason = "The GUI preview currently supports images and video, not this media stream.";
+        reason = "The GUI preview currently supports images, audio, and video, not this media stream.";
     }
     else
     {
-        reason = "No supported image or video preview handler was found for this file type.";
+        reason = "No supported image, audio, or video preview handler was found for this file type.";
     }
 
     return format("Preview unavailable\nFile: %s\nSize: %s bytes\nType: %s\nReason: %s",
@@ -434,6 +482,7 @@ void stopVideoPreview(DocumentTab document)
     document.previewVideoSink = null;
     document.previewVideoOverlay = null;
     document.detailPreviewVideoSinkWidget = null;
+    document.previewVideoPlayerAudioOnly = false;
 }
 
 /** Resolve the GtkWidget exposed by gtksink. */
@@ -566,9 +615,16 @@ bool syncVideoPreviewWindow(DocumentTab document, int renderWidth = -1, int rend
 /** Create the playbin-backed preview player on demand. */
 private bool ensureVideoPreviewPlayer(DocumentTab document)
 {
-    if (document.previewVideoPlayer !is null && document.previewVideoSink !is null)
+    auto audioOnly = document.selectedPreviewIsAudio;
+    if (document.previewVideoPlayer !is null && document.previewVideoSink !is null
+        && document.previewVideoPlayerAudioOnly == audioOnly)
     {
         return true;
+    }
+
+    if (document.previewVideoPlayer !is null)
+    {
+        stopVideoPreview(document);
     }
 
     auto player = ElementFactory.make("playbin", "preview-playbin");
@@ -577,20 +633,32 @@ private bool ensureVideoPreviewPlayer(DocumentTab document)
         return false;
     }
 
-    auto sink = ElementFactory.make("gtksink", "preview-videosink");
+    Element sink;
     auto usesOverlay = false;
-    if (sink is null || !attachGtkVideoSinkWidget(document, sink))
+    if (audioOnly)
     {
-        sink = ElementFactory.make("ximagesink", "preview-videosink");
+        sink = ElementFactory.make("fakesink", "preview-audio-video-sink");
         if (sink is null)
         {
             return false;
         }
+    }
+    else
+    {
+        sink = ElementFactory.make("gtksink", "preview-videosink");
+        if (sink is null || !attachGtkVideoSinkWidget(document, sink))
+        {
+            sink = ElementFactory.make("ximagesink", "preview-videosink");
+            if (sink is null)
+            {
+                return false;
+            }
 
-        restoreOverlayVideoArea(document);
-        document.previewVideoOverlay = new VideoOverlay(sink);
-        document.previewVideoOverlay.handleEvents(false);
-        usesOverlay = true;
+            restoreOverlayVideoArea(document);
+            document.previewVideoOverlay = new VideoOverlay(sink);
+            document.previewVideoOverlay.handleEvents(false);
+            usesOverlay = true;
+        }
     }
 
     player.setProperty("video-sink", new Value(sink));
@@ -634,6 +702,7 @@ private bool ensureVideoPreviewPlayer(DocumentTab document)
 
     document.previewVideoPlayer = player;
     document.previewVideoSink = sink;
+    document.previewVideoPlayerAudioOnly = audioOnly;
     return true;
 }
 
@@ -776,7 +845,7 @@ void syncVideoPlaybackButton(DocumentTab document, bool playing)
     icon.show();
     document.detailPreviewPlayButton.setImage(icon);
     document.detailPreviewPlayButton.setLabel("");
-    document.detailPreviewPlayButton.setTooltipText(playing ? "Video pausieren" : "Video starten");
+    document.detailPreviewPlayButton.setTooltipText(playing ? "Wiedergabe pausieren" : "Wiedergabe starten");
 }
 
 private int getElementIntProperty(Element element, string propertyName, int fallback = -1)
@@ -1236,7 +1305,7 @@ void syncVideoTrackSelectors(DocumentTab document)
         getElementIntProperty(document.previewVideoPlayer, "n-text", 0),
         getElementIntProperty(document.previewVideoPlayer, "current-text", -1));
 }
-/** Start video playback for the active preview.
+/** Start playback for the active preview.
  *
  * Params:
  *     document = Active document tab whose preview should start.
@@ -1254,7 +1323,7 @@ void playVideoPreview(DocumentTab document)
     syncVideoPlaybackButton(document, true);
 }
 
-/** Pause video playback for the active preview.
+/** Pause playback for the active preview.
  *
  * Params:
  *     document = Active document tab whose preview should pause.
@@ -1308,9 +1377,39 @@ bool jumpVideoPreview(DocumentTab document, long deltaSeconds)
     return document.previewVideoPlayer.seekSimple(GstFormat.TIME, GstSeekFlags.FLUSH | GstSeekFlags.KEY_UNIT, targetPosition);
 }
 
-/** Start or restart the embedded video preview for the current selection. */
+/** Start or restart the embedded audio/video preview for the current selection. */
 private void updatePreviewVideo(DocumentTab document)
 {
+    if (document.selectedPreviewIsAudio)
+    {
+        if (document.selectedPreviewPath.length == 0 || !ensureVideoPreviewPlayer(document))
+        {
+            stopVideoPreview(document);
+            return;
+        }
+
+        auto uri = toFileUri(document.selectedPreviewPath);
+        if (uri.length == 0)
+        {
+            stopVideoPreview(document);
+            return;
+        }
+
+        document.previewVideoPlayer.setState(GstState.NULL);
+        setVideoPreviewVolume(document, document.previewVideoVolume);
+        document.previewVideoPlayer.setProperty("uri", new Value(uri));
+        document.previewVideoPlayer.setState(GstState.PAUSED);
+        syncVideoPlaybackButton(document, false);
+        syncVideoTrackSelectors(document);
+        cast(void) syncVideoPreviewPosition(document);
+        if (document.previewVideoAutostart)
+        {
+            document.previewVideoPlayer.setState(GstState.PLAYING);
+            syncVideoPlaybackButton(document, true);
+        }
+        return;
+    }
+
     if (document.detailPreviewVideoFrame is null || document.detailPreviewVideoArea is null)
     {
         return;
@@ -1501,7 +1600,7 @@ private void updatePreviewImage(DocumentTab document)
  */
 void refreshMediaPreview(DocumentTab document)
 {
-    if (document.selectedPreviewIsVideo)
+    if (document.selectedPreviewIsVideo || document.selectedPreviewIsAudio)
     {
         if (document.detailPreviewImageControls !is null)
         {
@@ -1515,7 +1614,18 @@ void refreshMediaPreview(DocumentTab document)
         {
             document.detailPreviewVideoControls.setVisible(true);
         }
-        updatePreviewVideo(document);
+        if (document.selectedPreviewIsVideo)
+        {
+            updatePreviewVideo(document);
+        }
+        else
+        {
+            updatePreviewVideo(document);
+            if (document.detailPreviewVideoFrame !is null)
+            {
+                document.detailPreviewVideoFrame.setVisible(false);
+            }
+        }
         document.detailPreviewImage.clear();
         return;
     }
@@ -1586,11 +1696,16 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
         }
     }
 
-    document.selectedPreviewPath = imagePreviewPath;
     document.selectedPreviewSourcePath = "";
     document.selectedPreviewSourcePixbuf = null;
-    document.selectedPreviewIsImage = isImagePreviewCandidate(row) && imagePreviewPath.length > 0;
-    document.selectedPreviewIsVideo = !document.selectedPreviewIsImage && isVideoPreviewCandidate(row);
+    document.selectedPreviewIsVideo = isVideoPreviewCandidate(row);
+    document.selectedPreviewIsAudio = !document.selectedPreviewIsVideo
+        && isAudioPreviewCandidate(row) && imagePreviewPath.length > 0;
+    document.selectedPreviewIsImage = !document.selectedPreviewIsVideo
+        && !document.selectedPreviewIsAudio
+        && isImagePreviewCandidate(row) && imagePreviewPath.length > 0;
+    document.selectedPreviewPath = (document.selectedPreviewIsImage || document.selectedPreviewIsVideo
+            || document.selectedPreviewIsAudio) ? imagePreviewPath : "";
 
     if (document.selectedPreviewIsVideo)
     {
@@ -1613,6 +1728,10 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
     else if (document.selectedPreviewIsVideo)
     {
         document.detailPreviewSummary.setText(format("Video preview\n%s", mediaSummary));
+    }
+    else if (document.selectedPreviewIsAudio)
+    {
+        document.detailPreviewSummary.setText(format("Audio preview\n%s", mediaSummary));
     }
     else
     {

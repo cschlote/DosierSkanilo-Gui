@@ -128,7 +128,7 @@ void bindDetailPreviewSignals(DocumentTab document, DetailPreviewCallbacks callb
         document.previewVideoAutostart = button.getActive();
         callbacks.setPreviewVideoAutostart(document.previewVideoAutostart);
 
-        if (!document.selectedPreviewIsVideo)
+        if (!document.selectedPreviewIsVideo && !document.selectedPreviewIsAudio)
         {
             return;
         }

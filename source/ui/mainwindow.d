@@ -405,7 +405,7 @@ private void appendNestedEntry(TreeStore store, TreeModelIF model, TreeIter root
 }
 
 private void appendNestedPageMarker(TreeStore store, TreeIter parent, string blobId,
-    bool archive, size_t offset)
+    bool archive, size_t offset, string requestToken)
 {
     auto marker = store.createIter(parent);
     store.setValue(marker, 0, "More entries available...");
@@ -414,6 +414,36 @@ private void appendNestedPageMarker(TreeStore store, TreeIter parent, string blo
     store.setValue(marker, 3, archive ? "ArchivePage" : "TorrentPage");
     store.setValue(marker, 4, blobId);
     store.setValue(marker, 5, offset.to!string);
+    store.setValue(marker, 6, requestToken);
+}
+
+private bool nestedEntryRequestMatches(string rootKind, string rootBlobId,
+    string rootToken, string markerKind, string markerBlobId, string markerOffset,
+    string markerToken, bool archive, string blobId, size_t offset,
+    string selectionToken, string loadingKind, string requestToken)
+{
+    auto expectedRootKind = archive ? "ArchiveRoot" : "TorrentRoot";
+    return rootKind == expectedRootKind && rootBlobId == blobId
+        && rootToken == selectionToken && markerKind == loadingKind
+        && markerBlobId == blobId && markerOffset == offset.to!string
+        && markerToken == requestToken;
+}
+
+@("Nested entry replies require the current selection and marker")
+unittest
+{
+    assert(nestedEntryRequestMatches("ArchiveRoot", "17", "5",
+        "ArchiveLoadingPage", "17", "250", "9", true, "17", 250,
+        "5", "ArchiveLoadingPage", "9"));
+    assert(!nestedEntryRequestMatches("ArchiveRoot", "22", "6",
+        "ArchiveLoadingPage", "22", "250", "9", true, "17", 250,
+        "5", "ArchiveLoadingPage", "9"));
+    assert(!nestedEntryRequestMatches("TorrentRoot", "17", "5",
+        "TorrentLoadingPage", "17", "250", "9", false, "17", 250,
+        "4", "TorrentLoadingPage", "9"));
+    assert(!nestedEntryRequestMatches("ArchiveRoot", "17", "5",
+        "ArchivePage", "17", "250", "9", true, "17", 250,
+        "5", "ArchiveLoadingPage", "9"));
 }
 
 private bool findDirectoryTreeIter(TreeModelIF model, TreeIter parent, bool hasParent,
@@ -482,6 +512,14 @@ private void restoreExpandedDirectories(TreeView treeView, string[] expandedIds)
         if (findDirectoryTreeIter(model, root, false, id, iter))
             treeView.expandRow(model.getPath(iter), false);
     }
+}
+
+private void expandFirstTreeRoot(TreeView treeView)
+{
+    auto model = treeView.getModel();
+    TreeIter root;
+    if (model !is null && model.getIterFirst(root))
+        treeView.expandRow(model.getPath(root), false);
 }
 
 private string[] findDirectoryPathForFile(DirectorySource source, string parentId,
@@ -2160,10 +2198,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto pageRoot = pageUi.pageRoot;
         auto splitSlot = pageUi.splitSlot;
 
-        void delegate(TreeView, TreeStore, bool, TreePath, TreePath, string, size_t)
+        void delegate(TreeView, TreeStore, bool, TreePath, TreePath, string, size_t,
+            string, string, string)
             loadNestedEntryPage;
         loadNestedEntryPage = (TreeView treeView, TreeStore store, bool archive,
-            TreePath parentPath, TreePath removePath, string blobId, size_t offset) {
+            TreePath parentPath, TreePath removePath, string blobId, size_t offset,
+            string selectionToken, string markerToken, string loadingKind) {
+            auto stableParentPath = parentPath.copy();
+            auto stableRemovePath = removePath.copy();
             auto sourcePath = document.filePath;
             new Thread({
                 AsyncNestedEntryResult result;
@@ -2190,8 +2232,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     auto model = treeView.getModel();
                     auto parent = new TreeIter();
                     auto remove = new TreeIter();
-                    if (!model.getIter(parent, parentPath) || !model.getIter(remove, removePath))
+                    if (!model.getIter(parent, stableParentPath)
+                        || !model.getIter(remove, stableRemovePath))
                         return false;
+                    if (!nestedEntryRequestMatches(model.getValueString(parent, 3),
+                            model.getValueString(parent, 4), model.getValueString(parent, 6),
+                            model.getValueString(remove, 3), model.getValueString(remove, 4),
+                            model.getValueString(remove, 5), model.getValueString(remove, 6),
+                            archive, result.blobId, result.offset, selectionToken,
+                            loadingKind, markerToken))
+                    {
+                        return false;
+                    }
                     store.remove(remove);
                     if (result.error.length > 0)
                     {
@@ -2204,7 +2256,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         appendNestedEntry(store, model, parent, entry, blobId);
                     if (result.hasMore)
                         appendNestedPageMarker(store, parent, blobId, archive,
-                            offset + result.entries.length);
+                            offset + result.entries.length,
+                            (++document.nestedEntryRequestId).to!string);
                     return false;
                 });
             }).start();
@@ -2220,8 +2273,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 TreeIter child;
                 if (!model.iterChildren(child, iter) || model.getValueString(child, 3) != "Loading")
                     return;
+                auto selectionToken = model.getValueString(iter, 6);
+                auto markerToken = (++document.nestedEntryRequestId).to!string;
+                auto loadingKind = archive ? "ArchiveLoading" : "TorrentLoading";
+                store.setValue(child, 3, loadingKind);
+                store.setValue(child, 4, model.getValueString(iter, 4));
+                store.setValue(child, 5, "0");
+                store.setValue(child, 6, markerToken);
                 loadNestedEntryPage(treeView, store, archive, path, model.getPath(child),
-                    model.getValueString(iter, 4), 0);
+                    model.getValueString(iter, 4), 0, selectionToken, markerToken,
+                    loadingKind);
             });
             treeView.addOnRowActivated((TreePath path, TreeViewColumn column, TreeView activatedView) {
                 auto model = treeView.getModel();
@@ -2234,10 +2295,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 TreeIter parent;
                 if (!model.iterParent(parent, page))
                     return;
+                auto selectionToken = model.getValueString(parent, 6);
+                auto markerToken = (++document.nestedEntryRequestId).to!string;
+                auto loadingKind = archive ? "ArchiveLoadingPage" : "TorrentLoadingPage";
                 auto offsetText = model.getValueString(page, 5);
                 auto offset = offsetText.length > 0 ? to!size_t(offsetText) : 0;
+                store.setValue(page, 3, loadingKind);
+                store.setValue(page, 6, markerToken);
                 loadNestedEntryPage(treeView, store, archive, model.getPath(parent), path,
-                    model.getValueString(page, 4), offset);
+                    model.getValueString(page, 4), offset, selectionToken,
+                    markerToken, loadingKind);
             });
         }
         bindNestedEntryTree(document.detailArchiveTreeView, document.detailArchiveTreeStore, true);
@@ -2894,9 +2961,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
         TreeIter treeRoot;
         TreeIter treeFile;
         bool treeSelected;
-        if (!document.syncingTreeSelection
+        auto foundTreeFile = !document.syncingTreeSelection
             && findDirectoryTreeIter(document.directoryTreeView.getModel(), treeRoot, false,
-                treeSelectionId, treeFile))
+                treeSelectionId, treeFile);
+        if (foundTreeFile)
         {
             document.syncingTreeSelection = true;
             document.directoryTreeView.getSelection().selectIter(treeFile);
@@ -2911,6 +2979,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             auto requestId = ++document.detailRequestId;
             auto sourcePath = document.filePath;
             auto sourceId = row.sourceId;
+            setKnownFilesTable(document, row);
             document.status.setText("Loading selected repository details ...");
             auto worker = new Thread({
                 NamedBinaryBlob details;
@@ -3064,6 +3133,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.btnCopyPath.setSensitive(!isLoading && document.selectedFilePath.length > 0);
         document.btnCopyDetails.setSensitive(!isLoading && document.selectedDetailsText.length > 0);
         setKnownFilesTable(document, row);
+        if (cli.selfTestMode && document.directorySourceRemote)
+        {
+            if (row.hasArchive)
+                expandFirstTreeRoot(document.detailArchiveTreeView);
+            if (row.hasTorrent)
+                expandFirstTreeRoot(document.detailTorrentTreeView);
+        }
     };
 
     /** Copy a selected value into the system clipboard. */
@@ -3750,6 +3826,25 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 else
                 {
                     renderRows(document, document.loadedRows);
+                }
+
+                if (cli.selfTestMode)
+                {
+                    TreeModelIF model;
+                    TreeIter firstRow;
+                    auto selection = document.tableView.getSelection();
+                    logLineVerbose("[self-test] selecting first row for ", document.filePath);
+                    auto hasSelection = selection.getSelected(model, firstRow);
+                    auto tableModel = document.tableView.getModel();
+                    if (!hasSelection && tableModel !is null)
+                    {
+                        auto hasFirstRow = tableModel.getIterFirst(firstRow);
+                        if (hasFirstRow)
+                        {
+                            selection.selectIter(firstRow);
+                            logLineVerbose("[self-test] first row selected");
+                        }
+                    }
                 }
 
                 logLineVerbose("[load] queued render ", document.filePath,
