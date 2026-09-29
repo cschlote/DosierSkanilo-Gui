@@ -53,7 +53,11 @@ All notable changes to this project are documented in this file.
 - Details now appear below the list by default, and restored vertical splitters
   are clamped after each tab receives a real allocation so the list stays visible.
 - Preview file checks run asynchronously for the selected item and report missing
-  or inaccessible paths in the preview pane.
+  or inaccessible paths in the preview pane; unknown formats show a bounded
+  hex dump and recognized text files show a fixed-width text prefix. Video
+  playback now waits for the first usable preview-frame allocation.
+- Changed the project license to GPL-3.0-only and aligned DUB, source headers,
+  and packaging metadata.
 
 ## Release 0.7.0 - 2026-09-17
 
