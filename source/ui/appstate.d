@@ -13,6 +13,31 @@ import std.json : parseJSON, JSONType, JSONValue;
 import std.path : buildPath, dirName;
 import std.process : environment;
 
+/** Persisted source cursor for a document's selected TreeView file. */
+struct TreeCursorState
+{
+    string documentPath;
+    string directoryId;
+    string relativePath;
+    string cursorId;
+    ulong size;
+}
+
+/** Persisted filter state for one document tab. */
+struct DocumentFilterState
+{
+    string documentPath;
+    string text;
+    bool video;
+    bool audio;
+    bool image;
+    bool textStream;
+    bool mediaNegated;
+    bool fileType;
+    bool archive;
+    bool torrent;
+}
+
 /** Persisted UI state stored below the user's config directory. */
 struct AppState
 {
@@ -45,6 +70,8 @@ struct AppState
     string[] selectedTreeStates;
     string[] treeSortStates;
     string[] viewModeStates;
+    TreeCursorState[] treeCursorStates;
+    DocumentFilterState[] documentFilterStates;
     int activeTabIndex;
 }
 
@@ -163,6 +190,109 @@ string[] jsonToStringArray(JSONValue value)
         }
     }
     return result;
+}
+
+private string jsonObjectString(JSONValue value, string key)
+{
+    if (value.type != JSONType.object)
+        return "";
+    if (auto field = key in value.object)
+        return field.type == JSONType.string ? field.str : "";
+    return "";
+}
+
+private ulong jsonToUlong(JSONValue value)
+{
+    if (value.type == JSONType.uinteger)
+        return value.uinteger;
+    if (value.type == JSONType.integer && value.integer >= 0)
+        return cast(ulong) value.integer;
+    return 0;
+}
+
+private TreeCursorState[] jsonToTreeCursorStates(JSONValue value)
+{
+    TreeCursorState[] result;
+    if (value.type != JSONType.array)
+        return result;
+    foreach (entry; value.array)
+    {
+        if (entry.type != JSONType.object)
+            continue;
+        TreeCursorState state;
+        state.documentPath = jsonObjectString(entry, "documentPath");
+        state.directoryId = jsonObjectString(entry, "directoryId");
+        state.relativePath = jsonObjectString(entry, "relativePath");
+        state.cursorId = jsonObjectString(entry, "cursorId");
+        if (auto size = "size" in entry.object)
+            state.size = jsonToUlong(*size);
+        if (state.documentPath.length > 0 && state.cursorId.length > 0)
+            result ~= state;
+    }
+    return result;
+}
+
+private DocumentFilterState[] jsonToDocumentFilterStates(JSONValue value)
+{
+    DocumentFilterState[] result;
+    if (value.type != JSONType.array)
+        return result;
+    foreach (entry; value.array)
+    {
+        if (entry.type != JSONType.object)
+            continue;
+        DocumentFilterState state;
+        state.documentPath = jsonObjectString(entry, "documentPath");
+        state.text = jsonObjectString(entry, "text");
+        if (auto field = "video" in entry.object) state.video = jsonToBool(*field);
+        if (auto field = "audio" in entry.object) state.audio = jsonToBool(*field);
+        if (auto field = "image" in entry.object) state.image = jsonToBool(*field);
+        if (auto field = "textStream" in entry.object) state.textStream = jsonToBool(*field);
+        if (auto field = "mediaNegated" in entry.object) state.mediaNegated = jsonToBool(*field);
+        if (auto field = "fileType" in entry.object) state.fileType = jsonToBool(*field);
+        if (auto field = "archive" in entry.object) state.archive = jsonToBool(*field);
+        if (auto field = "torrent" in entry.object) state.torrent = jsonToBool(*field);
+        if (state.documentPath.length > 0)
+            result ~= state;
+    }
+    return result;
+}
+
+private string jsonTreeCursorStates(const(TreeCursorState)[] states)
+{
+    JSONValue[] entries;
+    foreach (state; states)
+    {
+        JSONValue[string] entry;
+        entry["documentPath"] = JSONValue(state.documentPath);
+        entry["directoryId"] = JSONValue(state.directoryId);
+        entry["relativePath"] = JSONValue(state.relativePath);
+        entry["cursorId"] = JSONValue(state.cursorId);
+        entry["size"] = JSONValue(state.size);
+        entries ~= JSONValue(entry);
+    }
+    return JSONValue(entries).toString;
+}
+
+private string jsonDocumentFilterStates(const(DocumentFilterState)[] states)
+{
+    JSONValue[] entries;
+    foreach (state; states)
+    {
+        JSONValue[string] entry;
+        entry["documentPath"] = JSONValue(state.documentPath);
+        entry["text"] = JSONValue(state.text);
+        entry["video"] = JSONValue(state.video);
+        entry["audio"] = JSONValue(state.audio);
+        entry["image"] = JSONValue(state.image);
+        entry["textStream"] = JSONValue(state.textStream);
+        entry["mediaNegated"] = JSONValue(state.mediaNegated);
+        entry["fileType"] = JSONValue(state.fileType);
+        entry["archive"] = JSONValue(state.archive);
+        entry["torrent"] = JSONValue(state.torrent);
+        entries ~= JSONValue(entry);
+    }
+    return JSONValue(entries).toString;
 }
 
 /** Escape and serialize a string array as JSON. */
@@ -367,6 +497,14 @@ private AppState loadAppStateFromPath(string path)
         {
             state.viewModeStates = jsonToStringArray(*value);
         }
+        if (auto value = "treeCursorStates" in root)
+        {
+            state.treeCursorStates = jsonToTreeCursorStates(*value);
+        }
+        if (auto value = "documentFilterStates" in root)
+        {
+            state.documentFilterStates = jsonToDocumentFilterStates(*value);
+        }
         if (auto value = "activeTabIndex" in root)
         {
             state.activeTabIndex = jsonToInt(*value, state.activeTabIndex);
@@ -427,6 +565,8 @@ private void saveAppStateToPath(const(AppState) state, string path)
             "  \"selectedTreeStates\": %s,\n" ~
             "  \"treeSortStates\": %s,\n" ~
             "  \"viewModeStates\": %s,\n" ~
+            "  \"treeCursorStates\": %s,\n" ~
+            "  \"documentFilterStates\": %s,\n" ~
             "  \"activeTabIndex\": %s\n" ~
             "}\n",
         state.prefAutoApplyFilter ? "true" : "false",
@@ -455,6 +595,8 @@ private void saveAppStateToPath(const(AppState) state, string path)
         jsonStringArray(state.selectedTreeStates),
         jsonStringArray(state.treeSortStates),
         jsonStringArray(state.viewModeStates),
+        jsonTreeCursorStates(state.treeCursorStates),
+        jsonDocumentFilterStates(state.documentFilterStates),
         state.activeTabIndex
     );
 
@@ -527,6 +669,10 @@ unittest
     expected.selectedTreeStates = ["one.json\tfile:7"];
     expected.treeSortStates = ["one.json\t2"];
     expected.viewModeStates = ["one.json\t1"];
+    expected.treeCursorStates = [TreeCursorState("one\tpath.json", "directory:audio",
+        "audio/track.flac", "file-ref-17", 123_456_789)];
+    expected.documentFilterStates = [DocumentFilterState("one\tpath.json",
+        "audio/track", true, false, true, true, true, false, true, false)];
     expected.activeTabIndex = 7;
 
     saveAppStateToPath(expected, testStateFile);
@@ -558,5 +704,22 @@ unittest
     assert(loaded.selectedTreeStates == expected.selectedTreeStates);
     assert(loaded.treeSortStates == expected.treeSortStates);
     assert(loaded.viewModeStates == expected.viewModeStates);
+    assert(loaded.treeCursorStates.length == 1);
+    assert(loaded.treeCursorStates[0].documentPath == "one\tpath.json");
+    assert(loaded.treeCursorStates[0].directoryId == "directory:audio");
+    assert(loaded.treeCursorStates[0].relativePath == "audio/track.flac");
+    assert(loaded.treeCursorStates[0].cursorId == "file-ref-17");
+    assert(loaded.treeCursorStates[0].size == 123_456_789);
+    assert(loaded.documentFilterStates.length == 1);
+    assert(loaded.documentFilterStates[0].documentPath == "one\tpath.json");
+    assert(loaded.documentFilterStates[0].text == "audio/track");
+    assert(loaded.documentFilterStates[0].video);
+    assert(!loaded.documentFilterStates[0].audio);
+    assert(loaded.documentFilterStates[0].image);
+    assert(loaded.documentFilterStates[0].textStream);
+    assert(loaded.documentFilterStates[0].mediaNegated);
+    assert(!loaded.documentFilterStates[0].fileType);
+    assert(loaded.documentFilterStates[0].archive);
+    assert(!loaded.documentFilterStates[0].torrent);
     assert(loaded.activeTabIndex == expected.activeTabIndex);
 }

@@ -2,17 +2,35 @@
 
 ## Directory Tree Redesign
 
-- Replace eager root-summary enumeration in `RepositoryDirectorySource` with
-  bounded directory/file count and aggregate-size queries.
-- Give concurrent background source operations independent repository read
+- [x] Replace eager root-summary enumeration in `RepositoryDirectorySource`
+  with bounded directory/file count and aggregate-size queries.
+- [x] Give concurrent background source operations independent repository read
   connections instead of sharing the `RepositoryDirectorySource` connection.
-- Validate the virtual Blob-table cache through interactive long scroll-forward
-  and scroll-back sessions on a large repository; tune the four-chunk cache only
-  if measurements show it is needed.
-- Persist and restore the current file cursor used by Previous/Next navigation.
-- Exercise archive and torrent continuation with more than 250 nested entries,
-  including activating a later-page file and copying its full path.
-- Finish specialized detail renderers and expose analysis as explicit operations.
+- [x] Stress-test simultaneous repository tree and detail requests against an
+  81-file repository.
+- [x] Exercise virtual Blob-table reads across 1,000 rows in both directions and
+  verify the four-chunk cache remains bounded after eviction/reload.
+- [x] Persist and restore the current file cursor, directory, sort order, and
+  per-document filter state used by Previous/Next navigation.
+- [x] Exercise archive and torrent adapter continuation with more than 250
+  nested entries and verify a later-page full path.
+- [x] Exercise TreeView file-row activation and clipboard callback with a
+  later-page full nested path.
+- [x] Exercise GTK continuation-marker activation and verify its requested page
+  offset and selection/request tokens.
+- [x] Test stale-result rejection after the GTK selection token changes before
+  an asynchronous page reply is applied.
+- [x] Recover expanded repository directories whose loading placeholder remained
+  after child rows were inserted; query dispatch is deduplicated while pending.
+- [x] Add a fallback detail renderer with file identity, available checksums, and
+  an explicit message when no specialized metadata exists.
+- [ ] Implement CLI/GTK operation parity over shared backend operations:
+  - [ ] WP-09.1: Freeze common request, result, progress, and cancellation types.
+  - [ ] WP-09.2: Add safe progress/cancel checkpoints to backend SQLite and JSON
+    services.
+  - [ ] WP-09.3: Adapt CLI output and Ctrl-C to the shared operation API.
+  - [ ] WP-09.4: Add GTK Tools actions and a background task/status manager.
+  - [ ] WP-09.5: Verify CLI/GUI parity, cancellation, and source refresh.
 
 - The top-level splitter still snaps back to the maximum width after loading a
   file, so the current layout clamping is not stable enough.
@@ -42,15 +60,13 @@
 
 ## Next
 
-- Add an integration fixture with more than 250 archive and torrent entries and
-  verify continuation, selection changes during an in-flight request, and path
-  copying on a later page.
-- Exercise real TreeView scrolling beyond four cached blob chunks and back to an
-  evicted chunk.
-- Persist and restore the active file cursor with its filter and sort state.
-- Add directory/file context actions, including open-in-file-manager; archive
-  and torrent leaf activation already copies the nested path.
-- Add export actions (CSV/JSON subset) and unit tests for CLI help text.
+- [x] Exercise the virtual Blob-table cache through long forward/backward row
+  access across cache evictions.
+- [x] Exercise GTK TreeView scrolling to distant rows and back to evicted chunks.
+- [x] Add directory/file context actions for opening files externally and
+  opening directories or containing folders in the file manager.
+- [x] Add CSV and JSON exports for the active tab's filtered row subset.
+- [x] Cover every registered startup option in the CLI help/parser test.
 - Revisit the top-level splitter behavior and redesign it instead of patching
   around it.
 

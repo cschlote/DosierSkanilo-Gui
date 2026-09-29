@@ -142,6 +142,7 @@ class DocumentTab
     DirectorySource directorySource;
     bool directorySourceRemote;
     string[] expandedDirectoryIds;
+    void delegate() reconcileDirectoryLoads;
     bool syncingTreeSelection;
     string pendingTreeRevealFileId;
     string selectedTreeFileId;
@@ -197,8 +198,13 @@ class DocumentTab
     Widget detailPreviewVideoSinkWidget;
     Box detailPreviewVideoControls;
     ScrolledWindow detailPreviewScroll;
-    TextView detailMediaInfoView;
-    TextView detailFileTypeView;
+    TreeStore detailMediaInfoStore;
+    TreeView detailMediaInfoTreeView;
+    Expander detailFallbackExpander;
+    Label detailFallbackStatus;
+    TreeStore detailFallbackStore;
+    TreeView detailFallbackTreeView;
+    Label detailFileTypeLabel;
     TextView detailArchiveView;
     TextView detailTorrentView;
     TreeStore detailArchiveTreeStore;
@@ -219,8 +225,6 @@ class DocumentTab
     Button btnCopyDetails;
     Label rowDetails;
     Label status;
-    Label perfStatus;
-    Label fileMetaStatus;
     Button pagePreviousButton;
     Button pageNextButton;
     Button pageFirstButton;
@@ -250,14 +254,11 @@ class DocumentTab
     string previewVideoTrackSignature;
     string previewAudioTrackSignature;
     string previewSubtitleTrackSignature;
-    string selectedPreviewCandidatePath = "";
-    bool selectedPreviewCandidateExists;
     string selectedPreviewSourcePath = "";
     Pixbuf selectedPreviewSourcePixbuf;
 
     BlobRow[] loadedRows;
     BlobRow[] visibleRows;
-    size_t loadedDuplicateGroups;
     int tableNaturalWidth = -1;
     int tableMinimumWidth = -1;
     bool fitHorizontalSplitAfterLoad;
@@ -288,8 +289,6 @@ class DocumentTab
     ulong filterRequestId;
     ulong renderRequestId;
     ulong detailRequestId;
-    long pendingLoadElapsedMs = -1;
-    string pendingStatusSuffix = "";
     long lastLoadElapsedMs = -1;
     long lastFilterElapsedMs = -1;
     long lastRenderElapsedMs = -1;

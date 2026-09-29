@@ -10,7 +10,8 @@ import dosierskanilo;
 import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob,
     deserializeDataClassJsonFile;
 import model.treeprojection : DirectoryNode, DirectorySource, FileCursor, FileFilter, FileInput, FileNode,
-    FilePage, FileSortOrder, NestedFileNode, DirectoryTree, buildDirectoryTree;
+    FilePage, FileSortOrder, NestedFileNode, DirectoryTree, ProjectedDirectorySource,
+    buildDirectoryTree;
 
 /** One bounded source result page. */
 struct SourcePage
@@ -67,24 +68,18 @@ DirectoryTree loadDocumentTree(string path)
 /** Directory source backed by bounded SQLite repository queries. */
 final class RepositoryDirectorySource : DirectorySource
 {
-    private Repository repository;
+    private string repositoryPath;
     private DirectoryNode rootNode;
 
     this(string path)
     {
-        repository = Repository.open(path);
-        auto rootPath = Repository.findRoot(path);
-        RepositoryDirectoryQuery directoryQuery;
-        directoryQuery.limit = size_t.max;
-        RepositoryFileQuery fileQuery;
-        fileQuery.limit = size_t.max;
-        auto directories = repository.listDirectories(directoryQuery);
-        auto files = repository.listFiles(fileQuery);
-        ulong aggregate;
-        foreach (file; files)
-            aggregate += file.size;
-        rootNode = DirectoryNode("root", "", baseName(rootPath), "", directories.length,
-            files.length, aggregate);
+        repositoryPath = path;
+        auto repository = Repository.open(path);
+        scope (exit)
+            repository.close();
+        auto summary = repository.rootSummary();
+        rootNode = DirectoryNode("root", "", baseName(repository.rootPath), "",
+            summary.childDirectoryCount, summary.fileCount, summary.aggregateSize);
     }
 
     override DirectoryNode root()
@@ -94,6 +89,9 @@ final class RepositoryDirectorySource : DirectorySource
 
     override DirectoryNode[] listDirectories(string parentId, FileFilter filter = FileFilter())
     {
+        auto repository = Repository.open(repositoryPath);
+        scope (exit)
+            repository.close();
         RepositoryDirectoryQuery query;
         query.parentId = parentId == "root" ? 0 : to!long(parentId);
         query.limit = size_t.max;
@@ -121,6 +119,9 @@ final class RepositoryDirectorySource : DirectorySource
     override FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250,
         string filter = "")
     {
+        auto repository = Repository.open(repositoryPath);
+        scope (exit)
+            repository.close();
         RepositoryFileQuery query;
         query.directoryId = directoryId == "root" ? 0 : to!long(directoryId);
         query.offset = offset;
@@ -152,6 +153,9 @@ final class RepositoryDirectorySource : DirectorySource
     override FilePage listFilesPage(string directoryId, FileCursor cursor = FileCursor(),
         size_t limit = 250, string filter = "")
     {
+        auto repository = Repository.open(repositoryPath);
+        scope (exit)
+            repository.close();
         RepositoryFileQuery query;
         query.directoryId = directoryId == "root" ? 0 : to!long(directoryId);
         query.limit = limit;
@@ -190,6 +194,9 @@ final class RepositoryDirectorySource : DirectorySource
         size_t limit = 250, FileFilter filter = FileFilter(),
         FileSortOrder sortOrder = FileSortOrder.pathAscending)
     {
+        auto repository = Repository.open(repositoryPath);
+        scope (exit)
+            repository.close();
         RepositoryFileQuery query;
         query.directoryId = directoryId == "root" ? 0 : to!long(directoryId);
         query.limit = limit;
@@ -239,10 +246,14 @@ final class RepositoryDirectorySource : DirectorySource
         size_t limit = 250, FileFilter filter = FileFilter(),
         FileSortOrder sortOrder = FileSortOrder.pathAscending)
     {
+        auto repository = Repository.open(repositoryPath);
+        scope (exit)
+            repository.close();
         RepositoryFileQuery query;
         query.directoryId = directoryId == "root" ? 0 : to!long(directoryId);
         query.limit = limit;
         query.text = filter.text;
+        query.caseSensitive = filter.caseSensitive;
         query.video = filter.video;
         query.audio = filter.audio;
         query.image = filter.image;
@@ -284,11 +295,7 @@ final class RepositoryDirectorySource : DirectorySource
 
     override void close()
     {
-        if (repository !is null)
-        {
-            repository.close();
-            repository = null;
-        }
+        // Each operation opens and closes its own repository connection.
     }
 }
 
@@ -296,6 +303,15 @@ final class RepositoryDirectorySource : DirectorySource
 DirectorySource openRepositoryDirectorySource(string path)
 {
     return new RepositoryDirectorySource(path);
+}
+
+private class ConcurrentSourceQueryResults
+{
+    size_t directoryCount;
+    size_t fileCount;
+    size_t detailLoads;
+    string treeError;
+    string detailError;
 }
 
 /** Load one bounded page of archive entries for a repository blob. */
@@ -487,6 +503,8 @@ unittest
     auto directorySource = openRepositoryDirectorySource(root);
     assert(directorySource.root().id == "root");
     assert(directorySource.root().name == baseName(root));
+    assert(directorySource.root().fileCount == 3);
+    assert(directorySource.root().aggregateSize == 11);
     assert(directorySource.listFiles("root").length == 3);
     assert(directorySource.listFiles("root", 0, 250, "one.txt").length == 1);
     auto catalogPage = loadDocumentCursorPage(root, 0, 1);
@@ -507,12 +525,182 @@ unittest
     auto thirdPage = directorySource.listFilesPage("root", secondPage.nextCursor, 1);
     assert(thirdPage.files.length == 1);
     assert(!thirdPage.hasMore);
+
+    FileNode twoFile;
+    foreach (file; directorySource.listFiles("root"))
+        if (file.name == "two.txt")
+            twoFile = file;
+    assert(twoFile.cursorId.length > 0);
+    FileFilter caseSensitiveFilter;
+    caseSensitiveFilter.text = "ONE.TXT";
+    caseSensitiveFilter.caseSensitive = true;
+    auto previousCaseSensitivePage = directorySource.listPreviousFilteredFilesPage(
+        "root", FileCursor(twoFile.relativePath, twoFile.cursorId, twoFile.size),
+        10, caseSensitiveFilter);
+    assert(previousCaseSensitivePage.files.length == 0);
+
     directorySource.close();
     SourceQuery filteredQuery;
     filteredQuery.text = "one.txt";
     auto filtered = loadDocumentPage(root, 0, 250, filteredQuery);
     assert(filtered.total == 1);
     assert(filtered.blobs.length == 1);
+}
+
+@("repository tree and detail queries use independent concurrent connections")
+unittest
+{
+    import core.thread : Thread;
+    import std.file : exists, mkdirRecurse, rmdirRecurse, tempDir, write;
+    import std.format : format;
+    import std.path : buildPath;
+    import std.uuid : randomUUID;
+
+    auto root = buildPath(tempDir(), "gui-concurrent-source-" ~ randomUUID().toString());
+    mkdirRecurse(root);
+    scope (exit)
+    {
+        if (exists(root))
+            rmdirRecurse(root);
+    }
+
+    foreach (index; 0 .. 80)
+        write(buildPath(root, format("file-%03d.txt", index)),
+            format("payload-%03d", index));
+    auto nestedDirectory = buildPath(root, "nested");
+    mkdirRecurse(nestedDirectory);
+    write(buildPath(nestedDirectory, "nested.txt"), "nested payload");
+
+    auto repository = Repository.initialize(root);
+    repository.scan();
+    repository.close();
+
+    auto source = openRepositoryDirectorySource(root);
+    scope (exit)
+        source.close();
+    auto selectedFile = source.listFilesPage("root", FileCursor(), 1).files[0];
+    auto blobId = to!long(selectedFile.id);
+    auto concurrentResults = new ConcurrentSourceQueryResults();
+    auto treeThread = new Thread({
+        try
+        {
+            foreach (_; 0 .. 16)
+            {
+                concurrentResults.directoryCount = source.listDirectories("root").length;
+                concurrentResults.fileCount = source.listFilesPage("root",
+                    FileCursor(), 16).files.length;
+            }
+        }
+        catch (Exception ex)
+            concurrentResults.treeError = ex.msg;
+    });
+    auto detailThread = new Thread({
+        try
+        {
+            foreach (_; 0 .. 16)
+                if (loadDocumentDetails(root, blobId) !is null)
+                    ++concurrentResults.detailLoads;
+        }
+        catch (Exception ex)
+            concurrentResults.detailError = ex.msg;
+    });
+    treeThread.start();
+    detailThread.start();
+    treeThread.join();
+    detailThread.join();
+
+    assert(concurrentResults.treeError.length == 0, concurrentResults.treeError);
+    assert(concurrentResults.detailError.length == 0,
+        concurrentResults.detailError);
+    assert(concurrentResults.directoryCount == 1);
+    assert(concurrentResults.fileCount == 16);
+    assert(concurrentResults.detailLoads == 16);
+}
+
+@("JSON and repository sources preserve filtered sorted navigation parity")
+unittest
+{
+    import std.file : exists, mkdirRecurse, rmdirRecurse, tempDir, write;
+    import std.path : buildPath;
+    import std.uuid : randomUUID;
+
+    auto fixture = buildPath(tempDir(), "gui-source-parity-" ~ randomUUID().toString());
+    auto root = buildPath(fixture, "repository");
+    auto jsonPath = buildPath(fixture, "catalog.json");
+    mkdirRecurse(buildPath(root, "album"));
+    scope (exit)
+    {
+        if (exists(fixture))
+            rmdirRecurse(fixture);
+    }
+
+    write(buildPath(root, "album", "small.dat"), "a");
+    write(buildPath(root, "album", "medium.dat"), "abcd");
+    write(buildPath(root, "album", "large.dat"), "abcdef");
+    write(buildPath(root, "album", "largest.dat"), "abcdefgh");
+    write(buildPath(root, "outside.dat"), "outside");
+
+    auto repository = Repository.initialize(root);
+    repository.scan();
+    repository.exportJson(jsonPath);
+    repository.close();
+
+    DirectorySource jsonSource = new ProjectedDirectorySource(loadDocumentTree(jsonPath));
+    auto repositorySource = openRepositoryDirectorySource(root);
+    scope (exit)
+    {
+        jsonSource.close();
+        repositorySource.close();
+    }
+
+    FileFilter filter;
+    filter.text = "album/";
+    filter.caseSensitive = true;
+    string jsonDirectoryId;
+    foreach (directory; jsonSource.listDirectories("root", filter))
+        if (directory.relativePath == "album")
+            jsonDirectoryId = directory.id;
+    string repositoryDirectoryId;
+    foreach (directory; repositorySource.listDirectories("root", filter))
+        if (directory.relativePath == "album")
+            repositoryDirectoryId = directory.id;
+    assert(jsonDirectoryId.length > 0);
+    assert(repositoryDirectoryId.length > 0);
+
+    void assertSameFiles(FileNode[] expected, FileNode[] actual)
+    {
+        assert(expected.length == actual.length);
+        foreach (index, file; expected)
+        {
+            assert(file.relativePath == actual[index].relativePath);
+            assert(file.size == actual[index].size);
+        }
+    }
+
+    auto jsonFirst = jsonSource.listFilteredFilesPage(jsonDirectoryId,
+        FileCursor(), 2, filter, FileSortOrder.sizeAscending);
+    auto repositoryFirst = repositorySource.listFilteredFilesPage(repositoryDirectoryId,
+        FileCursor(), 2, filter, FileSortOrder.sizeAscending);
+    assertSameFiles(jsonFirst.files, repositoryFirst.files);
+    assert(jsonFirst.hasMore && repositoryFirst.hasMore);
+
+    auto jsonSecond = jsonSource.listFilteredFilesPage(jsonDirectoryId,
+        jsonFirst.nextCursor, 2, filter, FileSortOrder.sizeAscending);
+    auto repositorySecond = repositorySource.listFilteredFilesPage(repositoryDirectoryId,
+        repositoryFirst.nextCursor, 2, filter, FileSortOrder.sizeAscending);
+    assertSameFiles(jsonSecond.files, repositorySecond.files);
+    assert(!jsonSecond.hasMore && !repositorySecond.hasMore);
+
+    auto jsonPrevious = jsonSource.listPreviousFilteredFilesPage(jsonDirectoryId,
+        FileCursor(jsonSecond.files[0].relativePath, jsonSecond.files[0].cursorId,
+            jsonSecond.files[0].size), 2, filter, FileSortOrder.sizeAscending);
+    auto repositoryPrevious = repositorySource.listPreviousFilteredFilesPage(
+        repositoryDirectoryId,
+        FileCursor(repositorySecond.files[0].relativePath,
+            repositorySecond.files[0].cursorId, repositorySecond.files[0].size),
+        2, filter, FileSortOrder.sizeAscending);
+    assertSameFiles(jsonFirst.files, jsonPrevious.files);
+    assertSameFiles(jsonPrevious.files, repositoryPrevious.files);
 }
 
 @("repository detail adapter keeps archive and torrent entries lazy")
@@ -562,4 +750,78 @@ unittest
     assert(torrentDetails !is null && torrentDetails.torrentInfo !is null);
     assert(torrentDetails.torrentInfo.files.length == 0);
     assert(loadRepositoryTorrentFiles(root, torrentFile.blobId).length > 0);
+}
+
+@("archive and torrent detail adapters continue beyond 250 entries")
+unittest
+{
+    import std.file : exists, mkdirRecurse, rmdirRecurse, tempDir, write;
+    import std.format : format;
+    import std.path : buildPath;
+    import std.process : Config, execute;
+    import std.string : endsWith;
+    import std.uuid : randomUUID;
+
+    auto fixture = buildPath(tempDir(), "gui-large-nested-details-"
+        ~ randomUUID().toString());
+    auto root = buildPath(fixture, "repository");
+    auto archiveInput = buildPath(fixture, "archive-input");
+    auto nestedInput = buildPath(archiveInput, "folder");
+    mkdirRecurse(nestedInput);
+    mkdirRecurse(root);
+    scope (exit)
+    {
+        if (exists(fixture))
+            rmdirRecurse(fixture);
+    }
+
+    string[] zipArguments = ["zip", "-q", buildPath(root, "many.zip")];
+    string torrentData = "d4:infod5:filesl";
+    foreach (index; 0 .. 251)
+    {
+        auto name = format("entry-%03d.txt", index);
+        write(buildPath(nestedInput, name), "payload");
+        zipArguments ~= buildPath("folder", name);
+        torrentData ~= "d6:lengthi1e4:pathl6:folder13:" ~ name ~ "ee";
+    }
+    torrentData ~= "e4:name4:test12:piece lengthi16384e6:pieces20:"
+        ~ "01234567890123456789ee";
+    auto torrentPath = buildPath(root, "many.torrent");
+    write(torrentPath, torrentData);
+    assert(execute(zipArguments, null, Config.none, size_t.max, archiveInput).status == 0);
+
+    auto repository = Repository.initialize(root);
+    repository.scan();
+    MetadataScanOptions metadataOptions;
+    metadataOptions.scanArchives = true;
+    metadataOptions.scanTorrents = true;
+    metadataOptions.deepArchiveScan = false;
+    repository.updateMetadata(metadataOptions);
+    RepositoryFileQuery archiveQuery;
+    archiveQuery.archive = true;
+    auto archiveFile = repository.listFiles(archiveQuery)[0];
+    RepositoryFileQuery torrentQuery;
+    torrentQuery.torrent = true;
+    auto torrentFile = repository.listFiles(torrentQuery)[0];
+    repository.close();
+
+    auto archiveProbe = loadRepositoryArchiveEntries(root, archiveFile.blobId,
+        0, 251);
+    assert(archiveProbe.length == 251);
+    auto archivePage = archiveProbe[0 .. 250];
+    assert(archivePage.length == 250);
+    auto archiveContinuation = loadRepositoryArchiveEntries(root,
+        archiveFile.blobId, archivePage.length, 251);
+    assert(archiveContinuation.length == 1);
+    assert(archiveContinuation[0].relativePath.endsWith("folder/entry-250.txt"));
+
+    auto torrentProbe = loadRepositoryTorrentFiles(root, torrentFile.blobId,
+        0, 251);
+    assert(torrentProbe.length == 251);
+    auto torrentPage = torrentProbe[0 .. 250];
+    assert(torrentPage.length == 250);
+    auto torrentContinuation = loadRepositoryTorrentFiles(root,
+        torrentFile.blobId, torrentPage.length, 251);
+    assert(torrentContinuation.length == 1);
+    assert(torrentContinuation[0].relativePath == "test/folder/entry-250.txt");
 }

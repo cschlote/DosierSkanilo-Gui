@@ -1,7 +1,7 @@
 /** GTK-independent directory tree projection for source adapters. */
 module model.treeprojection;
 
-import std.algorithm : any, canFind, count, countUntil, filter, sort;
+import std.algorithm : any, canFind, filter, sort;
 import std.array : array;
 import std.conv : to;
 import std.path : baseName, dirName, buildNormalizedPath;
@@ -163,6 +163,12 @@ final class ProjectedDirectorySource : DirectorySource
 
     override DirectoryNode[] listDirectories(string parentId, FileFilter filter = FileFilter())
     {
+        auto hasActiveFilter = filter.text.length > 0 || filter.video || filter.audio
+            || filter.image || filter.textStream || filter.fileType || filter.archive
+            || filter.torrent;
+        if (!hasActiveFilter)
+            return tree.listDirectories(parentId).dup;
+
         DirectoryNode[] result;
         foreach (directory; tree.listDirectories(parentId))
         {
@@ -304,6 +310,9 @@ DirectoryTree buildDirectoryTree(const(FileInput)[] inputs)
 {
     DirectoryTree tree;
     tree.directories ~= DirectoryNode("root", "", "", "", 0, 0, 0);
+    size_t[string] directoryIndexes;
+    directoryIndexes[""] = 0;
+    size_t[] parentIndexes = [0];
 
     foreach (index, input; inputs)
     {
@@ -312,7 +321,9 @@ DirectoryTree buildDirectoryTree(const(FileInput)[] inputs)
         if (directoryPath == ".")
             directoryPath = "";
 
-        auto directoryId = ensureDirectory(tree, directoryPath);
+        auto directoryIndex = ensureDirectory(tree, directoryPath, directoryIndexes,
+            parentIndexes);
+        auto directoryId = tree.directories[directoryIndex].id;
         auto fileId = "file:" ~ index.to!string;
         FileNode file;
         file.id = fileId;
@@ -330,13 +341,15 @@ DirectoryTree buildDirectoryTree(const(FileInput)[] inputs)
         file.hasArchive = input.hasArchive;
         file.hasTorrent = input.hasTorrent;
         tree.files ~= file;
-        addFileToDirectory(tree, directoryId, input.size);
-    }
-
-    foreach (ref directory; tree.directories)
-    {
-        directory.childDirectoryCount = tree.directories.count!(node => node.parentId == directory.id);
-        directory.fileCount = tree.files.count!(fileNode => fileNode.directoryId == directory.id);
+        ++tree.directories[directoryIndex].fileCount;
+        auto aggregateIndex = directoryIndex;
+        while (true)
+        {
+            tree.directories[aggregateIndex].aggregateSize += input.size;
+            if (aggregateIndex == 0)
+                break;
+            aggregateIndex = parentIndexes[aggregateIndex];
+        }
     }
     return tree;
 }
@@ -356,39 +369,28 @@ struct FileInput
     bool hasTorrent;
 }
 
-private string ensureDirectory(ref DirectoryTree tree, string path)
+private size_t ensureDirectory(ref DirectoryTree tree, string path,
+    ref size_t[string] directoryIndexes, ref size_t[] parentIndexes)
 {
     if (path.length == 0)
-        return "root";
+        return 0;
 
-    auto existing = tree.directories.countUntil!(node => node.relativePath == path);
-    if (existing >= 0)
-        return tree.directories[existing].id;
+    if (auto existing = path in directoryIndexes)
+        return *existing;
 
     auto parentPath = dirName(path);
     if (parentPath == "." || parentPath == path)
         parentPath = "";
-    auto parentId = ensureDirectory(tree, parentPath);
+    auto parentIndex = ensureDirectory(tree, parentPath, directoryIndexes,
+        parentIndexes);
+    auto directoryIndex = tree.directories.length;
     auto id = "directory:" ~ path;
-    tree.directories ~= DirectoryNode(id, parentId, baseName(path), path, 0, 0, 0);
-    return id;
-}
-
-private void addFileToDirectory(ref DirectoryTree tree, string directoryId, ulong size)
-{
-    auto currentId = directoryId;
-    while (currentId.length > 0)
-    {
-        foreach (ref directory; tree.directories)
-        {
-            if (directory.id == currentId)
-            {
-                directory.aggregateSize += size;
-                currentId = directory.parentId;
-                break;
-            }
-        }
-    }
+    tree.directories ~= DirectoryNode(id, tree.directories[parentIndex].id,
+        baseName(path), path, 0, 0, 0);
+    parentIndexes ~= parentIndex;
+    directoryIndexes[path] = directoryIndex;
+    ++tree.directories[parentIndex].childDirectoryCount;
+    return directoryIndex;
 }
 
 unittest
@@ -478,4 +480,27 @@ unittest
             nextSizePage.files[0].size), 1, FileFilter(), FileSortOrder.sizeAscending);
     assert(previousSizePage.files.length == 1);
     assert(previousSizePage.files[0].id == smallestPage.files[0].id);
+}
+
+@("directory tree projection scales across many distinct directories")
+unittest
+{
+    import std.format : format;
+
+    FileInput[] inputs;
+    foreach (index; 0 .. 10_000)
+        inputs ~= FileInput(format("folder-%05d/file.bin", index), 1);
+
+    auto tree = buildDirectoryTree(inputs);
+    auto source = new ProjectedDirectorySource(tree);
+    assert(source.listDirectories("root").length == 10_000);
+    assert(tree.root.childDirectoryCount == 10_000);
+    assert(tree.root.fileCount == 0);
+    assert(tree.root.aggregateSize == 10_000);
+    assert(tree.directories.length == 10_001);
+    assert(tree.files.length == 10_000);
+    auto lastDirectory = tree.directories[$ - 1];
+    assert(lastDirectory.id == "directory:folder-09999");
+    assert(lastDirectory.fileCount == 1);
+    assert(lastDirectory.aggregateSize == 1);
 }

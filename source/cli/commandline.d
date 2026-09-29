@@ -80,6 +80,8 @@ void parseCliOptions(ref string[] args)
 @("CLI options parsing")
 unittest
 {
+    import std.algorithm.searching : canFind;
+
     string[] testArgs = [
         "appname", "-q", "test query", "--case-sensitive", "file1.json",
         "file2.json"
@@ -90,4 +92,15 @@ unittest
     assert(argsArray.jsonPaths.length == 2);
     assert(argsArray.jsonPaths[0] == "file1.json");
     assert(argsArray.jsonPaths[1] == "file2.json");
+
+    foreach (option; ["<file.json>", "<repository-directory>", "-q, --query",
+            "-v, --verbose", "--case-sensitive", "--no-auto-filter",
+            "--self-test", "--self-test-delay", "-h, --help"])
+        assert(cliUsageText.canFind(option), "CLI help omits " ~ option);
+
+    argsArray = CliOptions.init;
+    string[] helpArgs = ["appname", "--help", "file.json"];
+    parseCliOptions(helpArgs);
+    assert(argsArray.showHelp);
+    assert(argsArray.jsonPaths == ["file.json"]);
 }

@@ -54,6 +54,25 @@
                           </object>
                         </child>
                         <child>
+                          <object class="GtkSeparatorMenuItem" id="fileExportSeparator">
+                            <property name="can-focus">False</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="fileExportCsvMenuItem">
+                            <property name="can-focus">False</property>
+                            <property name="label">Export Filtered Rows as CSV</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="fileExportJsonMenuItem">
+                            <property name="can-focus">False</property>
+                            <property name="label">Export Filtered Rows as JSON</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
                           <object class="GtkMenuItem" id="fileCancelOperationMenuItem">
                             <property name="can-focus">False</property>
                             <property name="label">_Cancel Current Operation</property>

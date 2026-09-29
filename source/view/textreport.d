@@ -52,23 +52,19 @@ string rowsToDisplayText(string filePath, const(BlobRow)[] rows) {
  *   Number of duplicate digest groups
  */
 size_t countDuplicateDigestGroups(const(BlobRow)[] rows) {
-    string[] seen;
-    string[] duplicates;
+    size_t[string] digestCounts;
 
     foreach (row; rows) {
-        if (row.sha1.length == 0) {
+        if (row.sha1.length == 0)
             continue;
-        }
-        if (seen.canFind(row.sha1)) {
-            if (!duplicates.canFind(row.sha1)) {
-                duplicates ~= row.sha1;
-            }
-            continue;
-        }
-        seen ~= row.sha1;
+        ++digestCounts[row.sha1];
     }
 
-    return duplicates.length;
+    size_t duplicateGroups;
+    foreach (count; digestCounts)
+        if (count > 1)
+            ++duplicateGroups;
+    return duplicateGroups;
 }
 
 /** Filter rows to entries that belong to duplicate SHA1 groups.
@@ -79,27 +75,18 @@ size_t countDuplicateDigestGroups(const(BlobRow)[] rows) {
  *   Rows participating in repeated SHA1 groups
  */
 BlobRow[] filterDuplicateRows(const(BlobRow)[] rows) {
-    string[] seen;
-    string[] duplicates;
+    size_t[string] digestCounts;
     auto filtered = appender!(BlobRow[])();
 
     foreach (row; rows) {
-        if (row.sha1.length == 0) {
+        if (row.sha1.length == 0)
             continue;
-        }
-        if (seen.canFind(row.sha1)) {
-            if (!duplicates.canFind(row.sha1)) {
-                duplicates ~= row.sha1;
-            }
-        } else {
-            seen ~= row.sha1;
-        }
+        ++digestCounts[row.sha1];
     }
 
     foreach (row; rows) {
-        if (row.sha1.length > 0 && duplicates.canFind(row.sha1)) {
+        if (row.sha1.length > 0 && digestCounts[row.sha1] > 1)
             filtered.put(row);
-        }
     }
 
     return filtered.data;
@@ -190,6 +177,20 @@ unittest {
     assert(duplicates.length == 2);
     assert(duplicates[0].sha1 == "same");
     assert(duplicates[1].sha1 == "same");
+}
+
+@("duplicate digest helpers handle large catalogs with repeated groups")
+unittest {
+    BlobRow[] rows;
+    foreach (index; 0 .. 10_000)
+        rows ~= BlobRow(sha1: format("unique-%05d", index));
+    rows ~= BlobRow(sha1: "duplicate-a");
+    rows ~= BlobRow(sha1: "duplicate-b");
+    rows ~= BlobRow(sha1: "duplicate-a");
+    rows ~= BlobRow(sha1: "duplicate-b");
+
+    assert(countDuplicateDigestGroups(rows) == 2);
+    assert(filterDuplicateRows(rows).length == 4);
 }
 
 @("BlobRow display text tests")

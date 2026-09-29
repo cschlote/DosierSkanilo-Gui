@@ -28,7 +28,8 @@ Implemented:
 
 - GTK-independent `DirectoryNode` and `FileNode` projections.
 - `DirectorySource` abstraction with JSON and repository adapters.
-- SQLite `listDirectories()` and bounded `listFiles()` APIs in `DosierSkanilo`.
+- SQLite `listDirectories()` and bounded `listFiles()` are available in the
+  [DosierSkanilo library](https://github.com/cschlote/DosierSkanilo).
 - Lazy directory expansion with loading and error states.
 - Asynchronous repository child queries and paged file navigation.
 - Per-tab expanded-directory tracking and restoration.
@@ -45,50 +46,80 @@ Implemented:
 - Archive and torrent detail sections render their entry paths as nested trees.
 - Repository archive and torrent trees fetch bounded first pages asynchronously
   and expose a continuation marker when additional entries exist.
+- JSON and SQLite adapters pass parity coverage for case-sensitive filtering,
+  size sorting, and forward/backward file navigation.
+- Per-tab media, file-type, archive, and torrent toggles are synchronized into
+  query state before automatic filtering.
 - Late archive/torrent replies are checked against the active blob, selection
   generation, and loading-marker token before changing a TreeStore.
 - Audio rows use the GStreamer playback controls even when metadata reports
   embedded cover art; video streams retain preview priority.
+- Repository root summaries use bounded backend aggregates, and each directory
+  source operation opens an independent repository connection.
+- Expanded repository directories reconcile leftover loading placeholders after
+  asynchronous child insertion; duplicate requests are suppressed while pending.
+- Directory/file context menus support opening files externally and showing
+  directories or containing folders in the file manager.
+- The File menu exports rows matching the active tab's filters as CSV or a
+  versioned GUI JSON summary.
+- File-type signatures appear in a wrapped, selectable description view with a
+  clear empty state.
+- Files without specialized metadata show a fallback overview with identity,
+  size, known paths, and available checksums.
+- Per-tab filter toggles are captured in the query state before applying filters.
 
 Known limitations:
 
-- `RepositoryDirectorySource` currently asks for all directories and file
-  references during initialization to compute the root summary. This bypasses
-  the otherwise bounded table/tree paging and must move to bounded root summary
-  queries.
-- The repository directory-source adapter retains a `Repository` connection;
-  concurrent asynchronous tree/detail operations need independent read
-  connections and an integration test.
-- Archive/torrent continuation beyond the first 250-entry chunk still needs an
-  integration test with a larger fixture, including selecting and copying a path
-  on a later page.
-- The virtual table has a bounded four-chunk cache and regression coverage for
-  distant cursor requests and backward reload after eviction; interactive long
-  scroll-forward/scroll-back behavior still needs a large-repository UI test.
-- The selected tree-file cursor is not yet persisted with the per-tab filter and
-  sort state.
+- Adapter-level archive/torrent continuation is covered with 251-entry fixtures,
+  GTK-independent page/copy-path helper logic has unit coverage, and opt-in
+  TreeView signal tests verify continuation offsets/tokens and copying a
+  later-page leaf's full path. The opt-in GTK model test changes the selection
+  token before applying a page reply and verifies that the stale reply is rejected.
 - The blob table remains an alternative, transitional view; the directory tree
   is still the primary navigation surface.
 - Several window splitters and video-preview layout behaviors remain on the
   open-issues list in `TODO.md`.
+- Scan, metadata scraping, and analysis actions are not yet available in GTK;
+  their shared CLI/GUI execution plan is described in the backend plan at
+`https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09`.
 
 ## Verification Baseline
 
 The current GUI branch passes:
 
-- `dub test --compiler=ldc2` — 22 tests.
+- `dub test --compiler=ldc2` — 35 tests.
 - `dub build --compiler=ldc2`.
 - `git diff --check`.
+- `DOSIER_GUI_ACTIVATION_TEST=1 dub test --compiler=ldc2 -- --threads=1
+  --include=activat` — GTK TreeView activation checks with a usable display.
+- `DOSIER_GUI_TABLE_SCROLL_TEST=1 dub test --compiler=ldc2 -- --threads=1
+  --include='scrolls through evicted chunks'` — GTK TreeView long-scroll check.
+- `DOSIER_GUI_TREE_LOAD_TEST=1 dub test --compiler=ldc2 -- --threads=1
+  --include='expanded GTK directories recover'` — expanded loading-placeholder
+  recovery check.
 - GTK self-tests under `G_DEBUG=fatal-warnings` for an audio-plus-cover fixture,
   repository archive/torrent fixtures, and a large repository. Self-test mode
   selects the first row and expands remote archive/torrent roots when present.
 
-The virtual-table integration test uses a temporary 20-row repository and a
-two-row chunk size. It requests a distant row, forces earlier chunks out of the
-four-chunk cache, then requests the first row while a later chunk is in flight
-and verifies that the backward request completes. Audio classification and
-GStreamer preroll were tested with an MP3 fixture and fake sinks; audible output
-through a physical audio device has not been smoke-tested.
+The virtual-table test uses a temporary 1,000-row repository with 50-row chunks.
+It queues a backward request during a forward load, reads all rows in both
+directions, verifies stable blob IDs after cache eviction, and asserts that no
+more than four chunks remain cached. An opt-in GTK TreeView test scrolls through
+distant rows and back to evicted chunks. Audio classification and GStreamer
+preroll were tested with an MP3 fixture and fake sinks; audible output through a
+physical audio device has not been smoke-tested.
+
+The repository source concurrency test runs repeated tree queries and selected
+blob detail loads in parallel against an 81-file temporary repository.
+
+The JSON/SQLite parity test compares case-sensitive filtering, size-sorted
+forward pages, and backward navigation. A separate repository fixture verifies
+archive and torrent continuation from 250 to entry 251.
+
+The nested-detail logic test verifies trimming the 251st look-ahead item,
+continuation offsets, and copying the complete path of the later-page file.
+The GTK signal-level continuation/leaf activation and long-scroll checks are
+opt-in to keep the default parallel, display-independent unit suite stable.
 
 The source adapter is intentionally opaque. JSON and SQLite expose the same
 logical result set to the GUI. SQLite may fetch internal chunks, but those
@@ -239,6 +270,12 @@ selection actions.
 
 ## Analysis Operations
 
+Status: **Planned; no scanner or analysis actions are currently exposed by the
+GUI.** The target is shared operation logic: CLI and GTK pass the same typed
+request/options to the DosierSkanilo library. GTK must not reimplement scanning
+or metadata extraction. See backend WP-09 for the operation contract and staged
+implementation plan at `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09`.
+
 Opening a source should not implicitly run duplicate detection or other costly
 analysis. Operations should be explicit and available from a `Tools` menu:
 
@@ -249,26 +286,30 @@ analysis. Operations should be explicit and available from a `Tools` menu:
 - scan torrent metadata
 - export the current selection
 
-Operations need progress reporting, cancellation, source-scope selection, and
-clear result ownership. Results can initially be held in GUI state. Once their
-shape is stable and useful to multiple clients, common result DTOs and
-operations should move into `DosierSkanilo`.
+Operations need a shared progress/cancellation contract, source-scope selection,
+and clear result ownership. A background task manager will marshal progress to
+the GTK main loop, serialize conflicting writes per repository, and refresh the
+active view after successful mutations. CLI output/exit-code behavior should be
+an adapter over the same operation results. JSON and SQLite remain explicit
+storage modes. See the backend plan at `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09`.
 
 ## Archive Passwords
 
-Password handling should be abstracted before adding archive operations:
+### Desired user flow
 
-```text
-PasswordResolver.resolve(archiveId)
-PasswordStore.save(archiveId, password)
-PasswordStore.remove(archiveId)
-```
+When the user opens a password-protected archive, the GUI prompts for its
+password. The archive context menu also offers an action to enter or retry the
+password. After a successful password check, the GUI asks whether to remember it
+for that archive. A remembered password is offered automatically on later opens;
+the context menu can forget it or replace it.
 
-The first implementation may live in the GUI, but it must not be coupled to a
-widget. Passwords should not be stored as ordinary plaintext metadata. Preferred
-storage is the platform keyring. A repository-local fallback can use a
-permission-restricted secrets file below `.dosierskanilo`; an encrypted SQLite
-store can be considered when a repository-wide secret policy exists.
+The first implementation should use the simplest local persistence available to
+the GUI, separate from catalog metadata. Store an entry keyed by the source and
+archive identity in the user's GUI settings. There is no requirement for a
+keyring, encryption layer, repository-wide secret policy, or backend API. Do
+not save a password after a failed attempt or unless the user opts in. This
+feature is planned; the GUI does not currently prompt for or remember archive
+passwords.
 
 ## Migration Sequence
 
@@ -281,32 +322,34 @@ a compatibility layer around the current table UI:
 4. Replace the flattened table as the primary view with the directory tree.
    **Tree-first navigation is implemented; the blob table remains an
    alternative view.**
-5. Move filter, sort, selection, and paging state into each tab. **Mostly
-   complete; current tree-file cursor persistence remains.**
-6. Add lazy file details and specialized detail renderers. **Partially complete;
-   repository details and audio/image/video previews are implemented, with
-   other specialized renderers still open.**
+5. Move filter, sort, selection, and paging state into each tab. **Filter,
+   sort, and TreeView cursor state now persist per document.**
+6. Add lazy file details and specialized detail renderers. **Repository details,
+   structured MediaInfo streams, file-type signatures, fallback overview, and
+   audio/image/video previews are implemented.**
 7. Add archive and torrent entry trees. **Implemented with bounded asynchronous
-   first-page loading and continuation markers; multi-page integration
-   verification remains.**
+   paging; adapter and GTK continuation, stale-reply, and later-page path tests
+   cover entries beyond 250.**
 8. Add explicit analysis operations through the Tools menu.
 9. Move stable, reusable projection and analysis code into `DosierSkanilo`.
    **Directory query DTOs and bounded queries are complete.**
 
 ## Immediate Plan
 
-1. Replace eager repository root file-reference enumeration with bounded root
+1. [x] Replace eager root file-reference enumeration with bounded root
    summary/count/aggregate queries.
-2. Give concurrent asynchronous repository operations independent read
+2. [x] Give concurrent asynchronous repository operations independent read
    connections and verify concurrent tree/detail loads.
-3. Verify archive/torrent continuation over more than 250 entries, including
-   stale-result rejection after selection changes and path copying from a later
-   page.
-4. Exercise the virtual blob table through interactive forward/backward
-   scrolling across multiple cache evictions on a large repository.
-5. Persist the active TreeView cursor alongside per-tab filter and sort state.
-6. Complete directory/file context actions and remaining specialized detail
-   renderers; keep analysis and export operations explicit.
+3. [x] Verify adapter archive/torrent continuation and later-page paths beyond
+   250 entries. GTK model and signal tests cover stale-result rejection,
+   continuation activation, and later-page path copying.
+4. [x] Exercise the virtual blob table through forward/backward access across
+   multiple cache evictions on a 1,000-row repository; GTK TreeView scrolling is
+   covered by an opt-in display test.
+5. Complete file-type and fallback detail renderers. **MediaInfo streams,
+   previews, and archive/torrent trees are implemented.**
+6. Expose duplicate, missing-file, and metadata/archive/torrent analysis as
+   explicit Tools operations with progress, cancellation, and source scope.
 7. Revisit splitter restoration and embedded-video layout issues listed in
    `TODO.md`.
 

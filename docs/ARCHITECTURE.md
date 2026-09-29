@@ -11,6 +11,26 @@ The GUI is a read-only browser for precomputed DosierSkanilo JSON output and
 initialized `.dosierskanilo` SQLite repositories. It does not run the scanner,
 compute metadata, or write repository data back to disk.
 
+The planned operation model is that CLI and GTK invoke the same backend scan,
+metadata, and analysis operations. Those operations currently have no shared
+progress/cancellation contract, and the GUI remains read-only; implementation
+phases are tracked in the backend plan: `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md` (WP-09).
+
+The target GUI workflow runs these operations on background workers, reports
+phase/progress/results through the active document status UI, supports
+cooperative cancellation, and refreshes the affected source when a mutation
+completes. Repository writes must not share a connection with background tree
+readers; conflicting writes to the same repository are serialized.
+
+```text
+CLI / GTK action -> typed operation request -> shared DosierSkanilo service
+                                          -> progress / cancel / result events
+```
+
+SQLite repository and explicit JSON modes remain distinct targets. The GUI
+operation chooser should select the same mode and operation semantics as the
+CLI rather than implement a second scanner or metadata pipeline.
+
 ## 1. High-Level Flow
 
 1. User opens a JSON index file, repository root, or restores previously open

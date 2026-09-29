@@ -1,7 +1,7 @@
 # DosierSkanilo Datenfile-Dokumentation (extrahiert)
 
-Quelle: `../DosierSkanilo`  
-Stand: 2026-03-14
+Quelle: [DosierSkanilo](https://github.com/cschlote/DosierSkanilo)
+Stand: 2026-09-28
 
 ## 1. Zweck des Datenfiles
 
@@ -22,20 +22,22 @@ Serializer schreibt ein Wrapper-Objekt:
 
 ```json
 {
-  "dataVersion": 2,
+  "dataVersion": 3,
   "dataArray": [ ... NamedBinaryBlob ... ]
 }
 ```
 
 Wichtig:
 
-- Beim Lesen wird `dataVersion == 2` erzwungen.
-- Legacy-Inhalte werden in `fixupDataClassArrayIn(...)` migriert.
+- Beim Schreiben wird immer `dataVersion: 3` ausgegeben.
+- Beim Lesen werden ein unversioniertes Legacy-Array sowie Wrapper-Versionen 1,
+  2 und 3 akzeptiert. Version 1 und Legacy-Felder werden beim Einlesen
+  normalisiert; unbekannte Wrapper-Versionen werden abgewiesen.
 
 Code-Referenzen:
 
-- `source/dosierskanilo/namedbinaryblob.d` (`deserializeDataClassJsonString`)
-- `source/dosierskanilo/namedbinaryblob.d` (`serializeDataClassArrayFile`)
+- `source/dosierskanilo/model/namedbinaryblob.d`
+  (`deserializeDataClassJsonString`, `serializeDataClassArrayFile`)
 
 ## 3. NamedBinaryBlob-Felder (semantisch)
 
@@ -48,7 +50,7 @@ Pflicht / Kern:
 Optional:
 
 - `fileType: string`
-- `mediaInfoSig: { imageStreams[], videoStreams[], audioStreams[], textStreams[] }`
+- `mediaInfoSig`: image, video, audio, and text stream arrays
 - `archiveSpecs[]` (Archiveinhalte inkl. Checksummen)
 - `torrentInfo` (Name, Info-Hash, Magnet URI, Dateien, ...)
 
@@ -68,14 +70,25 @@ Im Code definiert:
 
 Effektiv fuer JSON-I/O aktuell relevant:
 
-- gelesen/geschrieben wird Version 2 im Wrapper
-- v0/v1-Beispiele werden nach v2 migriert
+- gelesen/geschrieben wird Version 3 im Wrapper
+- akzeptierte Legacy- und Wrapper-Eingaben werden intern normalisiert und
+  beim Schreiben als Version 3 ausgegeben
 
 Beispieldateien:
 
-- `test/json_file_v0.json` (plain array, legacy)
+- `test/json_file_v0.json` (unversioniertes Legacy-Array)
 - `test/json_file_v1.json` (wrapper mit `dataVersion: 1`)
-- `test/json_file_v2.json` (wrapper mit `dataVersion: 2`)
+- `test/json_file_v2.json` (historischer Fixture-Dateiname; enthält Wrapper
+  `dataVersion: 3`)
+- `test/json_file_v1_wrongversion.json` (ungültige Version, muss abgewiesen werden)
+- `test/json_file_v2_archive.json` und `test/json_file_v2_torrent.json`
+  (historische Fixture-Dateinamen; enthalten `dataVersion: 3` sowie Archiv- und
+  Torrent-Felder)
+
+Es gibt derzeit keine eingecheckte `json_file_v3.json`-Fixture. Der Serializer
+schreibt Version 3; die vorhandenen Fixtures `json_file_v2*.json` dienen als
+erwartete Ausgabe für die Serializer-Tests. Eine separate Fixture mit
+`dataVersion: 2` gibt es derzeit nicht.
 
 ## 5. Wichtige GUI-Implikationen
 
@@ -110,9 +123,9 @@ Damit sind Tabelle + Detailansicht + Dubletten-Gruppierung direkt umsetzbar.
 
 ## 7. Verifizierte Quellen (ausgelesen)
 
-- `../DosierSkanilo/docs/README.md`
-- `../DosierSkanilo/docs/ARCHITECTURE.md`
-- `../DosierSkanilo/source/dosierskanilo/namedbinaryblob.d`
-- `../DosierSkanilo/test/json_file_v0.json`
-- `../DosierSkanilo/test/json_file_v1.json`
-- `../DosierSkanilo/test/json_file_v2.json`
+- [Backend README](https://github.com/cschlote/DosierSkanilo/blob/main/README.md)
+- [Backend architecture](https://github.com/cschlote/DosierSkanilo/blob/main/docs/ARCHITECTURE.md)
+- [JSON format reference](https://github.com/cschlote/DosierSkanilo/blob/main/docs/JSON-FORMAT.md)
+- `source/dosierskanilo/model/namedbinaryblob.d` in the backend repository
+- `test/json_file_v0.json`, `test/json_file_v1.json`, and
+  `test/json_file_v2*.json` in the backend repository

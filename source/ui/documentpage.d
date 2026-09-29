@@ -77,8 +77,6 @@ DocumentPageUi loadDocumentPageUi(DocumentTab document)
     document.pageSizeCombo.setVisible(false);
     document.rowDetails = builderObject!Label(pageBuilder, "page", "rowDetails");
     document.status = builderObject!Label(pageBuilder, "page", "status");
-    document.perfStatus = builderObject!Label(pageBuilder, "page", "perfStatus");
-    document.fileMetaStatus = builderObject!Label(pageBuilder, "page", "fileMetaStatus");
 
     return ui;
 }

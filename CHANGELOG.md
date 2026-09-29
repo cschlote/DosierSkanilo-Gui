@@ -2,6 +2,55 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+- Repository root summaries now use bounded aggregate queries instead of
+  materializing file references.
+- Repository directory-source operations now open independent read connections,
+  allowing concurrent background queries.
+- Case-sensitive filters are now preserved during backward file navigation.
+- Added a concurrent tree/detail source test against an 81-file repository.
+- Added JSON/SQLite parity coverage for filtered, sorted paging and backward
+  navigation.
+- Added archive and torrent adapter continuation coverage beyond 250 entries,
+  including later-page nested paths.
+- Nested-detail paging and copy-path decisions now share tested GTK-independent
+  helpers, including look-ahead trimming and continuation offsets.
+- Added an opt-in GTK TreeView activation test for copying a later-page nested
+  file's complete path.
+- Added an opt-in GTK continuation-row signal test for its blob identity, offset,
+  selection token, and request token.
+- The nested-entry reply guard now checks current TreeStore root/marker state;
+  GTK model coverage rejects a page response after its selection token changes.
+- Expanded virtual-table cursor coverage to 1,000 rows in both directions and
+  added opt-in GTK TreeView scrolling across evicted chunks.
+- Hid obsolete row-count/page-size controls; repository cursor chunks remain
+  internal and the old “All rows” reload is no longer exposed.
+- Persisted each tab's directory cursor and filter state alongside its existing
+  sort state, restoring Previous/Next navigation after restart.
+- MediaInfo details now render as a structured stream table with format and
+  stream properties instead of a single raw text block.
+- File-type signatures now use a wrapped, selectable description view with an
+  explicit empty state.
+- Added a fallback file overview with name, size, known-path count, available
+  checksums, and a no-specialized-metadata explanation.
+- Expanded repository directories now retry loading placeholders after parent
+  results arrive, so restored/open rows no longer require a collapse/re-expand.
+- Directory context menus can open folders in the file manager; file menus can
+  open files externally or show their containing folder.
+- Added CSV and versioned JSON export for rows matching the active tab's filters.
+- Media, file-type, archive, and torrent toggle states are now copied into the
+  document query before auto-applying the filter.
+- JSON documents now build and show the unfiltered tree before any saved
+  auto-filter runs; Apply and Clear filter buttons are wired to the active tab.
+- Directory rows toggle expansion on activation, and their context menu can
+  expand or collapse the subtree.
+- Selection details are back below the Previous/Next controls; timing and source
+  format diagnostics are written to verbose logs instead of persistent status
+  rows.
+- Filter controls remain visible during background operations, and the text
+  field is labeled “Filename / SHA1”.
+
 ## Release 0.7.0 - 2026-09-17
 
 - Audio files now use the GStreamer playback controls even when their metadata

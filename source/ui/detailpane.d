@@ -24,6 +24,7 @@ import gtk.c.types : GType;
 
 import ui.builderutils : builderObject, loadUiBuilder;
 import ui.documenttab : DocumentTab;
+import ui.nestedentrylogic : nestedEntryCopyPath;
 import ui.tablecolumns : configureKnownFilesColumns;
 
 /** Widgets from the detail pane layout. */
@@ -76,12 +77,26 @@ DetailPaneUi loadDetailPaneUi(DocumentTab document)
 
     document.detailChecksumExpander = builderObject!Expander(detailBuilder, "detail", "detailChecksumExpander");
     document.detailChecksumStatus = builderObject!Label(detailBuilder, "detail", "detailChecksumStatus");
+    document.detailFallbackExpander = builderObject!Expander(detailBuilder, "detail",
+        "detailFallbackExpander");
+    document.detailFallbackStatus = builderObject!Label(detailBuilder, "detail", "detailFallbackStatus");
+    document.detailFallbackStore = new TreeStore([GType.STRING, GType.STRING]);
+    document.detailFallbackTreeView = builderObject!TreeView(detailBuilder, "detail",
+        "detailFallbackTreeView");
+    document.detailFallbackTreeView.setModel(document.detailFallbackStore);
+    configureFallbackTree(document.detailFallbackTreeView);
     document.detailMediaInfoExpander = builderObject!Expander(detailBuilder, "detail", "detailMediaInfoExpander");
     document.detailMediaInfoStatus = builderObject!Label(detailBuilder, "detail", "detailMediaInfoStatus");
-    document.detailMediaInfoView = builderObject!TextView(detailBuilder, "detail", "detailMediaInfoView");
+    document.detailMediaInfoStore = new TreeStore([GType.STRING, GType.STRING,
+        GType.STRING]);
+    document.detailMediaInfoTreeView = builderObject!TreeView(detailBuilder, "detail",
+        "detailMediaInfoTreeView");
+    document.detailMediaInfoTreeView.setModel(document.detailMediaInfoStore);
+    configureMediaInfoTree(document.detailMediaInfoTreeView);
     document.detailFileTypeExpander = builderObject!Expander(detailBuilder, "detail", "detailFileTypeExpander");
     document.detailFileTypeStatus = builderObject!Label(detailBuilder, "detail", "detailFileTypeStatus");
-    document.detailFileTypeView = builderObject!TextView(detailBuilder, "detail", "detailFileTypeView");
+    document.detailFileTypeLabel = builderObject!Label(detailBuilder, "detail",
+        "detailFileTypeLabel");
     document.detailArchiveExpander = builderObject!Expander(detailBuilder, "detail", "detailArchiveExpander");
     document.detailArchiveStatus = builderObject!Label(detailBuilder, "detail", "detailArchiveStatus");
     document.detailArchiveView = builderObject!TextView(detailBuilder, "detail", "detailArchiveView");
@@ -149,6 +164,62 @@ private void configureNestedEntryTree(TreeView treeView)
     treeView.appendColumn(sizeColumn);
 }
 
+private void configureMediaInfoTree(TreeView treeView)
+{
+    void addColumn(string title, int modelColumn, bool expand)
+    {
+        auto renderer = new CellRendererText();
+        auto column = new TreeViewColumn();
+        column.setTitle(title);
+        column.packStart(renderer, true);
+        column.addAttribute(renderer, "text", modelColumn);
+        column.setResizable(true);
+        column.setExpand(expand);
+        treeView.appendColumn(column);
+    }
+
+    addColumn("Stream", 0, false);
+    addColumn("Format", 1, false);
+    addColumn("Properties", 2, true);
+    treeView.setHeadersClickable(false);
+}
+
+private void configureFallbackTree(TreeView treeView)
+{
+    auto propertyRenderer = new CellRendererText();
+    auto propertyColumn = new TreeViewColumn();
+    propertyColumn.setTitle("Property");
+    propertyColumn.packStart(propertyRenderer, true);
+    propertyColumn.addAttribute(propertyRenderer, "text", 0);
+    propertyColumn.setResizable(true);
+    treeView.appendColumn(propertyColumn);
+
+    auto valueRenderer = new CellRendererText();
+    auto valueColumn = new TreeViewColumn();
+    valueColumn.setTitle("Value");
+    valueColumn.packStart(valueRenderer, true);
+    valueColumn.addAttribute(valueRenderer, "text", 1);
+    valueColumn.setResizable(true);
+    valueColumn.setExpand(true);
+    treeView.appendColumn(valueColumn);
+    treeView.setHeadersClickable(false);
+}
+
+private void bindNestedEntryActivation(TreeView treeView, DocumentTab document,
+    string entryLabel, DetailPaneCallbacks callbacks)
+{
+    treeView.addOnRowActivated((TreePath path, TreeViewColumn column, TreeView activatedView) {
+        auto model = activatedView.getModel();
+        auto iter = new TreeIter();
+        if (!model.getIter(iter, path))
+            return;
+        string entryPath;
+        if (nestedEntryCopyPath(model.getValueString(iter, 3),
+                model.getValueString(iter, 2), entryPath))
+            callbacks.copyTextToClipboard(entryLabel, entryPath, document);
+    });
+}
+
 /** Wire row actions and copy buttons for the detail pane.
  *
  * Params:
@@ -159,21 +230,10 @@ private void configureNestedEntryTree(TreeView treeView)
  */
 void bindDetailPaneSignals(DocumentTab document, DetailPaneCallbacks callbacks)
 {
-    void bindNestedEntryActivation(TreeView treeView, string entryLabel)
-    {
-        treeView.addOnRowActivated((TreePath path, TreeViewColumn column, TreeView activatedView) {
-            auto model = activatedView.getModel();
-            auto iter = new TreeIter();
-            if (!model.getIter(iter, path) || model.getValueString(iter, 3) != "File")
-                return;
-            auto entryPath = model.getValueString(iter, 2);
-            if (entryPath.length > 0)
-                callbacks.copyTextToClipboard(entryLabel, entryPath, document);
-        });
-    }
-
-    bindNestedEntryActivation(document.detailArchiveTreeView, "archive entry path");
-    bindNestedEntryActivation(document.detailTorrentTreeView, "torrent file path");
+    bindNestedEntryActivation(document.detailArchiveTreeView, document,
+        "archive entry path", callbacks);
+    bindNestedEntryActivation(document.detailTorrentTreeView, document,
+        "torrent file path", callbacks);
 
     void selectRelativeFile(bool next)
     {
@@ -225,6 +285,44 @@ void bindDetailPaneSignals(DocumentTab document, DetailPaneCallbacks callbacks)
     });
 
     document.tableView.getSelection().addOnChanged((TreeSelection _) {
-        callbacks.updateSelectedRowDetails(document);
+        if (!document.syncingTreeSelection)
+            callbacks.updateSelectedRowDetails(document);
     });
+}
+
+@("activating a later-page nested leaf copies its full path")
+unittest
+{
+    import gtk.Main : Main;
+    import std.process : environment;
+
+    if (environment.get("DOSIER_GUI_ACTIVATION_TEST", "") != "1")
+        return;
+    string[] args = ["dosierskanilo-gui-tests"];
+    assert(Main.initCheck(args), "GTK activation test requires a usable display.");
+
+    auto store = new TreeStore([GType.STRING, GType.STRING, GType.STRING,
+        GType.STRING, GType.STRING, GType.STRING, GType.STRING]);
+    auto leaf = store.createIter(null);
+    store.setValue(leaf, 0, "entry-250.txt");
+    store.setValue(leaf, 1, "12 bytes");
+    store.setValue(leaf, 2, "test/folder/entry-250.txt");
+    store.setValue(leaf, 3, "File");
+    auto treeView = new TreeView(store);
+    auto document = new DocumentTab();
+    string copiedLabel;
+    string copiedPath;
+    DetailPaneCallbacks callbacks;
+    callbacks.copyTextToClipboard = (string label, string value, DocumentTab _) {
+        copiedLabel = label;
+        copiedPath = value;
+    };
+    bindNestedEntryActivation(treeView, document, "torrent file path", callbacks);
+
+    auto path = new TreePath();
+    path.appendIndex(0);
+    treeView.rowActivated(path, null);
+
+    assert(copiedLabel == "torrent file path");
+    assert(copiedPath == "test/folder/entry-250.txt");
 }

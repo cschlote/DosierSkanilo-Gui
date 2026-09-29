@@ -17,6 +17,7 @@ import gtk.Box;
 import gtk.TextView;
 import gtk.TreeIter;
 import gtk.TreeStore;
+import gtk.TreeView;
 import gtk.Widget;
 import gtk.StyleContext;
 import gtk.c.types : GtkWrapMode;
@@ -38,12 +39,12 @@ import gstreamer.c.types : GstBusSyncReply, GstFormat, GstMessageType, GstSeekFl
 import gstinterfaces.VideoOverlay;
 import pango.c.types : PangoEllipsizeMode;
 
-import std.file : exists;
+import dosierskanilo.repository.repository : Repository;
 import std.algorithm.searching : canFind;
 import std.conv : to;
 import std.format : format;
-import std.path : absolutePath, buildNormalizedPath, dirName, extension, isAbsolute;
-import std.string : join, split, startsWith, toLower;
+import std.path : absolutePath, extension;
+import std.string : join, split, startsWith, strip, toLower;
 import std.exception : enforce;
 import std.uri : encode;
 
@@ -51,6 +52,9 @@ import dosierskanilo.metadata.mediainfosig : MediaInfoAudio, MediaInfoSig, Media
 import model.blobrow : BlobRow;
 import model.treeprojection : NestedFileNode;
 import ui.documenttab : DocumentTab, PreviewScaleMode;
+import ui.contextpaths : resolveDocumentSourcePath;
+import ui.fallbackrenderer : fallbackDetailRows;
+import ui.mediainforenderer : mediaInfoStreamRows;
 
 /** Normalize empty field values in the details form.
  *
@@ -99,6 +103,91 @@ void setMetadataDetails(Expander expander, TextView view, string title, string d
     expander.setExpanded(false);
     expander.setVisible(true);
     view.getBuffer().setText(hasDetails ? detailsText : "No details available.");
+}
+
+/** Present the `file` utility signature as a wrapped, selectable description. */
+string fileTypeDisplayText(string signature)
+{
+    auto normalized = signature.strip;
+    return normalized.length > 0 ? normalized : "No file type signature available.";
+}
+
+void setFileTypeDetails(Expander expander, Label label, string signature)
+{
+    auto hasDetails = signature.strip.length > 0;
+    label.setText(fileTypeDisplayText(signature));
+    label.setLineWrap(true);
+    label.setSelectable(true);
+    label.setXalign(0);
+    label.setYalign(0);
+    expander.setSensitive(hasDetails);
+    expander.setExpanded(false);
+    expander.setVisible(true);
+}
+
+/** Render structured MediaInfo stream rows instead of its generic text dump. */
+void setMediaInfoStreamDetails(DocumentTab document, const(BlobRow) row)
+{
+    document.detailMediaInfoStore.clear();
+    auto signature = row.sourceBlob is null ? null : row.sourceBlob.mediaInfoSig;
+    auto rows = mediaInfoStreamRows(signature);
+    foreach (stream; rows)
+    {
+        auto iter = document.detailMediaInfoStore.createIter(null);
+        document.detailMediaInfoStore.setValue(iter, 0, stream.stream);
+        document.detailMediaInfoStore.setValue(iter, 1, stream.format);
+        document.detailMediaInfoStore.setValue(iter, 2, stream.properties);
+    }
+    document.detailMediaInfoExpander.setSensitive(rows.length > 0);
+    document.detailMediaInfoExpander.setExpanded(false);
+    document.detailMediaInfoExpander.setVisible(true);
+    document.detailMediaInfoTreeView.setVisible(true);
+}
+
+/** Clear the structured MediaInfo stream view when no row is selected. */
+void clearMediaInfoStreamDetails(DocumentTab document)
+{
+    document.detailMediaInfoStore.clear();
+    document.detailMediaInfoExpander.setSensitive(false);
+    document.detailMediaInfoExpander.setExpanded(false);
+    document.detailMediaInfoExpander.setVisible(true);
+    document.detailMediaInfoTreeView.setVisible(true);
+}
+
+/** Render the file-identity fallback when no specialized metadata is available. */
+void setFallbackDetails(DocumentTab document, const(BlobRow) row)
+{
+    document.detailFallbackStore.clear();
+    auto rows = fallbackDetailRows(row);
+    foreach (detail; rows)
+    {
+        auto iter = document.detailFallbackStore.createIter(null);
+        document.detailFallbackStore.setValue(iter, 0, detail.property);
+        document.detailFallbackStore.setValue(iter, 1, detail.value);
+    }
+    document.detailFallbackStatus.setText(rows.length > 0
+        ? "File overview · fallback" : "File overview");
+    document.detailFallbackExpander.setSensitive(rows.length > 0);
+    document.detailFallbackExpander.setExpanded(false);
+    document.detailFallbackExpander.setVisible(true);
+    document.detailFallbackTreeView.setVisible(true);
+}
+
+void clearFallbackDetails(DocumentTab document)
+{
+    document.detailFallbackStore.clear();
+    document.detailFallbackStatus.setText("File overview");
+    document.detailFallbackExpander.setSensitive(false);
+    document.detailFallbackExpander.setExpanded(false);
+    document.detailFallbackExpander.setVisible(true);
+    document.detailFallbackTreeView.setVisible(true);
+}
+
+@("file type renderer trims signatures and shows an explicit empty state")
+unittest
+{
+    assert(fileTypeDisplayText("  Matroska video data  ") == "Matroska video data");
+    assert(fileTypeDisplayText(" \n ") == "No file type signature available.");
 }
 
 /** Populate the known-files table from the current row, preferring original file specs.
@@ -267,7 +356,23 @@ private string resolvePreviewPath(DocumentTab document, const(BlobRow) row)
         return "";
     }
 
-    string candidatePath;
+    auto repositoryRoot = document.directorySourceRemote
+        ? Repository.findRoot(document.filePath) : "";
+    auto selectedTreePath = document.selectedTreeCursor.relativePath;
+    if (selectedTreePath.length > 0)
+    {
+        auto resolvedSelection = resolveDocumentSourcePath(document.filePath,
+            selectedTreePath, repositoryRoot);
+        foreach (spec; row.sourceBlob.fileSpecs)
+        {
+            if (spec is null || spec.fileName.length == 0)
+                continue;
+            if (resolveDocumentSourcePath(document.filePath, spec.fileName,
+                    repositoryRoot) == resolvedSelection)
+                return resolvedSelection;
+        }
+    }
+
     foreach (spec; row.sourceBlob.fileSpecs)
     {
         if (spec is null || spec.fileName.length == 0)
@@ -275,32 +380,13 @@ private string resolvePreviewPath(DocumentTab document, const(BlobRow) row)
             continue;
         }
 
-        candidatePath = spec.fileName;
-        break;
-    }
-
-    if (candidatePath.length == 0)
-    {
-        candidatePath = row.primaryFileName;
-    }
-
-    if (candidatePath.length == 0)
-    {
-        return "";
-    }
-
-    if (isAbsolute(candidatePath))
-    {
+        auto candidatePath = resolveDocumentSourcePath(document.filePath,
+            spec.fileName, repositoryRoot);
         return candidatePath;
     }
 
-    auto baseDirectory = dirName(document.filePath);
-    if (baseDirectory.length == 0)
-    {
-        return candidatePath;
-    }
-
-    return buildNormalizedPath(baseDirectory, candidatePath);
+    return resolveDocumentSourcePath(document.filePath, row.primaryFileName,
+        repositoryRoot);
 }
 
 /** Decide whether the selected row is likely to represent an image file. */
@@ -393,19 +479,14 @@ private bool isVideoPreviewCandidate(const(BlobRow) row)
 }
 
 /** Explain why a selected file cannot be shown in the preview pane. */
-private string unavailablePreviewSummary(const(BlobRow) row, string fileName,
-    string previewPath)
+private string unavailablePreviewSummary(const(BlobRow) row, string fileName)
 {
     auto type = row.fileType.length > 0 ? row.fileType : "unknown";
     string reason;
-    if (previewPath.length > 0 && !exists(previewPath))
-    {
-        reason = "The referenced file is not available at the recorded path.";
-    }
-    else if (isImagePreviewCandidate(row) || isVideoPreviewCandidate(row)
+    if (isImagePreviewCandidate(row) || isVideoPreviewCandidate(row)
         || isAudioPreviewCandidate(row))
     {
-        reason = "The file type is recognized, but no compatible preview could be opened.";
+        reason = "The preview decoder could not open the referenced path or file format.";
     }
     else if (row.hasText)
     {
@@ -1681,20 +1762,7 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
     auto fileName = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
     auto mediaSummary = row.mediaInfoDetails.length > 0 ? row.mediaInfoDetails : "No media metadata available.";
     auto previewPath = resolvePreviewPath(document, row);
-    auto imagePreviewPath = "";
-    if (previewPath.length > 0)
-    {
-        if (previewPath != document.selectedPreviewCandidatePath)
-        {
-            document.selectedPreviewCandidatePath = previewPath;
-            document.selectedPreviewCandidateExists = exists(previewPath);
-        }
-
-        if (document.selectedPreviewCandidateExists)
-        {
-            imagePreviewPath = previewPath;
-        }
-    }
+    auto imagePreviewPath = previewPath;
 
     document.selectedPreviewSourcePath = "";
     document.selectedPreviewSourcePixbuf = null;
@@ -1738,9 +1806,28 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
         document.detailPreviewImage.clear();
 
         document.detailPreviewTitle.setText("Preview unavailable");
-        document.detailPreviewSummary.setText(unavailablePreviewSummary(row, fileName,
-            previewPath));
+        document.detailPreviewSummary.setText(unavailablePreviewSummary(row, fileName));
     }
 
     refreshMediaPreview(document);
+}
+
+@("preview path resolution honors the selected file alias relative to the JSON source")
+unittest
+{
+    import dosierskanilo.model.filespec : FileSpec;
+    import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob;
+
+    auto document = new DocumentTab();
+    document.filePath = "/nas/library/catalog.json";
+
+    auto blob = new NamedBinaryBlob();
+    blob.fileSpecs = [new FileSpec("archive/old-clip.mp4", ""),
+        new FileSpec("media/clip.mp4", "")];
+    BlobRow row;
+    row.sourceBlob = blob;
+    row.primaryFileName = "archive/old-clip.mp4";
+    document.selectedTreeCursor.relativePath = "media/clip.mp4";
+
+    assert(resolvePreviewPath(document, row) == "/nas/library/media/clip.mp4");
 }

@@ -8,6 +8,11 @@ and CLI use the same backend library; scanning, checksum generation,
 archive/torrent inspection, duplicate analysis, and JSON writing are currently
 started through the CLI.
 
+The planned direction is operation parity: both clients will invoke the same
+backend scan, metadata, and analysis operations. The GUI task runner, live
+progress, and cooperative cancellation are not implemented yet; see WP-09 in
+the backend plan at `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md`.
+
 The GUI currently supports:
 
 - loading current library JSON and older wrapper/legacy shapes
@@ -20,14 +25,22 @@ The GUI currently supports:
 - sortable table columns for index, size, checksum state, file type, media
 	info, archive, and torrent flags
 - detail panes for checksums, known file names, MediaInfo, file type, archive,
-	and torrent metadata
+  and torrent metadata
+- structured MediaInfo stream details with format, dimensions/channels, and
+  available rate, language, and duration fields
+- wrapped, selectable file-type signatures in the detail pane
+- a fallback file overview for files without specialized metadata
 - persistent window geometry, splitter positions, tabs, preferences, and
 	clipboard copy actions
 - background loading/filtering with cancel support and performance timings
 - Previous/Next page navigation for SQLite repository documents
+- CSV and JSON export of the active tab's filtered row subset
 
 The GUI does not yet expose the scanner-side workflow from the overhauled
 DosierSkanilo backend. Use the CLI for scan, analyze, and write-back jobs.
+The planned direction is for CLI and GUI to start the same library operations;
+the shared progress/cancellation contract and GUI task runner are tracked as
+WP-09 in the backend plan at `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md`.
 
 The GUI focuses on a traditional desktop workflow:
 
@@ -74,6 +87,7 @@ root or any directory below it; the nearest `.dosierskanilo` directory is used.
 - media, file type, archive, and torrent presence filters
 - sortable table columns
 - detailed record panes with copy actions and raw JSON inspection
+- export filtered row subsets as CSV or GUI-specific JSON summaries
 
 ## Documentation
 

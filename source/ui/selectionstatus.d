@@ -4,9 +4,11 @@ module ui.selectionstatus;
 import std.format : format;
 import std.conv : to;
 
+import cli.logging : logLineVerbose;
 import model.blobrow : BlobRow;
-import ui.detailswidgets : setDetailEntry, setKnownFilesTable, setMetadataDetails,
-    setMetadataStatusLabel, stopVideoPreview;
+import ui.detailswidgets : clearFallbackDetails, clearMediaInfoStreamDetails, setDetailEntry,
+    setFileTypeDetails, setKnownFilesTable, setMetadataDetails, setMetadataStatusLabel,
+    stopVideoPreview;
 import ui.documenttab : DocumentTab;
 
 /** Render a compact status icon for boolean table cells.
@@ -92,7 +94,7 @@ string metadataPresenceSummary(bool value)
     return value ? format("%s present", boolStatusIcon(true)) : format("%s none", boolStatusIcon(false));
 }
 
-/** Refresh the performance summary label for a document tab.
+/** Log the measured phase timings for a document tab.
  *
  * Params:
  *     document = Active document tab whose performance label should be
@@ -102,15 +104,14 @@ string metadataPresenceSummary(bool value)
  */
 void updatePerfStatus(DocumentTab document)
 {
-    document.perfStatus.setText(format(
-            "Timings: load=%s ms | filter=%s ms | render=%s ms",
-            document.lastLoadElapsedMs >= 0 ? to!string(document.lastLoadElapsedMs) : "-",
-            document.lastFilterElapsedMs >= 0 ? to!string(document.lastFilterElapsedMs) : "-",
-            document.lastRenderElapsedMs >= 0 ? to!string(document.lastRenderElapsedMs) : "-"
-    ));
+    logLineVerbose("[timing] ", document.filePath,
+        " load=", document.lastLoadElapsedMs >= 0 ? to!string(document.lastLoadElapsedMs) : "-",
+        "ms filter=", document.lastFilterElapsedMs >= 0 ? to!string(document.lastFilterElapsedMs) : "-",
+        "ms render=", document.lastRenderElapsedMs >= 0 ? to!string(document.lastRenderElapsedMs) : "-",
+        "ms");
 }
 
-/** Refresh the metadata status label for a document tab.
+/** Log the parsed format metadata for a document tab.
  *
  * Params:
  *     document = Active document tab whose metadata label should be updated.
@@ -120,12 +121,10 @@ void updatePerfStatus(DocumentTab document)
 void updateFileMetaStatus(DocumentTab document)
 {
     auto dataVersionText = document.loadedDataVersion >= 0 ? to!string(document.loadedDataVersion) : "-";
-    document.fileMetaStatus.setText(format(
-            "File metadata: version=%s | root=%s | keys=%s",
-            dataVersionText,
-            document.loadedRootShape,
-            document.loadedRootKeysSummary
-    ));
+    logLineVerbose("[metadata] ", document.filePath,
+        " version=", dataVersionText,
+        " root=", document.loadedRootShape,
+        " keys=", document.loadedRootKeysSummary);
 }
 
 /** Clear all active filter flags and the filter query for a document tab.
@@ -184,8 +183,6 @@ void clearSelectionDetails(DocumentTab document)
     document.selectedPreviewIsImage = false;
     document.selectedPreviewIsVideo = false;
     document.selectedPreviewIsAudio = false;
-    document.selectedPreviewCandidatePath = "";
-    document.selectedPreviewCandidateExists = false;
     document.selectedPreviewSourcePath = "";
     document.selectedPreviewSourcePixbuf = null;
     setDetailEntry(document.detailSha1HexEntry, "");
@@ -205,8 +202,9 @@ void clearSelectionDetails(DocumentTab document)
             false)));
     setMetadataStatusLabel(document.detailTorrentStatus, "Torrent", format("%s unavailable", boolStatusIcon(
             false)));
-    setMetadataDetails(document.detailMediaInfoExpander, document.detailMediaInfoView, "MediaInfo", "");
-    setMetadataDetails(document.detailFileTypeExpander, document.detailFileTypeView, "File Type", "");
+    clearMediaInfoStreamDetails(document);
+    clearFallbackDetails(document);
+    setFileTypeDetails(document.detailFileTypeExpander, document.detailFileTypeLabel, "");
     setMetadataDetails(document.detailArchiveExpander, document.detailArchiveView, "Archive", "");
     setMetadataDetails(document.detailTorrentExpander, document.detailTorrentView, "Torrent", "");
     setKnownFilesTable(document, BlobRow.init);

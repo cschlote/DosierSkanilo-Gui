@@ -5,11 +5,15 @@ This directory contains project documentation for the GTK frontend.
 ## Contents
 
 - `ARCHITECTURE.md`: high-level architecture and module boundaries
-- `GUI-REDESIGN.md`: current directory-tree implementation and source-opaque query plan
+- `GUI-REDESIGN.md`: current directory-tree implementation and source-opaque
+  query plan
 - `CHANGELOG.md`: user-visible and engineering changes by release
 - `TODO.md`: planned next steps
 - `UI_REFACTOR.md`: current UI issues and the Glade-based refactor direction
 - `DATAFILE_EXTRACTION.md`: extracted data-format notes from scanner project
+- `TEST_FIXTURES.md`: test fixture descriptions and generation reference
+- [Backend storage benchmarks](https://github.com/cschlote/DosierSkanilo/blob/main/docs/BENCHMARKS.md):
+  JSON/SQLite baseline measurements
 
 ## Development Flow
 

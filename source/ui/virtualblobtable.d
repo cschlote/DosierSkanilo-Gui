@@ -371,29 +371,38 @@ unittest
     assert(model.getValueString(iter, COL_FILE_SIZE) == "123");
 }
 
-@("Virtual blob model follows distant rows and queued backward requests")
+@("Virtual blob model scrolls through evicted chunks in both directions")
 unittest
 {
     import core.thread : Thread;
     import core.time : dur;
     import dosierskanilo.repository.repository : Repository;
+    import gtk.CellRendererText;
+    import gtk.Main : Main;
+    import gtk.TreePath;
+    import gtk.TreeView;
+    import gtk.TreeViewColumn;
+    import gtk.Window;
     import glib.MainContext;
     import model.datasource : SourceQuery, loadDocumentCursorPage;
     import std.file : exists, mkdirRecurse, rmdirRecurse, tempDir, write;
     import std.format : format;
     import std.path : buildPath;
+    import std.process : environment;
     import std.uuid : randomUUID;
 
     auto root = buildPath(tempDir(), "virtual-blob-model-" ~ randomUUID().toString());
     mkdirRecurse(root);
     auto catalogPath = buildPath(root, "catalog.json");
+    enum size_t rowCount = 1_000;
+    enum size_t chunkSize = 50;
     string catalog = `{"dataVersion":3,"dataArray":[`;
-    foreach (index; 0 .. 20)
+    foreach (index; 0 .. rowCount)
     {
         if (index > 0)
             catalog ~= ",";
         catalog ~= format(
-            `{"fileName":"virtual-%02d.bin","fileSize":%d,"checkSums":{"md5sum_b64":"digest-%02d"}}`,
+            `{"fileName":"virtual-%04d.bin","fileSize":%d,"checkSums":{"md5sum_b64":"digest-%04d"}}`,
             index, index + 1, index);
     }
     catalog ~= "]}";
@@ -407,9 +416,9 @@ unittest
             rmdirRecurse(root);
     }
     repository.importJson(catalogPath);
-    assert(repository.blobCount == 20);
+    assert(repository.blobCount == rowCount);
 
-    auto firstPage = loadDocumentCursorPage(root, 0, 2, SourceQuery());
+    auto firstPage = loadDocumentCursorPage(root, 0, chunkSize, SourceQuery());
     auto firstRows = extractRowsFromBlobs(firstPage.blobs);
     foreach (index, ref row; firstRows)
     {
@@ -417,38 +426,86 @@ unittest
         row.detailsLoaded = false;
     }
     auto firstBlobId = firstPage.blobIds[0];
-    auto model = new VirtualBlobTableModel(root, SourceQuery(), 2, firstRows,
+    auto model = new VirtualBlobTableModel(root, SourceQuery(), chunkSize, firstRows,
         firstPage.total, firstPage.nextBlobId, firstPage.hasMore);
 
-    TreeIter distantRow;
-    assert(model.iterNthChild(distantRow, null, 15));
-    assert(model.getValueString(distantRow, COL_SOURCE_ID) == "");
-
     auto context = MainContext.default_();
-    size_t waitedMs;
-    while (7 !in model.chunks && waitedMs < 10_000)
+    string sourceIdAt(size_t rowIndex)
     {
-        context.iteration(false);
-        Thread.sleep(dur!"msecs"(2));
-        waitedMs += 2;
+        TreeIter iter;
+        assert(model.iterNthChild(iter, null, cast(int) rowIndex));
+        auto sourceId = model.getValueString(iter, COL_SOURCE_ID);
+        size_t waitedMs;
+        while (sourceId.length == 0 && waitedMs < 10_000)
+        {
+            context.iteration(false);
+            Thread.sleep(dur!"msecs"(2));
+            waitedMs += 2;
+            sourceId = model.getValueString(iter, COL_SOURCE_ID);
+        }
+        assert(sourceId.length > 0,
+            format("The model did not load row %s from its cursor chunk.", rowIndex));
+        assert(model.chunks.length <= 4,
+            "The virtual table retained more than four summary chunks.");
+        return sourceId;
     }
-    assert(7 in model.chunks, "The model did not load the requested distant cursor chunk.");
-    assert(model.getValueString(distantRow, COL_SOURCE_ID).length > 0);
 
-    TreeIter laterRow;
+    auto distantRowIndex = chunkSize * 15;
+    auto distantBlobId = sourceIdAt(distantRowIndex);
+    assert(distantBlobId.length > 0);
+
+    // Queue a request for the evicted first chunk while the next chunk is in flight.
+    TreeIter queuedForwardRow;
     TreeIter firstRow;
-    assert(model.iterNthChild(laterRow, null, 19));
+    assert(model.iterNthChild(queuedForwardRow, null, cast(int) (chunkSize * 16)));
+    assert(model.getValueString(queuedForwardRow, COL_SOURCE_ID) == "");
+    assert(model.requestActive);
     assert(model.iterNthChild(firstRow, null, 0));
-    assert(model.getValueString(laterRow, COL_SOURCE_ID) == "");
     assert(model.getValueString(firstRow, COL_SOURCE_ID) == "");
+    assert(model.hasRequestedTargetChunk && model.requestedTargetChunk == 0);
+    assert(sourceIdAt(0) == firstBlobId.to!string);
 
-    waitedMs = 0;
-    while (0 !in model.chunks && waitedMs < 10_000)
+    auto observedIds = new string[rowCount];
+    foreach (rowIndex; 0 .. rowCount)
     {
-        context.iteration(false);
-        Thread.sleep(dur!"msecs"(2));
-        waitedMs += 2;
+        observedIds[rowIndex] = sourceIdAt(rowIndex);
     }
-    assert(0 in model.chunks, "The backward cursor request was lost during an active load.");
-    assert(model.getValueString(firstRow, COL_SOURCE_ID) == firstBlobId.to!string);
+    assert(observedIds[0] == firstBlobId.to!string);
+    assert(observedIds[distantRowIndex] == distantBlobId);
+    assert(model.chunks.length <= 4);
+
+    foreach_reverse (rowIndex; 0 .. rowCount)
+        assert(sourceIdAt(rowIndex) == observedIds[rowIndex],
+            format("Cursor reload changed the blob ID at row %s.", rowIndex));
+    assert(model.chunks.length <= 4);
+
+    if (environment.get("DOSIER_GUI_TABLE_SCROLL_TEST", "") == "1")
+    {
+        string[] args = ["dosierskanilo-gui-tests"];
+        assert(Main.initCheck(args), "GTK table scroll test requires a usable display.");
+        auto treeView = new TreeView(model);
+        auto renderer = new CellRendererText();
+        auto column = new TreeViewColumn();
+        column.packStart(renderer, true);
+        column.addAttribute(renderer, "text", COL_INDEX);
+        treeView.appendColumn(column);
+        auto window = new Window("Virtual blob table scroll test");
+        window.setDefaultSize(800, 400);
+        window.add(treeView);
+        window.showAll();
+        scope (exit)
+            window.destroy();
+
+        size_t[] visibleTargets = [0, 249, 499, 749, 999, 749, 499, 249, 0];
+        foreach (rowIndex; visibleTargets)
+        {
+            auto path = new TreePath();
+            path.appendIndex(cast(int) rowIndex);
+            treeView.scrollToCell(path, null, true, 0.5f, 0.0f);
+            treeView.setCursor(path, null, false);
+            assert(sourceIdAt(rowIndex) == observedIds[rowIndex]);
+            context.iteration(false);
+            assert(model.chunks.length <= 4);
+        }
+    }
 }
