@@ -5,7 +5,7 @@
  * same filtering and duplicate grouping behavior.
  *
  * Authors: DosierSkanilo contributors
- * License: CC-BY-NC-SA 4.0
+ * License: GPL-3.0-only
  */
 module view.textreport;
 

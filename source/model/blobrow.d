@@ -5,7 +5,7 @@
  * projection used between parser and view layers.
  *
  * Authors: DosierSkanilo contributors
- * License: CC-BY-NC-SA 4.0
+ * License: GPL-3.0-only
  */
 module model.blobrow;
 

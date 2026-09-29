@@ -21,8 +21,9 @@ import gstreamer.c.types : GstState, GstStateChangeReturn;
 import ui.builderutils : builderObject, loadUiBuilder;
 import ui.documenttab : DocumentTab, PreviewScaleMode;
 import ui.detailswidgets : jumpVideoPreview, pauseVideoPreview, playVideoPreview,
-    refreshMediaPreview, seekVideoPreview, setElementIntProperty, setVideoPreviewVolume,
-    syncVideoPreviewPosition, syncVideoPreviewWindow;
+    refreshMediaPreview, resumePendingVideoPreview, seekVideoPreview,
+    setElementIntProperty, setVideoPreviewVolume, syncVideoPreviewPosition,
+    syncVideoPreviewWindow;
 
 /** Widgets from the detail preview layout. */
 struct DetailPreviewUi
@@ -56,6 +57,8 @@ DetailPreviewUi loadDetailPreviewUi(DocumentTab document)
     ui.previewPane = builderObject!Box(previewBuilder, "preview", "previewPane");
     document.detailPreviewTitle = builderObject!Label(previewBuilder, "preview", "detailPreviewTitle");
     document.detailPreviewSummary = builderObject!Label(previewBuilder, "preview", "detailPreviewSummary");
+    document.detailPreviewSummary.setXalign(0);
+    document.detailPreviewSummary.setYalign(0);
     document.detailPreviewImageControls = builderObject!Box(previewBuilder, "preview", "previewControls");
     document.detailPreviewScroll = builderObject!ScrolledWindow(previewBuilder, "preview", "detailPreviewScroll");
     document.detailPreviewImage = builderObject!Image(previewBuilder, "preview", "detailPreviewImage");
@@ -247,7 +250,9 @@ void bindDetailPreviewSignals(DocumentTab document, DetailPreviewCallbacks callb
 
     document.detailPreviewVideoArea.addOnRealize((Widget _) {
         syncVideoPreviewWindow(document);
-        if (document.selectedPreviewIsVideo)
+        if (document.previewVideoPendingWindowSync)
+            resumePendingVideoPreview(document);
+        else if (document.selectedPreviewIsVideo)
         {
             refreshMediaPreview(document);
         }
@@ -256,8 +261,16 @@ void bindDetailPreviewSignals(DocumentTab document, DetailPreviewCallbacks callb
     document.detailPreviewVideoArea.addOnSizeAllocate((allocation, Widget _) {
         if (document.selectedPreviewIsVideo)
         {
-            syncVideoPreviewWindow(document, allocation.width, allocation.height);
+            if (document.previewVideoPendingWindowSync)
+                resumePendingVideoPreview(document);
+            else
+                syncVideoPreviewWindow(document, allocation.width, allocation.height);
         }
+    });
+
+    document.detailPreviewVideoFrame.addOnSizeAllocate((allocation, Widget _) {
+        if (document.previewVideoPendingWindowSync)
+            resumePendingVideoPreview(document);
     });
 
     document.detailPreviewContainButton.addOnToggled((ToggleButton button) {

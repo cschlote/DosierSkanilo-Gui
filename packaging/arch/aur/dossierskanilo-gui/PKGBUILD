@@ -5,7 +5,7 @@ pkgrel=1
 pkgdesc='GTK desktop frontend for DosierSkanilo JSON data'
 arch=('x86_64')
 url='https://gitlab.vahanus.net/dlang/dosierskanilo-gui'
-license=('custom:CC-BY-NC-SA-4.0')
+license=('GPL-3.0-only')
 depends=('gtk3' 'gstreamer')
 makedepends=('ldc' 'dub' 'git')
 source=("$pkgname-$pkgver.tar.gz::https://gitlab.vahanus.net/dlang/dosierskanilo-gui/-/archive/v$pkgver/dosierskanilo-gui-v$pkgver.tar.gz"
@@ -24,4 +24,5 @@ build() {
 package() {
   cd "$srcdir/dosierskanilo-gui-v$pkgver"
   install -Dm755 build/bin/dosierskanilo-gui "$pkgdir/usr/bin/dosierskanilo-gui"
+  install -Dm644 LICENSE.md "$pkgdir/usr/share/licenses/$pkgname/LICENSE.md"
 }

@@ -247,6 +247,7 @@ class DocumentTab
     double previewVideoVolume = 0.5;
     bool previewVideoPositionSyncing;
     bool previewVideoTrackSyncing;
+    bool previewVideoPendingWindowSync;
     int previewVideoTrackCount = -1;
     int previewAudioTrackCount = -1;
     int previewSubtitleTrackCount = -1;

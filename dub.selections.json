@@ -7,6 +7,7 @@
 		"jsonizer": "0.7.7",
 		"mediainfo-d": "26.4.2",
 		"silly": "1.2.0-dev.2",
+		"va_toolbox": "0.4.1",
 		"xxhash3": "0.0.5"
 	}
 }

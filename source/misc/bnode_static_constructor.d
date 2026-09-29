@@ -5,7 +5,7 @@
  * library and flattens it into `BlobRow` instances for table rendering.
  *
  * Authors: DosierSkanilo contributors
- * License: CC-BY-NC-SA 4.0
+ * License: GPL-3.0-only
  */
 module misc.bnode_static_constructor;
 

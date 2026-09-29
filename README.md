@@ -20,10 +20,10 @@ The GUI currently supports:
   DosierSkanilo library API
 - text filtering by file name or SHA1
 - media filters for video, audio, image, and text streams, including NOT
-	inversion and hit counters
+  inversion and hit counters
 - presence filters for file type, archive, and torrent metadata
 - sortable table columns for index, size, checksum state, file type, media
-	info, archive, and torrent flags
+  info, archive, and torrent flags
 - detail panes for checksums, known file names, MediaInfo, file type, archive,
   and torrent metadata
 - structured MediaInfo stream details with format, dimensions/channels, and
@@ -31,7 +31,7 @@ The GUI currently supports:
 - wrapped, selectable file-type signatures in the detail pane
 - a fallback file overview for files without specialized metadata
 - persistent window geometry, splitter positions, tabs, preferences, and
-	clipboard copy actions
+  clipboard copy actions
 - background loading/filtering with cancel support and performance timings
 - Previous/Next page navigation for SQLite repository documents
 - CSV and JSON export of the active tab's filtered row subset
@@ -96,6 +96,10 @@ root or any directory below it; the nearest `.dosierskanilo` directory is used.
 - `CHANGELOG.md`
 - `TODO.md`
 - `docs/DATAFILE_EXTRACTION.md`
+
+## License
+
+DosierSkanilo-Gui is licensed under [GPL-3.0-only](LICENSE.md).
 
 ## Privacy Note
 

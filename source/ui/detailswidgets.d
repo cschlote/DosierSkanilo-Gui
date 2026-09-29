@@ -40,13 +40,48 @@ import gstinterfaces.VideoOverlay;
 import pango.c.types : PangoEllipsizeMode;
 
 import dosierskanilo.repository.repository : Repository;
+import va_toolbox.hexdumps : toPrettyHexDump;
 import std.algorithm.searching : canFind;
 import std.conv : to;
 import std.format : format;
 import std.path : absolutePath, extension;
-import std.string : join, split, startsWith, strip, toLower;
+import std.string : join, replace, split, startsWith, strip, toLower;
 import std.exception : enforce;
 import std.uri : encode;
+import std.utf : validate;
+
+enum size_t PREVIEW_HEX_DUMP_BYTES = 512;
+enum size_t PREVIEW_TEXT_BYTES = 8192;
+
+private void setPreviewSummaryMonospace(Label label, bool enabled)
+{
+    auto context = label.getStyleContext();
+    if (enabled)
+        context.addClass("preview-summary-monospace");
+    else
+        context.removeClass("preview-summary-monospace");
+    label.setXalign(0);
+    label.setYalign(0);
+}
+
+private bool isTextPreviewCandidate(const(BlobRow) row)
+{
+    if (row.hasText)
+        return true;
+    auto type = row.fileType.toLower;
+    if (type.canFind("text") || type.canFind("ascii") || type.canFind("unicode"))
+        return true;
+    switch (extension(row.primaryFileName.toLower))
+    {
+    case ".txt", ".text", ".md", ".csv", ".json", ".xml", ".html", ".htm",
+            ".css", ".js", ".d", ".c", ".h", ".cpp", ".hpp", ".log",
+            ".ini", ".cfg", ".conf", ".yaml", ".yml", ".toml", ".sh",
+            ".srt", ".vtt", ".sub":
+        return true;
+    default:
+        return false;
+    }
+}
 
 import dosierskanilo.metadata.mediainfosig : MediaInfoAudio, MediaInfoSig, MediaInfoText, MediaInfoVideo;
 import model.blobrow : BlobRow;
@@ -511,6 +546,61 @@ private string previewFileCheckFailure(string path, string error)
         : format("Referenced file is missing:\n%s", path);
 }
 
+private string previewHexDump(const(ubyte)[] bytes, bool truncated)
+{
+    if (bytes.length == 0)
+        return "The file is empty.";
+    auto shownBytes = bytes.length > PREVIEW_HEX_DUMP_BYTES
+        ? bytes[0 .. PREVIEW_HEX_DUMP_BYTES] : bytes;
+    auto output = toPrettyHexDump(shownBytes);
+    if (truncated || bytes.length > PREVIEW_HEX_DUMP_BYTES)
+        output ~= format("\nHex dump limited to the first %s bytes.", PREVIEW_HEX_DUMP_BYTES);
+    return output;
+}
+
+private string previewText(const(ubyte)[] bytes, bool truncated)
+{
+    if (bytes.length == 0)
+        return "The text file is empty.";
+    auto text = cast(string) bytes.idup;
+    try
+        validate(text);
+    catch (Exception)
+        return previewHexDump(bytes, truncated);
+    text = text.replace("\0", "�");
+    if (truncated)
+        text ~= format("\n\nText preview limited to the first %s bytes.",
+            PREVIEW_TEXT_BYTES);
+    return text;
+}
+
+@("text previews preserve multiline UTF-8 and fall back to hex for invalid data")
+unittest
+{
+    auto textBytes = cast(const(ubyte)[]) "line one\nline two";
+    assert(previewText(textBytes, false) == "line one\nline two");
+
+    ubyte[] invalid = [0xFF, 0x00, 0x41];
+    assert(previewText(invalid, false).canFind("ff 00 41"));
+}
+
+@("text preview accepts file signatures and uses a bounded UTF-8 text prefix")
+unittest
+{
+    import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob;
+
+    auto blob = new NamedBinaryBlob();
+    blob.fileType = "ASCII text, with line terminators";
+    BlobRow row;
+    row.sourceBlob = blob;
+    row.primaryFileName = "unknown.data";
+    assert(isTextPreviewCandidate(row));
+    assert(previewText(cast(const(ubyte)[])"line one\nline two", false)
+        == "line one\nline two");
+    assert(previewText(cast(const(ubyte)[])"text", true)
+        .canFind("limited to the first"));
+}
+
 /** Convert a local filesystem path into a file URI. */
 private string toFileUri(string path)
 {
@@ -574,6 +664,7 @@ void stopVideoPreview(DocumentTab document)
     document.previewVideoOverlay = null;
     document.detailPreviewVideoSinkWidget = null;
     document.previewVideoPlayerAudioOnly = false;
+    document.previewVideoPendingWindowSync = false;
 }
 
 /** Resolve the GtkWidget exposed by gtksink. */
@@ -1534,12 +1625,17 @@ private void updatePreviewVideo(DocumentTab document)
     document.previewVideoPlayer.setState(GstState.NULL);
     setVideoPreviewVolume(document, document.previewVideoVolume);
     document.previewVideoPlayer.setProperty("uri", new Value(uri));
-    if (!syncVideoPreviewWindow(document))
+    auto frameWidth = document.detailPreviewVideoFrame.getAllocatedWidth();
+    auto frameHeight = document.detailPreviewVideoFrame.getAllocatedHeight();
+    if (frameWidth <= 1 || frameHeight <= 1
+        || !syncVideoPreviewWindow(document, frameWidth, frameHeight))
     {
         document.previewVideoPlayer.setState(GstState.READY);
+        document.previewVideoPendingWindowSync = true;
         syncVideoTrackSelectors(document);
         return;
     }
+    document.previewVideoPendingWindowSync = false;
 
     if (document.previewVideoAutostart)
     {
@@ -1552,6 +1648,34 @@ private void updatePreviewVideo(DocumentTab document)
         syncVideoPlaybackButton(document, false);
     }
 
+    syncVideoTrackSelectors(document);
+    cast(void) syncVideoPreviewPosition(document);
+}
+
+/** Start a video that had to wait for the preview frame to be realized and sized. */
+void resumePendingVideoPreview(DocumentTab document)
+{
+    if (document is null || !document.previewVideoPendingWindowSync
+        || !document.selectedPreviewIsVideo || document.previewVideoPlayer is null
+        || document.detailPreviewVideoFrame is null)
+        return;
+
+    auto width = document.detailPreviewVideoFrame.getAllocatedWidth();
+    auto height = document.detailPreviewVideoFrame.getAllocatedHeight();
+    if (width <= 1 || height <= 1 || !syncVideoPreviewWindow(document, width, height))
+        return;
+
+    document.previewVideoPendingWindowSync = false;
+    if (document.previewVideoAutostart)
+    {
+        document.previewVideoPlayer.setState(GstState.PLAYING);
+        syncVideoPlaybackButton(document, true);
+    }
+    else
+    {
+        document.previewVideoPlayer.setState(GstState.PAUSED);
+        syncVideoPlaybackButton(document, false);
+    }
     syncVideoTrackSelectors(document);
     cast(void) syncVideoPreviewPosition(document);
 }
@@ -1776,9 +1900,10 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
 {
     import core.thread : Thread;
     import glib.Idle;
-    import std.file : exists;
+    import std.file : exists, read;
 
     document.detailPreviewTitle.setText("Preview");
+    setPreviewSummaryMonospace(document.detailPreviewSummary, false);
     auto requestId = ++document.previewPathRequestId;
     document.previewPathCheckPending = false;
 
@@ -1795,8 +1920,7 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
     document.selectedPreviewIsImage = !document.selectedPreviewIsVideo
         && !document.selectedPreviewIsAudio
         && previewPath.length > 0 && isImagePreviewCandidate(row);
-    document.selectedPreviewPath = (document.selectedPreviewIsImage || document.selectedPreviewIsVideo
-            || document.selectedPreviewIsAudio) ? previewPath : "";
+    document.selectedPreviewPath = previewPath;
 
     if (document.selectedPreviewIsVideo)
     {
@@ -1824,7 +1948,7 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
     {
         document.detailPreviewSummary.setText(format("Audio preview\n%s", mediaSummary));
     }
-    else
+    else if (previewPath.length == 0)
     {
         document.detailPreviewImage.clear();
 
@@ -1846,18 +1970,32 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
         document.detailPreviewVideoFrame.setVisible(false);
     if (document.detailPreviewVideoControls !is null)
         document.detailPreviewVideoControls.setVisible(false);
-    document.detailPreviewTitle.setText("Checking preview file...");
+    document.detailPreviewTitle.setText("Checking file...");
     document.detailPreviewSummary.setText(format("Checking referenced file:\n%s",
         previewPath));
 
     auto isVideo = document.selectedPreviewIsVideo;
     auto isAudio = document.selectedPreviewIsAudio;
     auto isImage = document.selectedPreviewIsImage;
+    auto isText = !isVideo && !isAudio && !isImage && isTextPreviewCandidate(row);
     new Thread({
         bool fileExists;
         string error;
+        string previewContent;
         try
+        {
             fileExists = exists(previewPath);
+            if (fileExists && !isVideo && !isAudio && !isImage)
+            {
+                auto byteLimit = isText ? PREVIEW_TEXT_BYTES : PREVIEW_HEX_DUMP_BYTES;
+                auto data = cast(const(ubyte)[]) read(previewPath, byteLimit + 1);
+                auto truncated = data.length > byteLimit;
+                if (truncated)
+                    data = data[0 .. byteLimit];
+                previewContent = isText ? previewText(data, truncated)
+                    : previewHexDump(data, truncated);
+            }
+        }
         catch (Exception ex)
             error = ex.msg;
 
@@ -1876,6 +2014,15 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
                     ? "Preview file unavailable" : "File missing");
                 document.detailPreviewSummary.setText(previewFileCheckFailure(
                     previewPath, error));
+                return false;
+            }
+
+            if (!isVideo && !isAudio && !isImage)
+            {
+                setPreviewSummaryMonospace(document.detailPreviewSummary, true);
+                document.detailPreviewTitle.setText(isText
+                    ? "Text preview" : "Hex dump preview");
+                document.detailPreviewSummary.setText(previewContent);
                 return false;
             }
 
@@ -1914,4 +2061,15 @@ unittest
     assert(previewFileCheckFailure("/nas/missing.mp4", "").canFind("Referenced file is missing"));
     assert(previewFileCheckFailure("/nas/unavailable.mp4", "permission denied")
         .canFind("permission denied"));
+}
+
+@("unknown-file hex previews show only a bounded prefix")
+unittest
+{
+    auto bytes = new ubyte[PREVIEW_HEX_DUMP_BYTES + 32];
+    bytes[0] = 0x41;
+    auto output = previewHexDump(bytes, true);
+    assert(output.canFind("41"));
+    assert(output.canFind("limited to the first 512 bytes"));
+    assert(previewHexDump([], false) == "The file is empty.");
 }

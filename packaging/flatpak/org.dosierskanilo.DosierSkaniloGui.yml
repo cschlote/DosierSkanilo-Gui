@@ -13,6 +13,7 @@ modules:
     buildsystem: simple
     build-commands:
       - install -Dm755 build/bin/dosierskanilo-gui /app/bin/dosierskanilo-gui
+      - install -Dm644 LICENSE.md /app/share/licenses/org.dosierskanilo.DosierSkaniloGui/LICENSE.md
     sources:
       - type: archive
         url: https://gitlab.vahanus.net/dlang/dosierskanilo-gui/-/archive/v0.7.0/dosierskanilo-gui-v0.7.0.tar.gz

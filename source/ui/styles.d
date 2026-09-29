@@ -46,6 +46,11 @@ void installApplicationCss()
 .preview-summary {
     font-size: 0.95em;
 }
+
+.preview-summary-monospace {
+    font-family: monospace;
+    font-size: 9pt;
+}
 CSS");
 
     StyleContext.addProviderForScreen(screen, provider, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);

@@ -4,7 +4,7 @@
  * row-table rendering, and classic desktop menu actions.
  *
  * Authors: DosierSkanilo contributors
- * License: CC-BY-NC-SA 4.0
+ * License: GPL-3.0-only
  */
 module ui.mainwindow;
 
