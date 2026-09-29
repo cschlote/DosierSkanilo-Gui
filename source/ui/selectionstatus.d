@@ -172,6 +172,8 @@ void resetPerfMetrics(DocumentTab document)
  */
 void clearSelectionDetails(DocumentTab document)
 {
+    ++document.previewPathRequestId;
+    document.previewPathCheckPending = false;
     document.hasDirectSelectedRow = false;
     document.directSelectedRow = BlobRow.init;
     document.directSelectedIndex = "";

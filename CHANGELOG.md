@@ -50,6 +50,10 @@ All notable changes to this project are documented in this file.
   rows.
 - Filter controls remain visible during background operations, and the text
   field is labeled “Filename / SHA1”.
+- Details now appear below the list by default, and restored vertical splitters
+  are clamped after each tab receives a real allocation so the list stays visible.
+- Preview file checks run asynchronously for the selected item and report missing
+  or inaccessible paths in the preview pane.
 
 ## Release 0.7.0 - 2026-09-17
 

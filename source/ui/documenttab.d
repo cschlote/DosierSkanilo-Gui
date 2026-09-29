@@ -239,6 +239,8 @@ class DocumentTab
     Label pageStatus;
     Box pageBar;
     string selectedPreviewPath = "";
+    ulong previewPathRequestId;
+    bool previewPathCheckPending;
     bool selectedPreviewIsImage;
     PreviewScaleMode previewScaleMode = PreviewScaleMode.contain;
     bool previewVideoAutostart;

@@ -479,14 +479,17 @@ private bool isVideoPreviewCandidate(const(BlobRow) row)
 }
 
 /** Explain why a selected file cannot be shown in the preview pane. */
-private string unavailablePreviewSummary(const(BlobRow) row, string fileName)
+private string unavailablePreviewSummary(const(BlobRow) row, string fileName,
+    string previewPath)
 {
     auto type = row.fileType.length > 0 ? row.fileType : "unknown";
     string reason;
     if (isImagePreviewCandidate(row) || isVideoPreviewCandidate(row)
         || isAudioPreviewCandidate(row))
     {
-        reason = "The preview decoder could not open the referenced path or file format.";
+        reason = previewPath.length == 0
+            ? "No source file path is recorded for this item."
+            : "The preview decoder could not open the referenced file or format.";
     }
     else if (row.hasText)
     {
@@ -497,8 +500,15 @@ private string unavailablePreviewSummary(const(BlobRow) row, string fileName)
         reason = "No supported image, audio, or video preview handler was found for this file type.";
     }
 
-    return format("Preview unavailable\nFile: %s\nSize: %s bytes\nType: %s\nReason: %s",
-        fileName, row.fileSize, type, reason);
+    return format("Preview unavailable\nFile: %s\nPath: %s\nSize: %s bytes\nType: %s\nReason: %s",
+        fileName, previewPath.length > 0 ? previewPath : "-", row.fileSize, type, reason);
+}
+
+private string previewFileCheckFailure(string path, string error)
+{
+    return error.length > 0
+        ? format("Could not check referenced file:\n%s\n%s", path, error)
+        : format("Referenced file is missing:\n%s", path);
 }
 
 /** Convert a local filesystem path into a file URI. */
@@ -1564,6 +1574,10 @@ private void updatePreviewImage(DocumentTab document)
         if (!ensureImagePreviewSource(document))
         {
             document.detailPreviewImage.clear();
+            document.detailPreviewTitle.setText("Preview unavailable");
+            document.detailPreviewSummary.setText(format(
+                "Image decoder could not open the referenced file:\n%s",
+                document.selectedPreviewPath));
             return;
         }
 
@@ -1681,6 +1695,9 @@ private void updatePreviewImage(DocumentTab document)
  */
 void refreshMediaPreview(DocumentTab document)
 {
+    if (document.previewPathCheckPending)
+        return;
+
     if (document.selectedPreviewIsVideo || document.selectedPreviewIsAudio)
     {
         if (document.detailPreviewImageControls !is null)
@@ -1757,23 +1774,29 @@ void refreshMediaPreview(DocumentTab document)
  */
 void setMediaPreview(DocumentTab document, const(BlobRow) row)
 {
+    import core.thread : Thread;
+    import glib.Idle;
+    import std.file : exists;
+
     document.detailPreviewTitle.setText("Preview");
+    auto requestId = ++document.previewPathRequestId;
+    document.previewPathCheckPending = false;
 
     auto fileName = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
     auto mediaSummary = row.mediaInfoDetails.length > 0 ? row.mediaInfoDetails : "No media metadata available.";
     auto previewPath = resolvePreviewPath(document, row);
-    auto imagePreviewPath = previewPath;
 
     document.selectedPreviewSourcePath = "";
     document.selectedPreviewSourcePixbuf = null;
-    document.selectedPreviewIsVideo = isVideoPreviewCandidate(row);
+    document.selectedPreviewIsVideo = previewPath.length > 0
+        && isVideoPreviewCandidate(row);
     document.selectedPreviewIsAudio = !document.selectedPreviewIsVideo
-        && isAudioPreviewCandidate(row) && imagePreviewPath.length > 0;
+        && previewPath.length > 0 && isAudioPreviewCandidate(row);
     document.selectedPreviewIsImage = !document.selectedPreviewIsVideo
         && !document.selectedPreviewIsAudio
-        && isImagePreviewCandidate(row) && imagePreviewPath.length > 0;
+        && previewPath.length > 0 && isImagePreviewCandidate(row);
     document.selectedPreviewPath = (document.selectedPreviewIsImage || document.selectedPreviewIsVideo
-            || document.selectedPreviewIsAudio) ? imagePreviewPath : "";
+            || document.selectedPreviewIsAudio) ? previewPath : "";
 
     if (document.selectedPreviewIsVideo)
     {
@@ -1806,10 +1829,68 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
         document.detailPreviewImage.clear();
 
         document.detailPreviewTitle.setText("Preview unavailable");
-        document.detailPreviewSummary.setText(unavailablePreviewSummary(row, fileName));
+        document.detailPreviewSummary.setText(unavailablePreviewSummary(row, fileName,
+            previewPath));
+        refreshMediaPreview(document);
+        return;
     }
 
-    refreshMediaPreview(document);
+    document.previewPathCheckPending = true;
+    stopVideoPreview(document);
+    document.detailPreviewImage.clear();
+    if (document.detailPreviewImageControls !is null)
+        document.detailPreviewImageControls.setVisible(false);
+    if (document.detailPreviewScroll !is null)
+        document.detailPreviewScroll.setVisible(false);
+    if (document.detailPreviewVideoFrame !is null)
+        document.detailPreviewVideoFrame.setVisible(false);
+    if (document.detailPreviewVideoControls !is null)
+        document.detailPreviewVideoControls.setVisible(false);
+    document.detailPreviewTitle.setText("Checking preview file...");
+    document.detailPreviewSummary.setText(format("Checking referenced file:\n%s",
+        previewPath));
+
+    auto isVideo = document.selectedPreviewIsVideo;
+    auto isAudio = document.selectedPreviewIsAudio;
+    auto isImage = document.selectedPreviewIsImage;
+    new Thread({
+        bool fileExists;
+        string error;
+        try
+            fileExists = exists(previewPath);
+        catch (Exception ex)
+            error = ex.msg;
+
+        new Idle({
+            if (requestId != document.previewPathRequestId
+                || previewPath != document.selectedPreviewPath)
+                return false;
+            document.previewPathCheckPending = false;
+            if (error.length > 0 || !fileExists)
+            {
+                stopVideoPreview(document);
+                document.selectedPreviewIsVideo = false;
+                document.selectedPreviewIsAudio = false;
+                document.selectedPreviewIsImage = false;
+                document.detailPreviewTitle.setText(error.length > 0
+                    ? "Preview file unavailable" : "File missing");
+                document.detailPreviewSummary.setText(previewFileCheckFailure(
+                    previewPath, error));
+                return false;
+            }
+
+            document.selectedPreviewIsVideo = isVideo;
+            document.selectedPreviewIsAudio = isAudio;
+            document.selectedPreviewIsImage = isImage;
+            document.detailPreviewTitle.setText("Preview");
+            document.detailPreviewSummary.setText(isVideo
+                ? format("Video preview\n%s", mediaSummary)
+                : isAudio ? format("Audio preview\n%s", mediaSummary)
+                : format("Image preview\n%s", fileName));
+            refreshMediaPreview(document);
+            return false;
+        });
+    }).start();
 }
 
 @("preview path resolution honors the selected file alias relative to the JSON source")
@@ -1830,4 +1911,7 @@ unittest
     document.selectedTreeCursor.relativePath = "media/clip.mp4";
 
     assert(resolvePreviewPath(document, row) == "/nas/library/media/clip.mp4");
+    assert(previewFileCheckFailure("/nas/missing.mp4", "").canFind("Referenced file is missing"));
+    assert(previewFileCheckFailure("/nas/unavailable.mp4", "permission denied")
+        .canFind("permission denied"));
 }

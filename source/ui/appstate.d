@@ -43,7 +43,7 @@ struct AppState
 {
     bool prefAutoApplyFilter = true;
     bool prefCaseSensitiveFilter;
-    bool prefDetailsBelow;
+    bool prefDetailsBelow = true;
     bool prefRestoreOpenFiles = true;
 
     int splitPositionHorizontal = 720;
@@ -629,6 +629,7 @@ unittest
     assert(jsonToStringArray(JSONValue(1)).length == 0);
 
     assert(jsonEscapeString("a\"b\\c\n") == "a\\\"b\\\\c\\n");
+    assert(AppState.init.prefDetailsBelow);
     assert(resolveConfigDirPath("") == "./" ~ CONFIG_DIR_NAME);
     assert(resolveConfigDirPath("/tmp/dosierskanilo-gui-ui-tests")
         == buildPath("/tmp/dosierskanilo-gui-ui-tests", CONFIG_DIR_NAME));

@@ -1593,15 +1593,17 @@ int runMainWindow(string[] args, ref CliOptions cli)
     /** Apply the shared details-pane orientation and divider position to one tab. */
     void applyDetailsPanePreference(DocumentTab document, bool captureCurrentPosition = true)
     {
-        if (captureCurrentPosition)
+        if (captureCurrentPosition && currentDocument() is document)
         {
             auto currentOrientation = document.split.getOrientation();
             auto currentPosition = document.split.getPosition();
-            if (currentOrientation == Orientation.VERTICAL)
+            auto currentExtent = currentOrientation == Orientation.VERTICAL
+                ? document.split.getAllocatedHeight() : document.split.getAllocatedWidth();
+            if (currentExtent > 0 && currentOrientation == Orientation.VERTICAL)
             {
                 splitPositionVertical = currentPosition;
             }
-            else
+            else if (currentExtent > 0)
             {
                 splitPositionHorizontal = currentPosition;
             }
@@ -1628,15 +1630,21 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 new Timeout(50, { applyRealizedPosition(); return false; });
                 return;
             }
+            if (allocatedExtent <= 0)
+            {
+                logLineVerbose("[layout] defer split restore until tab is allocated for ",
+                    document.filePath);
+                return;
+            }
 
             auto realizedClamped = clampSplitPositionToVisibleBounds(document, document.split,
                 orientation, splitPosition);
             document.split.setPosition(realizedClamped);
-            if (orientation == Orientation.VERTICAL)
+            if (currentDocument() is document && orientation == Orientation.VERTICAL)
             {
                 splitPositionVertical = realizedClamped;
             }
-            else
+            else if (currentDocument() is document)
             {
                 splitPositionHorizontal = realizedClamped;
             }
@@ -1647,9 +1655,26 @@ int runMainWindow(string[] args, ref CliOptions cli)
     /** Apply the shared details-pane preference to all open document tabs. */
     void applyDetailsPanePreferenceToAll(bool captureCurrentPosition = true)
     {
+        if (captureCurrentPosition)
+        {
+            auto active = currentDocument();
+            if (active !is null)
+            {
+                auto orientation = active.split.getOrientation();
+                auto extent = orientation == Orientation.VERTICAL
+                    ? active.split.getAllocatedHeight() : active.split.getAllocatedWidth();
+                if (extent > 0)
+                {
+                    if (orientation == Orientation.VERTICAL)
+                        splitPositionVertical = active.split.getPosition();
+                    else
+                        splitPositionHorizontal = active.split.getPosition();
+                }
+            }
+        }
         foreach (document; documents)
         {
-            applyDetailsPanePreference(document, captureCurrentPosition);
+            applyDetailsPanePreference(document, false);
         }
     }
 
@@ -2634,33 +2659,45 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.split.setPosition(splitPositionHorizontal);
         document.split.addOnNotify((ParamSpec _, ObjectG __) {
             auto currentOrientation = document.split.getOrientation();
-            if (currentOrientation != Orientation.HORIZONTAL)
-            {
+            auto extent = currentOrientation == Orientation.VERTICAL
+                ? document.split.getAllocatedHeight() : document.split.getAllocatedWidth();
+            if (extent <= 0)
                 return;
-            }
 
             auto currentPosition = document.split.getPosition();
-            auto clampedPosition = clampSplitPositionToVisibleBounds(document, document.split, Orientation.HORIZONTAL, currentPosition);
+            auto clampedPosition = clampSplitPositionToVisibleBounds(document, document.split,
+                currentOrientation, currentPosition);
             if (clampedPosition != currentPosition)
             {
                 logLineVerbose("[layout] notify::position clamp for ", document.filePath,
                     ": current=", currentPosition,
                     ", clamped=", clampedPosition,
-                    ", stored=", splitPositionHorizontal,
+                    ", stored=", currentOrientation == Orientation.VERTICAL
+                        ? splitPositionVertical : splitPositionHorizontal,
                     ", natural=", document.tableNaturalWidth,
                     ", minimum=", document.tableMinimumWidth);
                 document.split.setPosition(clampedPosition);
-                splitPositionHorizontal = clampedPosition;
             }
-            else
+            if (currentDocument() is document)
             {
-                logLineVerbose("[layout] notify::position ok for ", document.filePath,
-                    ": position=", currentPosition,
-                    ", stored=", splitPositionHorizontal,
-                    ", natural=", document.tableNaturalWidth,
-                    ", minimum=", document.tableMinimumWidth);
+                if (currentOrientation == Orientation.VERTICAL)
+                    splitPositionVertical = clampedPosition;
+                else
+                    splitPositionHorizontal = clampedPosition;
             }
         }, "position");
+        document.split.addOnSizeAllocate((allocation, Widget _) {
+            if (document.split.getOrientation() != Orientation.VERTICAL
+                || document.split.getAllocatedHeight() <= 0)
+                return;
+            auto currentPosition = document.split.getPosition();
+            auto clampedPosition = clampSplitPositionToVisibleBounds(document,
+                document.split, Orientation.VERTICAL, currentPosition);
+            if (clampedPosition != currentPosition)
+                document.split.setPosition(clampedPosition);
+            if (currentDocument() is document)
+                splitPositionVertical = clampedPosition;
+        });
 
         document.rowDetails.setText("Selection: none");
         document.status.setText(format("Ready: %s", filePath));
@@ -2708,11 +2745,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
         {
             auto currentOrientation = document.split.getOrientation();
             auto currentSplitPosition = document.split.getPosition();
-            if (currentOrientation == Orientation.VERTICAL)
+            auto splitExtent = currentOrientation == Orientation.VERTICAL
+                ? document.split.getAllocatedHeight() : document.split.getAllocatedWidth();
+            if (splitExtent > 0 && currentOrientation == Orientation.VERTICAL)
             {
                 splitPositionVertical = currentSplitPosition;
             }
-            else
+            else if (splitExtent > 0)
             {
                 splitPositionHorizontal = currentSplitPosition;
             }
