@@ -46,8 +46,9 @@ Implemented:
 - Archive and torrent detail sections render their entry paths as nested trees.
 - Repository archive and torrent trees fetch bounded first pages asynchronously
   and expose a continuation marker when additional entries exist.
-- JSON and SQLite adapters pass parity coverage for case-sensitive filtering,
-  size sorting, and forward/backward file navigation.
+- JSON and SQLite tree/file adapters pass parity coverage for case-sensitive
+  filtering, size sorting, and forward/backward file navigation. Case-sensitive
+  matching in the Blob/catalog view remains open as backend WP-10.1.
 - Per-tab media, file-type, archive, and torrent toggles are synchronized into
   query state before automatic filtering.
 - Late archive/torrent replies are checked against the active blob, selection
@@ -77,6 +78,9 @@ Known limitations:
   token before applying a page reply and verifies that the stale reply is rejected.
 - The blob table remains an alternative, transitional view; the directory tree
   is still the primary navigation surface.
+- Case-sensitive text filtering is not yet consistent between the directory
+  tree and the repository-backed Blob/catalog view; see WP-10.1 in the backend
+  plan and the GUI task in `TODO.md`.
 - Several window splitters and video-preview layout behaviors remain on the
   open-issues list in `TODO.md`.
 - Scan, metadata scraping, and analysis actions are not yet available in GTK;
@@ -85,7 +89,8 @@ Known limitations:
 
 ## Verification Baseline
 
-The current GUI branch passes:
+The last recorded verification baseline (before the current unverified
+asynchronous-filter working-tree changes) passed:
 
 - `dub test --compiler=ldc2` — 35 tests.
 - `dub build --compiler=ldc2`.
@@ -112,9 +117,11 @@ physical audio device has not been smoke-tested.
 The repository source concurrency test runs repeated tree queries and selected
 blob detail loads in parallel against an 81-file temporary repository.
 
-The JSON/SQLite parity test compares case-sensitive filtering, size-sorted
-forward pages, and backward navigation. A separate repository fixture verifies
-archive and torrent continuation from 250 to entry 251.
+The JSON/SQLite directory/file source parity test exercises case-sensitive
+filtering, size-sorted forward pages, and backward navigation. It does not cover
+case-sensitive matching in the repository Blob/catalog query; that is tracked as
+WP-10.1 in the backend plan. A separate repository fixture verifies archive and
+torrent continuation from 250 to entry 251.
 
 The nested-detail logic test verifies trimming the 251st look-ahead item,
 continuation offsets, and copying the complete path of the later-page file.
@@ -339,8 +346,9 @@ a compatibility layer around the current table UI:
 The older immediate-plan checklist is complete except for scanner/analysis
 operations and the explicitly deferred GTK layout issues. Current actionable GUI
 work is tracked in [`TODO.md`](../TODO.md): finish and verify asynchronous JSON
-filtering, then stabilize splitter/video behavior and schedule lower-priority UI
-maintenance.
+filtering, restore case-sensitive Blob-table parity with the tree, then implement
+the GTK operations client after the backend and CLI reference slices are ready.
+Splitter/video behavior and UI maintenance remain lower-priority GUI work.
 
 The shared CLI/GTK operation work is tracked as WP-09 in the backend's
 [`SQLITE-IMPLEMENTATION-PLAN.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09).

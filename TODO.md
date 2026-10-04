@@ -22,8 +22,9 @@ refactor.
   filter and is restored by Clear. A filtered projection must not accidentally
   become the next filter's source.
 - [ ] Verify text case sensitivity, media negation, file-type/archive/torrent
-  presence filters, sorting, and directory visibility match the existing
-  `DirectorySource` semantics.
+  presence filters, sorting, and directory visibility match the JSON
+  `DirectorySource` semantics. Blob/catalog case-sensitive parity is tracked
+  separately as backend WP-10.1.
 - [ ] Exercise large directory/file projections and confirm indexed lookups do
   not change results or require repeated full-tree scans during rendering.
 - [ ] Run GUI unit tests and build, `git diff --check`, and relevant opt-in GTK
@@ -33,6 +34,23 @@ refactor.
 projection; Clear/cancel and rapid successive requests leave the active document
 in a consistent state; JSON filter results retain the established filter and
 sort semantics; the normal verification commands pass.
+
+## P1 — Restore Blob-table filter parity (WP-10.1)
+
+The review found a real gap between case-sensitive tree filtering and the
+repository Blob/catalog query. Implement the backend query option under WP-10.1,
+then finish the GUI adapter side:
+
+- [ ] Add the active case-sensitivity preference to `SourceQuery` and propagate
+  it through GUI catalog offset/cursor requests to `RepositoryQueryOptions`.
+- [ ] Verify the Blob table and directory tree return the same path matches for
+  mixed-case names in JSON and SQLite documents.
+- [ ] Verify SHA1 lookups remain case-insensitive and cursor navigation remains
+  stable after the case-sensitive filter is applied.
+
+**Acceptance:** one preference produces matching results in the JSON/SQLite
+tree and Blob-table views; regression coverage exists at backend and GUI adapter
+boundaries. Backend API/SQL scope and dependency are defined in WP-10.1.
 
 ## P1 — Complete shared CLI/GTK operations
 
@@ -44,10 +62,11 @@ progress updates, cooperative cancellation, per-target write serialization, and
 view refresh after successful mutations. Do not implement scanner or analysis
 logic in GTK.
 
-Before GUI implementation begins, backend WP-09.1 and WP-09.2 must provide the
-shared request/control API and cancellable operations. WP-09.3 (CLI adapter) and
-WP-09.4 (GTK adapter) may then proceed independently against that contract;
-WP-09.5 verifies parity across the two frontends.
+Before GTK operation implementation begins, WP-09.1 and the relevant WP-09.2
+backend slices must provide the shared request/control API and real cancellation.
+Implement and verify each CLI operation adapter (WP-09.3) as its backend slice
+lands; then use the CLI behavior as the reference for GTK WP-09.4. WP-09.5
+verifies parity across both frontends.
 
 ## P2 — Stabilize GTK layout and video preview
 
