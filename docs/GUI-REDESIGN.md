@@ -334,24 +334,20 @@ a compatibility layer around the current table UI:
 9. Move stable, reusable projection and analysis code into `DosierSkanilo`.
    **Directory query DTOs and bounded queries are complete.**
 
-## Immediate Plan
+## Current Work Plan
 
-1. [x] Replace eager root file-reference enumeration with bounded root
-   summary/count/aggregate queries.
-2. [x] Give concurrent asynchronous repository operations independent read
-   connections and verify concurrent tree/detail loads.
-3. [x] Verify adapter archive/torrent continuation and later-page paths beyond
-   250 entries. GTK model and signal tests cover stale-result rejection,
-   continuation activation, and later-page path copying.
-4. [x] Exercise the virtual blob table through forward/backward access across
-   multiple cache evictions on a 1,000-row repository; GTK TreeView scrolling is
-   covered by an opt-in display test.
-5. Complete file-type and fallback detail renderers. **MediaInfo streams,
-   previews, and archive/torrent trees are implemented.**
-6. Expose duplicate, missing-file, and metadata/archive/torrent analysis as
-   explicit Tools operations with progress, cancellation, and source scope.
-7. Revisit splitter restoration and embedded-video layout issues listed in
-   `TODO.md`.
+The older immediate-plan checklist is complete except for scanner/analysis
+operations and the explicitly deferred GTK layout issues. Current actionable GUI
+work is tracked in [`TODO.md`](../TODO.md): finish and verify asynchronous JSON
+filtering, then stabilize splitter/video behavior and schedule lower-priority UI
+maintenance.
+
+The shared CLI/GTK operation work is tracked as WP-09 in the backend's
+[`SQLITE-IMPLEMENTATION-PLAN.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09).
+Its dependency order is intentional: agree the shared request/control contract,
+make backend operations report progress and stop safely, then build the CLI and
+GTK adapters, and finally verify parity. GTK must not introduce a second scanner
+or analysis implementation.
 
 The current pagination and BlobRow table are temporary implementation details.
 They may be removed once the new source and tree model are usable.
