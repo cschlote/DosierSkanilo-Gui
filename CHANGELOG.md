@@ -43,6 +43,10 @@ All notable changes to this project are documented in this file.
   document query before auto-applying the filter.
 - JSON documents now build and show the unfiltered tree before any saved
   auto-filter runs; Apply and Clear filter buttons are wired to the active tab.
+  Large filter results and their directory indexes are built off the GTK thread
+  with a temporary “Filtering files...” tree placeholder.
+- Case-sensitive path filtering now matches between the JSON/SQLite directory
+  tree and repository Blob table; stale filter replies are invalidated on cancel.
 - Directory rows toggle expansion on activation, and their context menu can
   expand or collapse the subtree.
 - Selection details are back below the Previous/Next controls; timing and source
@@ -56,6 +60,8 @@ All notable changes to this project are documented in this file.
   or inaccessible paths in the preview pane; unknown formats show a bounded
   hex dump and recognized text files show a fixed-width text prefix. Video
   playback now waits for the first usable preview-frame allocation.
+- Filtered JSON tree views now show a temporary filtering marker and use indexed
+  directory/file lookups to keep large filters responsive.
 - Changed the project license to GPL-3.0-only and aligned DUB, source headers,
   and packaging metadata.
 

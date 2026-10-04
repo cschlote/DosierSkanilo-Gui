@@ -47,8 +47,8 @@ Implemented:
 - Repository archive and torrent trees fetch bounded first pages asynchronously
   and expose a continuation marker when additional entries exist.
 - JSON and SQLite tree/file adapters pass parity coverage for case-sensitive
-  filtering, size sorting, and forward/backward file navigation. Case-sensitive
-  matching in the Blob/catalog view remains open as backend WP-10.1.
+  filtering, size sorting, and forward/backward file navigation. Repository
+  Blob/catalog path filtering now carries the same case-sensitive preference.
 - Per-tab media, file-type, archive, and torrent toggles are synchronized into
   query state before automatic filtering.
 - Late archive/torrent replies are checked against the active blob, selection
@@ -78,9 +78,6 @@ Known limitations:
   token before applying a page reply and verifies that the stale reply is rejected.
 - The blob table remains an alternative, transitional view; the directory tree
   is still the primary navigation surface.
-- Case-sensitive text filtering is not yet consistent between the directory
-  tree and the repository-backed Blob/catalog view; see WP-10.1 in the backend
-  plan and the GUI task in `TODO.md`.
 - Several window splitters and video-preview layout behaviors remain on the
   open-issues list in `TODO.md`.
 - Scan, metadata scraping, and analysis actions are not yet available in GTK;
@@ -89,19 +86,22 @@ Known limitations:
 
 ## Verification Baseline
 
-The last recorded verification baseline (before the current unverified
-asynchronous-filter working-tree changes) passed:
+The current working tree passes:
 
-- `dub test --compiler=ldc2` — 35 tests.
+- `dub test --compiler=ldc2` — 45 tests.
 - `dub build --compiler=ldc2`.
 - `git diff --check`.
+
+The GTK-independent filter projection and request-state tests are included in
+the default suite. The expanded-tree GTK opt-in test was run with a display.
+Earlier display-backed verification also covered:
+
 - `DOSIER_GUI_ACTIVATION_TEST=1 dub test --compiler=ldc2 -- --threads=1
   --include=activat` — GTK TreeView activation checks with a usable display.
 - `DOSIER_GUI_TABLE_SCROLL_TEST=1 dub test --compiler=ldc2 -- --threads=1
   --include='scrolls through evicted chunks'` — GTK TreeView long-scroll check.
-- `DOSIER_GUI_TREE_LOAD_TEST=1 dub test --compiler=ldc2 -- --threads=1
-  --include='expanded GTK directories recover'` — expanded loading-placeholder
-  recovery check.
+- `DOSIER_GUI_TREE_LOAD_TEST=1 dub test --compiler=ldc2 -- --threads=1` — the
+  expanded loading-placeholder recovery check is enabled in the full suite.
 - GTK self-tests under `G_DEBUG=fatal-warnings` for an audio-plus-cover fixture,
   repository archive/torrent fixtures, and a large repository. Self-test mode
   selects the first row and expands remote archive/torrent roots when present.
@@ -118,10 +118,10 @@ The repository source concurrency test runs repeated tree queries and selected
 blob detail loads in parallel against an 81-file temporary repository.
 
 The JSON/SQLite directory/file source parity test exercises case-sensitive
-filtering, size-sorted forward pages, and backward navigation. It does not cover
-case-sensitive matching in the repository Blob/catalog query; that is tracked as
-WP-10.1 in the backend plan. A separate repository fixture verifies archive and
-torrent continuation from 250 to entry 251.
+filtering, size-sorted forward pages, and backward navigation. The filtered
+export parity test also checks case-sensitive filename matching in the
+repository Blob/catalog query. A separate repository fixture verifies archive
+and torrent continuation from 250 to entry 251.
 
 The nested-detail logic test verifies trimming the 251st look-ahead item,
 continuation offsets, and copying the complete path of the later-page file.
@@ -345,9 +345,9 @@ a compatibility layer around the current table UI:
 
 The older immediate-plan checklist is complete except for scanner/analysis
 operations and the explicitly deferred GTK layout issues. Current actionable GUI
-work is tracked in [`TODO.md`](../TODO.md): finish and verify asynchronous JSON
-filtering, restore case-sensitive Blob-table parity with the tree, then implement
-the GTK operations client after the backend and CLI reference slices are ready.
+work is tracked in [`TODO.md`](../TODO.md): asynchronous JSON filtering and
+case-sensitive Blob-table parity have been verified. Next, implement the GTK
+operations client after the backend and CLI reference slices are ready.
 Splitter/video behavior and UI maintenance remain lower-priority GUI work.
 
 The shared CLI/GTK operation work is tracked as WP-09 in the backend's

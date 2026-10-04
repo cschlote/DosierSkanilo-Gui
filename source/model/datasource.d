@@ -29,6 +29,7 @@ struct SourcePage
 struct SourceQuery
 {
     string text;
+    bool caseSensitive;
     bool video;
     bool audio;
     bool image;
@@ -114,6 +115,12 @@ final class RepositoryDirectorySource : DirectorySource
                 directory.fileCount, directory.aggregateSize);
         }
         return result;
+    }
+
+    override bool hasMatchingFileInDirectory(string directoryId,
+        FileFilter filter = FileFilter())
+    {
+        return listFilteredFilesPage(directoryId, FileCursor(), 1, filter).files.length > 0;
     }
 
     override FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250,
@@ -403,6 +410,7 @@ SourcePage loadDocumentPage(string path, size_t offset, size_t limit,
     repositoryQuery.offset = offset;
     repositoryQuery.limit = limit;
     repositoryQuery.text = query.text;
+    repositoryQuery.caseSensitive = query.caseSensitive;
     repositoryQuery.video = query.video;
     repositoryQuery.audio = query.audio;
     repositoryQuery.image = query.image;
@@ -435,6 +443,7 @@ SourcePage loadDocumentCursorPage(string path, long afterBlobId, size_t limit,
     options.afterBlobId = afterBlobId;
     options.useCursor = true;
     options.text = query.text;
+    options.caseSensitive = query.caseSensitive;
     options.video = query.video;
     options.audio = query.audio;
     options.image = query.image;

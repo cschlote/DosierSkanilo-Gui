@@ -14,10 +14,9 @@ import model.datasource : SourceQuery, isRepositorySource, loadDocumentCursorPag
 import view.textreport : filterRowsByText;
 
 /** Filter rows with the GUI's text, media-negation, and presence semantics. */
-BlobRow[] filterExportRows(const(BlobRow)[] rows, SourceQuery query,
-    bool caseSensitive = false)
+BlobRow[] filterExportRows(const(BlobRow)[] rows, SourceQuery query)
 {
-    auto textFiltered = filterRowsByText(rows, query.text, caseSensitive);
+    auto textFiltered = filterRowsByText(rows, query.text, query.caseSensitive);
     BlobRow[] result;
     auto hasMediaFilter = query.video || query.audio || query.image || query.textStream;
     auto hasPresenceFilter = query.fileType || query.archive || query.torrent;
@@ -37,12 +36,11 @@ BlobRow[] filterExportRows(const(BlobRow)[] rows, SourceQuery query,
 }
 
 /** Load all logical rows matching one tab's active filter state. */
-BlobRow[] loadFilteredExportRows(string sourcePath, SourceQuery query,
-    bool caseSensitive = false)
+BlobRow[] loadFilteredExportRows(string sourcePath, SourceQuery query)
 {
     if (!isRepositorySource(sourcePath))
         return filterExportRows(extractRowsFromBlobs(loadDocumentSource(sourcePath)),
-            query, caseSensitive);
+            query);
 
     auto repositoryQuery = query;
     auto localFilter = query;
@@ -197,6 +195,20 @@ unittest
     assert(exported["archive"].type == JSONType.true_);
 }
 
+@("filtered row export respects case sensitivity for filename matching")
+unittest
+{
+    BlobRow mixedCase;
+    mixedCase.primaryFileName = "Folder/Alpha.txt";
+    BlobRow[] rows = [mixedCase];
+
+    SourceQuery query;
+    query.text = "alpha";
+    assert(filterExportRows(rows, query).length == 1);
+    query.caseSensitive = true;
+    assert(filterExportRows(rows, query).length == 0);
+}
+
 @("filtered exports include the same JSON and repository row subset")
 unittest
 {
@@ -217,6 +229,8 @@ unittest
     write(buildPath(root, "keep-one.txt"), "one");
     write(buildPath(root, "skip.txt"), "skip");
     write(buildPath(root, "keep-two.txt"), "two-two");
+    write(buildPath(root, "NorthStar-one.txt"), "upper path");
+    write(buildPath(root, "northstar-two.txt"), "lower path");
 
     auto repository = Repository.initialize(root);
     repository.scan();
@@ -238,4 +252,21 @@ unittest
                 found = true;
         assert(found, "Missing exported repository row for " ~ jsonRow.primaryFileName);
     }
+
+    query.text = "NorthStar";
+    query.caseSensitive = true;
+    auto jsonSensitiveRows = loadFilteredExportRows(jsonPath, query);
+    auto repositorySensitiveRows = loadFilteredExportRows(root, query);
+    assert(jsonSensitiveRows.length == 1);
+    assert(repositorySensitiveRows.length == 1);
+    assert(jsonSensitiveRows[0].primaryFileName == "NorthStar-one.txt");
+    assert(baseName(repositorySensitiveRows[0].primaryFileName)
+        == "NorthStar-one.txt");
+
+    query.text = "northstar";
+    query.caseSensitive = false;
+    auto jsonInsensitiveRows = loadFilteredExportRows(jsonPath, query);
+    auto repositoryInsensitiveRows = loadFilteredExportRows(root, query);
+    assert(jsonInsensitiveRows.length == 2);
+    assert(repositoryInsensitiveRows.length == 2);
 }

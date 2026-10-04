@@ -8,27 +8,28 @@ and verification coverage is summarized in `docs/GUI-REDESIGN.md`.
 
 ## P0 — Finish asynchronous JSON filtering
 
-Status: **in progress in the current working tree; not yet verified**.
+Status: **complete and verified**.
 
 The current changes move construction of filtered JSON tree projections away
 from the GTK main thread and add indexes for directory-child and per-directory
 file lookup. Finish this as one bounded change before starting another GUI
 refactor.
 
-- [ ] Review the filter lifecycle for apply, clear, changing tabs, loading a new
+- [x] Review the filter lifecycle for apply, clear, changing tabs, loading a new
   source, and cancelling while filtering. A late result must not replace a newer
   filter or source; cancellation must restore a usable tree and table.
-- [ ] Verify the unfiltered JSON tree/source remains available after applying a
+- [x] Verify the unfiltered JSON tree/source remains available after applying a
   filter and is restored by Clear. A filtered projection must not accidentally
   become the next filter's source.
-- [ ] Verify text case sensitivity, media negation, file-type/archive/torrent
+- [x] Verify text case sensitivity, media negation, file-type/archive/torrent
   presence filters, sorting, and directory visibility match the JSON
-  `DirectorySource` semantics. Blob/catalog case-sensitive parity is tracked
-  separately as backend WP-10.1.
-- [ ] Exercise large directory/file projections and confirm indexed lookups do
+  `DirectorySource` semantics. Blob/catalog case-sensitive parity is verified
+  separately under backend WP-10.1.
+- [x] Exercise large directory/file projections and confirm indexed lookups do
   not change results or require repeated full-tree scans during rendering.
-- [ ] Run GUI unit tests and build, `git diff --check`, and relevant opt-in GTK
-  tree/filter tests when a display is available.
+- [x] Run GUI unit tests/build, `git diff --check`, GTK-independent
+  lifecycle/filter projection tests, and the opt-in GTK tree-loading test. There
+  is no dedicated display-driven filter lifecycle test yet.
 
 **Acceptance:** filtering does not freeze GTK while computing the JSON
 projection; Clear/cancel and rapid successive requests leave the active document
@@ -37,16 +38,18 @@ sort semantics; the normal verification commands pass.
 
 ## P1 — Restore Blob-table filter parity (WP-10.1)
 
-The review found a real gap between case-sensitive tree filtering and the
-repository Blob/catalog query. Implement the backend query option under WP-10.1,
-then finish the GUI adapter side:
+Status: **complete and verified**.
 
-- [ ] Add the active case-sensitivity preference to `SourceQuery` and propagate
+The review found a real gap between case-sensitive tree filtering and the
+repository Blob/catalog query. The backend option and GUI adapter propagation are
+implemented and verified under WP-10.1:
+
+- [x] Add the active case-sensitivity preference to `SourceQuery` and propagate
   it through GUI catalog offset/cursor requests to `RepositoryQueryOptions`.
-- [ ] Verify the Blob table and directory tree return the same path matches for
+- [x] Verify the Blob table and directory tree return the same path matches for
   mixed-case names in JSON and SQLite documents.
-- [ ] Verify SHA1 lookups remain case-insensitive and cursor navigation remains
-  stable after the case-sensitive filter is applied.
+- [x] Verify exact SHA1 matches remain independent of path case and cursor
+  navigation remains stable after the path filter is applied.
 
 **Acceptance:** one preference produces matching results in the JSON/SQLite
 tree and Blob-table views; regression coverage exists at backend and GUI adapter

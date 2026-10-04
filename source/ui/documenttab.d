@@ -35,6 +35,7 @@ import gstinterfaces.VideoOverlay;
 import model.blobrow : BlobRow;
 import model.treeprojection : DirectorySource, DirectoryTree, FileCursor;
 import model.treeprojection : NestedFileNode;
+import ui.filterrequeststate : FilterRequestState;
 
 /** Column index for the row number in the main table model. */
 enum int COL_INDEX = 0;
@@ -139,8 +140,11 @@ class DocumentTab
     TreeStore directoryTreeStore;
     TreeView directoryTreeView;
     DirectoryTree directoryTree;
+    DirectoryTree unfilteredDirectoryTree;
     DirectorySource directorySource;
+    DirectorySource unfilteredDirectorySource;
     bool directorySourceRemote;
+    bool directorySourceFiltered;
     string[] expandedDirectoryIds;
     void delegate() reconcileDirectoryLoads;
     bool syncingTreeSelection;
@@ -287,9 +291,9 @@ class DocumentTab
     bool drainPageRequest;
     bool drainAfterRender;
     bool sourceLoaded;
+    FilterRequestState filterRequest;
 
     ulong loadRequestId;
-    ulong filterRequestId;
     ulong renderRequestId;
     ulong detailRequestId;
     long lastLoadElapsedMs = -1;

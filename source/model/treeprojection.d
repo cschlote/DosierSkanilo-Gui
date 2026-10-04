@@ -136,6 +136,7 @@ interface DirectorySource
 {
     DirectoryNode root();
     DirectoryNode[] listDirectories(string parentId, FileFilter filter = FileFilter());
+    bool hasMatchingFileInDirectory(string directoryId, FileFilter filter = FileFilter());
     FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250,
         string filter = "");
     FilePage listFilesPage(string directoryId, FileCursor cursor = FileCursor(),
@@ -153,24 +154,31 @@ interface DirectorySource
 final class ProjectedDirectorySource : DirectorySource
 {
     private DirectoryTree tree;
+    private DirectoryNode[][string] childDirectories;
+    private FileNode[][string] filesByDirectory;
 
     this(DirectoryTree tree)
     {
         this.tree = tree;
+        foreach (directory; tree.directories)
+            childDirectories[directory.parentId] ~= directory;
+        foreach (file; tree.files)
+            filesByDirectory[file.directoryId] ~= file;
     }
 
     override DirectoryNode root() { return tree.root; }
 
     override DirectoryNode[] listDirectories(string parentId, FileFilter filter = FileFilter())
     {
+        auto children = directoriesFor(parentId);
         auto hasActiveFilter = filter.text.length > 0 || filter.video || filter.audio
             || filter.image || filter.textStream || filter.fileType || filter.archive
             || filter.torrent;
         if (!hasActiveFilter)
-            return tree.listDirectories(parentId).dup;
+            return children.dup;
 
         DirectoryNode[] result;
-        foreach (directory; tree.listDirectories(parentId))
+        foreach (directory; children)
         {
             if (hasMatchingFile(directory.id, filter))
                 result ~= directory;
@@ -178,20 +186,43 @@ final class ProjectedDirectorySource : DirectorySource
         return result;
     }
 
+    override bool hasMatchingFileInDirectory(string directoryId,
+        FileFilter filter = FileFilter())
+    {
+        foreach (file; filesFor(directoryId))
+            if (matchesFileFilter(file, filter))
+                return true;
+        return false;
+    }
+
     private bool hasMatchingFile(string directoryId, FileFilter filter)
     {
-        if (tree.listFiles(directoryId).any!(file => matchesFileFilter(file, filter)))
+        if (filesFor(directoryId).any!(file => matchesFileFilter(file, filter)))
             return true;
-        foreach (child; tree.listDirectories(directoryId))
+        foreach (child; directoriesFor(directoryId))
             if (hasMatchingFile(child.id, filter))
                 return true;
         return false;
     }
 
+    private const(DirectoryNode)[] directoriesFor(string parentId)
+    {
+        if (auto directories = parentId in childDirectories)
+            return *directories;
+        return [];
+    }
+
+    private const(FileNode)[] filesFor(string directoryId)
+    {
+        if (auto files = directoryId in filesByDirectory)
+            return *files;
+        return [];
+    }
+
     override FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250,
         string filter = "")
     {
-        auto allFiles = tree.listFiles(directoryId);
+        auto allFiles = filesFor(directoryId);
         if (filter.length > 0)
         {
             auto query = filter.toLower;
@@ -241,7 +272,7 @@ final class ProjectedDirectorySource : DirectorySource
         FileSortOrder sortOrder = FileSortOrder.pathAscending)
     {
         FileNode[] allFiles;
-        foreach (file; tree.listFiles(directoryId))
+        foreach (file; filesFor(directoryId))
             if (matchesFileFilter(file, filter))
                 allFiles ~= file;
         sort!((a, b) {
@@ -275,7 +306,7 @@ final class ProjectedDirectorySource : DirectorySource
         FileSortOrder sortOrder = FileSortOrder.pathAscending)
     {
         FileNode[] allFiles;
-        foreach (file; tree.listFiles(directoryId))
+        foreach (file; filesFor(directoryId))
             if (matchesFileFilter(file, filter))
                 allFiles ~= file;
         sort!((a, b) {
@@ -494,6 +525,9 @@ unittest
     auto tree = buildDirectoryTree(inputs);
     auto source = new ProjectedDirectorySource(tree);
     assert(source.listDirectories("root").length == 10_000);
+    FileFilter pathFilter;
+    pathFilter.text = "file.bin";
+    assert(source.listDirectories("root", pathFilter).length == 10_000);
     assert(tree.root.childDirectoryCount == 10_000);
     assert(tree.root.fileCount == 0);
     assert(tree.root.aggregateSize == 10_000);
