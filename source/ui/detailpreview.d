@@ -57,6 +57,8 @@ DetailPreviewUi loadDetailPreviewUi(DocumentTab document)
     ui.previewPane = builderObject!Box(previewBuilder, "preview", "previewPane");
     document.detailPreviewTitle = builderObject!Label(previewBuilder, "preview", "detailPreviewTitle");
     document.detailPreviewSummary = builderObject!Label(previewBuilder, "preview", "detailPreviewSummary");
+    document.detailPreviewSummaryScroll = builderObject!ScrolledWindow(previewBuilder,
+        "preview", "detailPreviewSummaryScroll");
     document.detailPreviewSummary.setXalign(0);
     document.detailPreviewSummary.setYalign(0);
     document.detailPreviewImageControls = builderObject!Box(previewBuilder, "preview", "previewControls");

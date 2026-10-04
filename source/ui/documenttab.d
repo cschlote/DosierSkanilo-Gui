@@ -166,6 +166,7 @@ class DocumentTab
     Button detailNextFileButton;
     Label detailPreviewTitle;
     Label detailPreviewSummary;
+    ScrolledWindow detailPreviewSummaryScroll;
     Label detailMediaInfoStatus;
     Label detailFileTypeStatus;
     Label detailArchiveStatus;

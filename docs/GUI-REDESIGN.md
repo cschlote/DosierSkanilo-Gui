@@ -67,6 +67,8 @@ Implemented:
   clear empty state.
 - Files without specialized metadata show a fallback overview with identity,
   size, known paths, and available checksums.
+- Long preview summaries use a size-bounded two-axis scroll area and preserve
+  long lines without expanding the containing window.
 - Per-tab filter toggles are captured in the query state before applying filters.
 
 Known limitations:
@@ -94,6 +96,8 @@ The current working tree passes:
 
 The GTK-independent filter projection and request-state tests are included in
 the default suite. The expanded-tree GTK opt-in test was run with a display.
+Torrent and archive preview summaries were also smoke-tested with
+`G_DEBUG=fatal-warnings` and a fresh GUI state.
 Earlier display-backed verification also covered:
 
 - `DOSIER_GUI_ACTIVATION_TEST=1 dub test --compiler=ldc2 -- --threads=1

@@ -50,6 +50,8 @@ All notable changes to this project are documented in this file.
 - Torrent and archive files now show a metadata/type overview instead of a raw
   hex dump; File Type signatures and indexed torrent/archive details inform the
   summary.
+- Long preview summaries now stay in a size-bounded scroll area with horizontal
+  and vertical scrolling; long lines are preserved instead of wrapped.
 - Tree-originated row selection no longer triggers a reciprocal table-to-tree
   reveal that can scroll the tree or reopen nested directories.
 - Directory rows toggle expansion on activation, and their context menu can

@@ -388,16 +388,33 @@
       </packing>
     </child>
     <child>
-      <object class="GtkLabel" id="detailPreviewSummary">
+      <object class="GtkScrolledWindow" id="detailPreviewSummaryScroll">
         <property name="can-focus">False</property>
-        <property name="label">No preview available.</property>
-        <property name="wrap">True</property>
-        <property name="selectable">True</property>
-        <property name="xalign">0</property>
-        <property name="yalign">0</property>
-        <style>
-          <class name="preview-summary"/>
-        </style>
+        <property name="hexpand">True</property>
+        <property name="vexpand">False</property>
+        <property name="hscrollbar-policy">automatic</property>
+        <property name="vscrollbar-policy">automatic</property>
+        <property name="min-content-width">120</property>
+        <property name="max-content-width">600</property>
+        <property name="min-content-height">48</property>
+        <property name="max-content-height">160</property>
+        <property name="propagate-natural-width">True</property>
+        <property name="propagate-natural-height">True</property>
+        <property name="shadow-type">none</property>
+        <child>
+          <object class="GtkLabel" id="detailPreviewSummary">
+            <property name="can-focus">False</property>
+            <property name="label">No preview available.</property>
+            <property name="hexpand">True</property>
+            <property name="wrap">False</property>
+            <property name="selectable">True</property>
+            <property name="xalign">0</property>
+            <property name="yalign">0</property>
+            <style>
+              <class name="preview-summary"/>
+            </style>
+          </object>
+        </child>
       </object>
       <packing>
         <property name="expand">False</property>
