@@ -120,6 +120,7 @@ import ui.toolbarbindings : ToolbarBindingsCallbacks, bindFilterSignals,
     bindToolbarButtons, captureDocumentFilterState;
 import ui.windowlifecycle : WindowLifecycleCallbacks, bindWindowLifecycleSignals;
 import ui.startupworkflow : scheduleSelfTestQuit, startStartupWorkflow;
+import ui.treeselectionlogic : TreeSelectionFollowup, treeSelectionFollowup;
 import ui.previewprogress : PreviewProgressCallbacks, startPreviewProgressTimer;
 import ui.virtualblobtable : VirtualBlobTableModel;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
@@ -3248,19 +3249,24 @@ int runMainWindow(string[] args, ref CliOptions cli)
             : "file:" ~ rowIndex.to!string;
         TreeIter treeRoot;
         TreeIter treeFile;
-        bool treeSelected;
         auto foundTreeFile = !document.syncingTreeSelection
-            && findDirectoryTreeIter(document.directoryTreeView.getModel(), treeRoot, false,
-                treeSelectionId, treeFile);
-        if (foundTreeFile)
+            && findDirectoryTreeIter(document.directoryTreeView.getModel(), treeRoot,
+                false, treeSelectionId, treeFile);
+        final switch (treeSelectionFollowup(document.syncingTreeSelection,
+            foundTreeFile))
         {
+        case TreeSelectionFollowup.ignoreSynchronizedChange:
+            break;
+        case TreeSelectionFollowup.selectMaterializedTreeRow:
             document.syncingTreeSelection = true;
             document.directoryTreeView.getSelection().selectIter(treeFile);
             document.syncingTreeSelection = false;
-            treeSelected = true;
+            break;
+        case TreeSelectionFollowup.revealTreeFile:
+            if (revealTreeFile !is null)
+                revealTreeFile(document, treeSelectionId);
+            break;
         }
-        if (!treeSelected && revealTreeFile !is null)
-            revealTreeFile(document, treeSelectionId);
         if (isRepositorySource(document.filePath) && row.sourceId >= 0
             && !row.detailsLoaded)
         {

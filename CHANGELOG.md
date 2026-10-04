@@ -47,6 +47,8 @@ All notable changes to this project are documented in this file.
   with a temporary “Filtering files...” tree placeholder.
 - Case-sensitive path filtering now matches between the JSON/SQLite directory
   tree and repository Blob table; stale filter replies are invalidated on cancel.
+- Tree-originated row selection no longer triggers a reciprocal table-to-tree
+  reveal that can scroll the tree or reopen nested directories.
 - Directory rows toggle expansion on activation, and their context menu can
   expand or collapse the subtree.
 - Selection details are back below the Previous/Next controls; timing and source
