@@ -53,6 +53,17 @@ import std.utf : validate;
 enum size_t PREVIEW_HEX_DUMP_BYTES = 512;
 enum size_t PREVIEW_TEXT_BYTES = 8192;
 
+private enum PreviewContentKind
+{
+    image,
+    video,
+    audio,
+    text,
+    torrent,
+    archive,
+    binary
+}
+
 private void setPreviewSummaryMonospace(Label label, bool enabled)
 {
     auto context = label.getStyleContext();
@@ -81,6 +92,101 @@ private bool isTextPreviewCandidate(const(BlobRow) row)
     default:
         return false;
     }
+}
+
+private bool isTorrentPreviewCandidate(const(BlobRow) row)
+{
+    auto type = row.sourceBlob is null ? "" : row.sourceBlob.fileType.toLower;
+    return row.hasTorrent || type.canFind("torrent")
+        || extension(row.primaryFileName.toLower) == ".torrent";
+}
+
+private bool isArchivePreviewCandidate(const(BlobRow) row)
+{
+    if (row.hasArchive)
+        return true;
+
+    auto type = row.sourceBlob is null ? "" : row.sourceBlob.fileType.toLower;
+    if (type.canFind("archive") || type.canFind("compressed data"))
+        return true;
+
+    auto ext = extension(row.primaryFileName.toLower);
+    switch (ext)
+    {
+    case ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz",
+            ".tbz", ".tbz2", ".txz", ".lz", ".lzma", ".zst", ".cab",
+            ".cpio", ".jar", ".war", ".ear", ".apk":
+        return true;
+    default:
+        return false;
+    }
+}
+
+private PreviewContentKind previewContentKind(const(BlobRow) row)
+{
+    if (isVideoPreviewCandidate(row))
+        return PreviewContentKind.video;
+    if (isAudioPreviewCandidate(row))
+        return PreviewContentKind.audio;
+    if (isImagePreviewCandidate(row))
+        return PreviewContentKind.image;
+    if (isTorrentPreviewCandidate(row))
+        return PreviewContentKind.torrent;
+    if (isArchivePreviewCandidate(row))
+        return PreviewContentKind.archive;
+    if (isTextPreviewCandidate(row))
+        return PreviewContentKind.text;
+    return PreviewContentKind.binary;
+}
+
+private string containerPreviewSummary(const(BlobRow) row, PreviewContentKind kind)
+{
+    auto fileName = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
+    auto sourceType = row.sourceBlob is null ? "" : row.sourceBlob.fileType;
+    auto type = sourceType.length > 0 ? sourceType : "No file type signature available.";
+    string[] lines = [
+        kind == PreviewContentKind.torrent ? "Torrent metadata" : "Archive overview",
+        "File: " ~ fileName,
+        "Size: " ~ row.fileSize.to!string ~ " bytes",
+        "File type: " ~ type
+    ];
+
+    if (kind == PreviewContentKind.torrent)
+    {
+        auto torrent = row.sourceBlob is null ? null : row.sourceBlob.torrentInfo;
+        if (torrent is null || torrent.empty)
+        {
+            lines ~= "Torrent metadata has not been indexed.";
+        }
+        else
+        {
+            if (torrent.name.length > 0)
+                lines ~= "Name: " ~ torrent.name;
+            if (torrent.totalSize > 0)
+                lines ~= "Content size: " ~ torrent.totalSize.to!string ~ " bytes";
+            if (torrent.infoHashHex.length > 0)
+                lines ~= "Info hash: " ~ torrent.infoHashHex;
+            if (torrent.magnetURI.length > 0)
+                lines ~= "Magnet URI: " ~ torrent.magnetURI;
+            if (torrent.files.length > 0)
+                lines ~= "Files: " ~ torrent.files.length.to!string;
+            else
+                lines ~= "File list: see the Torrent section.";
+        }
+    }
+    else if (row.hasArchive)
+    {
+        if (row.sourceBlob !is null && row.sourceBlob.archiveSpecs.length > 0)
+            lines ~= "Entries: " ~ row.sourceBlob.archiveSpecs.length.to!string;
+        else
+            lines ~= "Entry list: see the Archive section.";
+    }
+    else
+    {
+        lines ~= "Archive contents have not been indexed.";
+    }
+
+    return lines.join("\n");
 }
 
 import dosierskanilo.metadata.mediainfosig : MediaInfoAudio, MediaInfoSig, MediaInfoText, MediaInfoVideo;
@@ -490,6 +596,47 @@ unittest
     row.summaryHasVideo = true;
     assert(isVideoPreviewCandidate(row));
     assert(!isAudioPreviewCandidate(row));
+}
+
+@("archive and torrent type hints select structured previews instead of hex")
+unittest
+{
+    import dosierskanilo.metadata.torrentinfo : TorrentInfo;
+    import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob;
+
+    auto torrentBlob = new NamedBinaryBlob();
+    torrentBlob.fileType = "BitTorrent file";
+    torrentBlob.torrentInfo = new TorrentInfo();
+    torrentBlob.torrentInfo.name = "Example bundle";
+    torrentBlob.torrentInfo.totalSize = 4096;
+    torrentBlob.torrentInfo.magnetURI = "magnet:?xt=urn:btih:example";
+    BlobRow torrentRow;
+    torrentRow.sourceBlob = torrentBlob;
+    torrentRow.primaryFileName = "download.data";
+    torrentRow.fileSize = 512;
+    assert(previewContentKind(torrentRow) == PreviewContentKind.torrent);
+    auto torrentSummary = containerPreviewSummary(torrentRow,
+        PreviewContentKind.torrent);
+    assert(torrentSummary.canFind("BitTorrent file"));
+    assert(torrentSummary.canFind("Example bundle"));
+    assert(torrentSummary.canFind("magnet:?xt=urn:btih:example"));
+
+    auto archiveBlob = new NamedBinaryBlob();
+    archiveBlob.fileType = "RAR archive data";
+    BlobRow archiveRow;
+    archiveRow.sourceBlob = archiveBlob;
+    archiveRow.primaryFileName = "download.data";
+    archiveRow.fileSize = 1024;
+    assert(previewContentKind(archiveRow) == PreviewContentKind.archive);
+    auto archiveSummary = containerPreviewSummary(archiveRow,
+        PreviewContentKind.archive);
+    assert(archiveSummary.canFind("RAR archive data"));
+    assert(archiveSummary.canFind("not been indexed"));
+
+    archiveRow.primaryFileName = "download.zip";
+    archiveBlob.fileType = "application/octet-stream";
+    assert(previewContentKind(archiveRow) == PreviewContentKind.archive,
+        "archive extensions remain a fallback hint when `file` is inconclusive");
 }
 
 /** Decide whether the selected row should use the embedded video preview. */
@@ -1910,16 +2057,17 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
     auto fileName = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
     auto mediaSummary = row.mediaInfoDetails.length > 0 ? row.mediaInfoDetails : "No media metadata available.";
     auto previewPath = resolvePreviewPath(document, row);
+    auto previewKind = previewContentKind(row);
 
     document.selectedPreviewSourcePath = "";
     document.selectedPreviewSourcePixbuf = null;
     document.selectedPreviewIsVideo = previewPath.length > 0
-        && isVideoPreviewCandidate(row);
+        && previewKind == PreviewContentKind.video;
     document.selectedPreviewIsAudio = !document.selectedPreviewIsVideo
-        && previewPath.length > 0 && isAudioPreviewCandidate(row);
+        && previewPath.length > 0 && previewKind == PreviewContentKind.audio;
     document.selectedPreviewIsImage = !document.selectedPreviewIsVideo
         && !document.selectedPreviewIsAudio
-        && previewPath.length > 0 && isImagePreviewCandidate(row);
+        && previewPath.length > 0 && previewKind == PreviewContentKind.image;
     document.selectedPreviewPath = previewPath;
 
     if (document.selectedPreviewIsVideo)
@@ -1934,6 +2082,18 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
         document.previewVideoTrackSignature = "";
         document.previewAudioTrackSignature = "";
         document.previewSubtitleTrackSignature = "";
+    }
+
+    if (previewKind == PreviewContentKind.torrent
+        || previewKind == PreviewContentKind.archive)
+    {
+        document.previewPathCheckPending = false;
+        refreshMediaPreview(document);
+        document.detailPreviewTitle.setText(previewKind == PreviewContentKind.torrent
+            ? "Torrent overview" : "Archive overview");
+        setPreviewSummaryMonospace(document.detailPreviewSummary, false);
+        document.detailPreviewSummary.setText(containerPreviewSummary(row, previewKind));
+        return;
     }
 
     if (document.selectedPreviewIsImage)
@@ -1977,7 +2137,7 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
     auto isVideo = document.selectedPreviewIsVideo;
     auto isAudio = document.selectedPreviewIsAudio;
     auto isImage = document.selectedPreviewIsImage;
-    auto isText = !isVideo && !isAudio && !isImage && isTextPreviewCandidate(row);
+    auto isText = previewKind == PreviewContentKind.text;
     new Thread({
         bool fileExists;
         string error;

@@ -47,6 +47,9 @@ All notable changes to this project are documented in this file.
   with a temporary “Filtering files...” tree placeholder.
 - Case-sensitive path filtering now matches between the JSON/SQLite directory
   tree and repository Blob table; stale filter replies are invalidated on cancel.
+- Torrent and archive files now show a metadata/type overview instead of a raw
+  hex dump; File Type signatures and indexed torrent/archive details inform the
+  summary.
 - Tree-originated row selection no longer triggers a reciprocal table-to-tree
   reveal that can scroll the tree or reopen nested directories.
 - Directory rows toggle expansion on activation, and their context menu can
