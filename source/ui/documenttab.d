@@ -26,6 +26,7 @@ import gtk.ToggleButton;
 import gtk.Scale;
 import gtk.CheckButton;
 import gtk.ComboBoxText;
+import gtk.Notebook;
 import gtk.SpinButton;
 import gtk.Widget;
 
@@ -239,8 +240,12 @@ class DocumentTab
     ComboBoxText pageSizeCombo;
     ComboBoxText treeSortCombo;
     TreeSortOrder treeSortOrder = TreeSortOrder.nameAscending;
-    ComboBoxText viewModeCombo;
-    int viewMode;
+    Notebook resultViews;
+    int resultViewPage;
+    bool filterApplied;
+    bool tableSortEnabled;
+    int tableSortColumnId = -1;
+    int tableSortOrder;
     Label pageStatus;
     Box pageBar;
     string selectedPreviewPath = "";

@@ -27,6 +27,7 @@ struct TreeCursorState
 struct DocumentFilterState
 {
     string documentPath;
+    bool applied;
     string text;
     bool video;
     bool audio;
@@ -36,6 +37,15 @@ struct DocumentFilterState
     bool fileType;
     bool archive;
     bool torrent;
+}
+
+/** Persisted GtkTreeSortable state for a document's Blob table. */
+struct TableSortState
+{
+    string documentPath;
+    bool sorted;
+    int columnId;
+    int order;
 }
 
 /** Persisted UI state stored below the user's config directory. */
@@ -69,7 +79,9 @@ struct AppState
     string[] expandedTreeStates;
     string[] selectedTreeStates;
     string[] treeSortStates;
+    /// Legacy JSON key; values are now selected Directory/Blob notebook pages.
     string[] viewModeStates;
+    TableSortState[] tableSortStates;
     TreeCursorState[] treeCursorStates;
     DocumentFilterState[] documentFilterStates;
     int activeTabIndex;
@@ -243,6 +255,7 @@ private DocumentFilterState[] jsonToDocumentFilterStates(JSONValue value)
             continue;
         DocumentFilterState state;
         state.documentPath = jsonObjectString(entry, "documentPath");
+        if (auto field = "applied" in entry.object) state.applied = jsonToBool(*field);
         state.text = jsonObjectString(entry, "text");
         if (auto field = "video" in entry.object) state.video = jsonToBool(*field);
         if (auto field = "audio" in entry.object) state.audio = jsonToBool(*field);
@@ -252,6 +265,26 @@ private DocumentFilterState[] jsonToDocumentFilterStates(JSONValue value)
         if (auto field = "fileType" in entry.object) state.fileType = jsonToBool(*field);
         if (auto field = "archive" in entry.object) state.archive = jsonToBool(*field);
         if (auto field = "torrent" in entry.object) state.torrent = jsonToBool(*field);
+        if (state.documentPath.length > 0)
+            result ~= state;
+    }
+    return result;
+}
+
+private TableSortState[] jsonToTableSortStates(JSONValue value)
+{
+    TableSortState[] result;
+    if (value.type != JSONType.array)
+        return result;
+    foreach (entry; value.array)
+    {
+        if (entry.type != JSONType.object)
+            continue;
+        TableSortState state;
+        state.documentPath = jsonObjectString(entry, "documentPath");
+        if (auto field = "sorted" in entry.object) state.sorted = jsonToBool(*field);
+        if (auto field = "columnId" in entry.object) state.columnId = jsonToInt(*field, -1);
+        if (auto field = "order" in entry.object) state.order = jsonToInt(*field);
         if (state.documentPath.length > 0)
             result ~= state;
     }
@@ -281,6 +314,7 @@ private string jsonDocumentFilterStates(const(DocumentFilterState)[] states)
     {
         JSONValue[string] entry;
         entry["documentPath"] = JSONValue(state.documentPath);
+        entry["applied"] = JSONValue(state.applied);
         entry["text"] = JSONValue(state.text);
         entry["video"] = JSONValue(state.video);
         entry["audio"] = JSONValue(state.audio);
@@ -290,6 +324,21 @@ private string jsonDocumentFilterStates(const(DocumentFilterState)[] states)
         entry["fileType"] = JSONValue(state.fileType);
         entry["archive"] = JSONValue(state.archive);
         entry["torrent"] = JSONValue(state.torrent);
+        entries ~= JSONValue(entry);
+    }
+    return JSONValue(entries).toString;
+}
+
+private string jsonTableSortStates(const(TableSortState)[] states)
+{
+    JSONValue[] entries;
+    foreach (state; states)
+    {
+        JSONValue[string] entry;
+        entry["documentPath"] = JSONValue(state.documentPath);
+        entry["sorted"] = JSONValue(state.sorted);
+        entry["columnId"] = JSONValue(state.columnId);
+        entry["order"] = JSONValue(state.order);
         entries ~= JSONValue(entry);
     }
     return JSONValue(entries).toString;
@@ -497,6 +546,8 @@ private AppState loadAppStateFromPath(string path)
         {
             state.viewModeStates = jsonToStringArray(*value);
         }
+        if (auto value = "tableSortStates" in root)
+            state.tableSortStates = jsonToTableSortStates(*value);
         if (auto value = "treeCursorStates" in root)
         {
             state.treeCursorStates = jsonToTreeCursorStates(*value);
@@ -565,6 +616,7 @@ private void saveAppStateToPath(const(AppState) state, string path)
             "  \"selectedTreeStates\": %s,\n" ~
             "  \"treeSortStates\": %s,\n" ~
             "  \"viewModeStates\": %s,\n" ~
+            "  \"tableSortStates\": %s,\n" ~
             "  \"treeCursorStates\": %s,\n" ~
             "  \"documentFilterStates\": %s,\n" ~
             "  \"activeTabIndex\": %s\n" ~
@@ -595,6 +647,7 @@ private void saveAppStateToPath(const(AppState) state, string path)
         jsonStringArray(state.selectedTreeStates),
         jsonStringArray(state.treeSortStates),
         jsonStringArray(state.viewModeStates),
+        jsonTableSortStates(state.tableSortStates),
         jsonTreeCursorStates(state.treeCursorStates),
         jsonDocumentFilterStates(state.documentFilterStates),
         state.activeTabIndex
@@ -670,10 +723,11 @@ unittest
     expected.selectedTreeStates = ["one.json\tfile:7"];
     expected.treeSortStates = ["one.json\t2"];
     expected.viewModeStates = ["one.json\t1"];
+    expected.tableSortStates = [TableSortState("one.json", true, 8, 1)];
     expected.treeCursorStates = [TreeCursorState("one\tpath.json", "directory:audio",
         "audio/track.flac", "file-ref-17", 123_456_789)];
     expected.documentFilterStates = [DocumentFilterState("one\tpath.json",
-        "audio/track", true, false, true, true, true, false, true, false)];
+        true, "audio/track", true, false, true, true, true, false, true, false)];
     expected.activeTabIndex = 7;
 
     saveAppStateToPath(expected, testStateFile);
@@ -705,6 +759,11 @@ unittest
     assert(loaded.selectedTreeStates == expected.selectedTreeStates);
     assert(loaded.treeSortStates == expected.treeSortStates);
     assert(loaded.viewModeStates == expected.viewModeStates);
+    assert(loaded.tableSortStates.length == 1);
+    assert(loaded.tableSortStates[0].documentPath == "one.json");
+    assert(loaded.tableSortStates[0].sorted);
+    assert(loaded.tableSortStates[0].columnId == 8);
+    assert(loaded.tableSortStates[0].order == 1);
     assert(loaded.treeCursorStates.length == 1);
     assert(loaded.treeCursorStates[0].documentPath == "one\tpath.json");
     assert(loaded.treeCursorStates[0].directoryId == "directory:audio");
@@ -713,6 +772,7 @@ unittest
     assert(loaded.treeCursorStates[0].size == 123_456_789);
     assert(loaded.documentFilterStates.length == 1);
     assert(loaded.documentFilterStates[0].documentPath == "one\tpath.json");
+    assert(loaded.documentFilterStates[0].applied);
     assert(loaded.documentFilterStates[0].text == "audio/track");
     assert(loaded.documentFilterStates[0].video);
     assert(!loaded.documentFilterStates[0].audio);

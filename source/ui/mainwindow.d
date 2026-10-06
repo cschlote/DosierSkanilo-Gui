@@ -51,6 +51,7 @@ import gtk.ToggleButton;
 import gtk.TreeIter;
 import gtk.TreeModelIF;
 import gtk.TreeSelection;
+import gtk.TreeSortableIF;
 import gtk.TreeStore;
 import gtk.TreePath;
 import gtk.TreeView;
@@ -58,7 +59,8 @@ import gtk.TreeViewColumn;
 import gtk.CellRendererText;
 import gtk.Widget;
 import gtk.Window;
-import gtk.c.types : GtkAlign, GtkIconSize, GtkReliefStyle, GtkShadowType, GtkTreeViewColumnSizing;
+import gtk.c.types : GtkAlign, GtkIconSize, GtkReliefStyle, GtkShadowType,
+    GtkSortType, GtkTreeViewColumnSizing;
 import gtk.c.types : FileChooserAction, ResponseType;
 import gdk.c.types : GdkModifierType;
 import gdk.Event;
@@ -86,7 +88,7 @@ import model.datasource : SourceQuery, isRepositorySource, loadDocumentDetails,
 import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, FileCursor,
     FileFilter, FileNode, FilePage, FileSortOrder, NestedFileNode,
     ProjectedDirectorySource;
-import ui.appstate : AppState, DocumentFilterState, TreeCursorState, loadAppState,
+import ui.appstate : AppState, DocumentFilterState, TableSortState, TreeCursorState, loadAppState,
     saveAppState;
 import ui.builderutils : builderObject;
 import ui.detailpane : DetailPaneCallbacks, bindDetailPaneSignals, loadDetailPaneUi;
@@ -107,6 +109,8 @@ import ui.detailswidgets : setDetailEntry,
     pauseVideoPreview, jumpVideoPreview, stopVideoPreview, syncVideoPreviewPosition,
     seekVideoPreview, syncVideoPlaybackButton, syncVideoTrackSelectors;
 import ui.documentactions : DocumentActionCallbacks, closeCurrentDocument, reloadCurrentDocument;
+import ui.documentfilterstate : documentFilterHasCriteria,
+    shouldApplyDocumentFilter;
 import ui.fileopendialog : FileOpenDialogCallbacks, chooseAndLoadPath,
     chooseAndLoadRepository;
 import ui.helpdialogs : showAbout, showShortcutsHelp;
@@ -120,7 +124,8 @@ import ui.toolbarbindings : ToolbarBindingsCallbacks, bindFilterSignals,
     bindToolbarButtons, captureDocumentFilterState;
 import ui.windowlifecycle : WindowLifecycleCallbacks, bindWindowLifecycleSignals;
 import ui.startupworkflow : scheduleSelfTestQuit, startStartupWorkflow;
-import ui.treeselectionlogic : TreeSelectionFollowup, treeSelectionFollowup;
+import ui.treeselectionlogic : TreeSelectionFollowup, tableIndexMatchesVisibleRow,
+    jsonFilterNeedsRebuild, treeSelectionFollowup;
 import ui.previewprogress : PreviewProgressCallbacks, startPreviewProgressTimer;
 import ui.virtualblobtable : VirtualBlobTableModel;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
@@ -218,6 +223,14 @@ private bool sameTreeFilter(FileFilter left, FileFilter right)
         && left.image == right.image && left.textStream == right.textStream
         && left.mediaNegated == right.mediaNegated && left.fileType == right.fileType
         && left.archive == right.archive && left.torrent == right.torrent;
+}
+
+private bool validBlobTableSortColumn(int columnId)
+{
+    return columnId == COL_INDEX_SORT || columnId == COL_FILE_SIZE_SORT
+        || columnId == COL_CHECKSUM_SET || columnId == COL_FILE_TYPE
+        || columnId == COL_MEDIA_INFO || columnId == COL_HAS_ARCHIVE
+        || columnId == COL_HAS_TORRENT;
 }
 
 private FileSortOrder sourceFileSortOrder(TreeSortOrder order)
@@ -622,6 +635,15 @@ private void showFilteringTreePlaceholder(DocumentTab document)
     document.directoryTreeStore.setValue(placeholder, 1, "Filtering");
     document.directoryTreeStore.setValue(placeholder, 3, rootNode.id);
     document.directoryTreeView.expandRow(document.directoryTreeStore.getPath(root), false);
+}
+
+/** Show a non-expandable loading row until a document source is attached. */
+private void showDocumentTreeLoadingPlaceholder(DocumentTab document)
+{
+    document.directoryTreeStore.clear();
+    auto iter = document.directoryTreeStore.createIter(null);
+    document.directoryTreeStore.setValue(iter, 0, "Loading directory tree...");
+    document.directoryTreeStore.setValue(iter, 1, "Loading");
 }
 
 /** Worker result payload for background JSON loading. */
@@ -1116,6 +1138,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     bool clearSavedWindowGeometryOnExit;
     bool allowRuntimeStatePersistence = !loadedState.hasWindowSize;
     bool isSyncingToolbarState;
+    bool startupFilterPending = cli.filterOnStart.length > 0;
     bool selfTestQuitScheduled;
     int splitPositionHorizontal = loadedState.splitPositionHorizontal;
     int splitPositionVertical = loadedState.splitPositionVertical;
@@ -1695,12 +1718,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
     void delegate(DocumentTab, bool) loadDocument;
     void delegate(DocumentTab, string) revealTreeFile;
     void delegate() advanceStartupQueue;
+    void delegate(bool) persistCurrentState;
 
     /** Build and wire a new document tab widget hierarchy. */
     DocumentTab createDocumentTab(string filePath)
     {
         auto document = new DocumentTab();
         document.filePath = filePath;
+        auto useStartupFilter = startupFilterPending;
+        startupFilterPending = false;
         bool restoredFilterState;
         auto treeStatePrefix = filePath ~ "\t";
         foreach (treeState; loadedState.expandedTreeStates)
@@ -1739,6 +1765,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.filterFileType = filterState.fileType;
             document.filterArchive = filterState.archive;
             document.filterTorrent = filterState.torrent;
+            document.filterApplied = filterState.applied
+                || documentFilterHasCriteria(document.filterQuery,
+                    document.filterVideo, document.filterAudio, document.filterImage,
+                    document.filterText, document.filterFileType, document.filterArchive,
+                    document.filterTorrent);
             restoredFilterState = true;
         }
         foreach (treeState; loadedState.treeSortStates)
@@ -1769,18 +1800,27 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 {
                     auto viewValue = to!int(viewText);
                     if (viewValue >= 0 && viewValue <= 1)
-                        document.viewMode = viewValue;
+                        document.resultViewPage = viewValue;
                 }
                 catch (Exception)
                 {
                 }
             }
         }
-        if (!restoredFilterState)
+        foreach (sortState; loadedState.tableSortStates)
         {
-            auto filterQueryText = filterEntry is null ? cli.filterOnStart : filterEntry.getText();
-            document.filterQuery = filterQueryText is null ? "" : filterQueryText;
+            if (sortState.documentPath != filePath)
+                continue;
+            if (!sortState.sorted || !validBlobTableSortColumn(sortState.columnId)
+                || (sortState.order != cast(int) GtkSortType.ASCENDING
+                    && sortState.order != cast(int) GtkSortType.DESCENDING))
+                continue;
+            document.tableSortEnabled = true;
+            document.tableSortColumnId = sortState.columnId;
+            document.tableSortOrder = sortState.order;
         }
+        if (!restoredFilterState)
+            document.filterQuery = useStartupFilter ? cli.filterOnStart : "";
         document.previewScaleMode = previewScaleMode;
         document.previewVideoAutostart = previewVideoAutostart;
         document.previewVideoVolume = previewVideoVolume;
@@ -1807,6 +1847,22 @@ int runMainWindow(string[] args, ref CliOptions cli)
         ]);
         document.tableView = new TreeView(document.tableStore);
         configureTableColumns(document.tableView);
+        if (document.tableSortEnabled)
+            document.tableStore.setSortColumnId(document.tableSortColumnId,
+                cast(GtkSortType) document.tableSortOrder);
+        document.tableStore.addOnSortColumnChanged((TreeSortableIF sortable) {
+            int columnId;
+            GtkSortType order;
+            document.tableSortEnabled = document.tableStore.getSortColumnId(
+                columnId, order);
+            if (document.tableSortEnabled)
+            {
+                document.tableSortColumnId = columnId;
+                document.tableSortOrder = cast(int) order;
+            }
+            if (currentDocument() is document)
+                persistCurrentState(clearSavedWindowGeometryOnExit);
+        });
         document.directoryTreeStore = new TreeStore([
             GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING,
             GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING,
@@ -1815,6 +1871,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         ]);
         document.directoryTreeView = new TreeView(document.directoryTreeStore);
         configureDirectoryTreeColumns(document.directoryTreeView);
+        showDocumentTreeLoadingPlaceholder(document);
         document.directoryTreeView.addOnButtonPress((Event event, Widget _) {
             if (event.type != EventType.BUTTON_PRESS || event.button.button != 3)
                 return false;
@@ -2213,14 +2270,23 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     rowSelected = rowReferencesSelectedPath(row);
                 if (!rowSelected)
                     continue;
+                auto tableModel = document.tableView.getModel();
                 TreeIter tableIter;
-                if (!document.tableView.getModel().getIterFirst(tableIter))
+                if (tableModel is null || !tableModel.getIterFirst(tableIter))
                     return;
-                foreach (candidateIndex; 0 .. rowIndex)
+                bool foundTableRow;
+                do
                 {
-                    if (!document.tableView.getModel().iterNext(tableIter))
-                        return;
+                    if (tableIndexMatchesVisibleRow(
+                        tableModel.getValueString(tableIter, COL_INDEX), rowIndex))
+                    {
+                        foundTableRow = true;
+                        break;
+                    }
                 }
+                while (tableModel.iterNext(tableIter));
+                if (!foundTableRow)
+                    return;
                 selectTableRowFromTree(tableIter, selectedTreeFileName,
                     selectedTreeRelativePath);
                 return;
@@ -2345,11 +2411,17 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto resultViews = new Notebook();
         resultViews.appendPage(directoryScroll, new Label("Directory tree"));
         resultViews.appendPage(scroll, new Label("Blob table"));
+        document.resultViews = resultViews;
+        resultViews.setCurrentPage(document.resultViewPage);
+        resultViews.addOnSwitchPage((Widget _, uint pageNumber, Notebook __) {
+            document.resultViewPage = cast(int) pageNumber;
+            if (currentDocument() is document)
+                persistCurrentState(clearSavedWindowGeometryOnExit);
+        });
         auto previewUi = loadDetailPreviewUi(document);
         auto detailUi = loadDetailPaneUi(document);
         auto pageUi = loadDocumentPageUi(document);
         document.treeSortCombo.setActive(cast(int) document.treeSortOrder);
-        document.viewModeCombo.setActive(document.viewMode);
         auto hasRestoredTreeCursor = document.selectedTreeCursor.id.length > 0;
         document.treePreviousFileButton.setSensitive(hasRestoredTreeCursor);
         document.treeNextFileButton.setSensitive(hasRestoredTreeCursor);
@@ -2451,20 +2523,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
             if (clearFilterForDocument !is null)
                 clearFilterForDocument(document);
         });
-        void applyViewMode()
-        {
-            auto page = document.viewMode == 1 ? 1 : 0;
-            resultViews.setCurrentPage(page);
-        }
-        document.viewModeCombo.addOnChanged((ComboBoxText combo) {
-            auto active = combo.getActive();
-            if (active < 0 || active > 1)
-                return;
-            document.viewMode = active;
-            applyViewMode();
-        });
-        applyViewMode();
-
         auto previewPane = previewUi.previewPane;
         auto detailsPane = detailUi.detailsPane;
         auto detailsContent = detailUi.detailsContent;
@@ -2620,6 +2678,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 renderDirectoryTree(document.directoryTreeStore, document.directorySource,
                     document.directoryTreeView, document.expandedDirectoryIds,
                     treeFilterForDocument(document, prefCaseSensitiveFilter), document.treeSortOrder);
+                selectPendingTreeFile(document);
                 if (document.reconcileDirectoryLoads !is null)
                     new Idle({ document.reconcileDirectoryLoads(); return false; });
             }
@@ -2814,9 +2873,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
             state.treeSortStates ~= openDocument.filePath ~ "\t"
                 ~ (cast(int) openDocument.treeSortOrder).to!string;
             state.viewModeStates ~= openDocument.filePath ~ "\t"
-                ~ openDocument.viewMode.to!string;
+                ~ openDocument.resultViewPage.to!string;
+            state.tableSortStates ~= TableSortState(openDocument.filePath,
+                openDocument.tableSortEnabled, openDocument.tableSortColumnId,
+                openDocument.tableSortOrder);
             state.documentFilterStates ~= DocumentFilterState(openDocument.filePath,
-                openDocument.filterQuery, openDocument.filterVideo,
+                openDocument.filterApplied, openDocument.filterQuery,
+                openDocument.filterVideo,
                 openDocument.filterAudio, openDocument.filterImage,
                 openDocument.filterText, openDocument.filterMediaNegated,
                 openDocument.filterFileType, openDocument.filterArchive,
@@ -2849,8 +2912,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     }
 
     /** Persist the current application state and surface write failures in the active tab. */
-    void persistCurrentState(bool clearWindowGeometry = false)
-    {
+    persistCurrentState = (bool clearWindowGeometry) {
         try
         {
             saveAppState(currentAppState(clearWindowGeometry));
@@ -2863,7 +2925,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.status.setText(format("Failed to persist app state: %s", ex.msg));
             }
         }
-    }
+    };
 
     /** Keep the in-memory recent-files list within the configured size limit. */
     void enforceRecentFileLimit()
@@ -3582,13 +3644,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
 
         captureDocumentFilterState(document);
-
-        if (isRepositorySource(document.filePath))
-        {
-            document.pageOffset = 0;
-            loadDocument(document, false);
-            return;
-        }
         applyFilterForDocument(document);
     }
 
@@ -3602,16 +3657,37 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
         if (isRepositorySource(document.filePath))
         {
+            document.filterApplied = true;
+            persistCurrentState(clearSavedWindowGeometryOnExit);
             document.pageOffset = 0;
             document.drainPageRequest = false;
             loadDocument(document, false);
             return;
         }
-        if (document.loadedRows.length == 0)
+        auto hasFilterCriteria = documentFilterHasCriteria(document.filterQuery,
+            document.filterVideo, document.filterAudio, document.filterImage,
+            document.filterText, document.filterFileType, document.filterArchive,
+            document.filterTorrent);
+        auto hadFilteredProjection = document.directorySourceFiltered;
+        if (!jsonFilterNeedsRebuild(hasFilterCriteria, hadFilteredProjection))
         {
-            document.status.setText("No loaded rows to filter.");
+            document.filterApplied = false;
+            document.directorySourceFiltered = false;
+            if (document.unfilteredDirectorySource !is null)
+            {
+                document.directoryTree = document.unfilteredDirectoryTree;
+                document.directorySource = document.unfilteredDirectorySource;
+            }
+            persistCurrentState(clearSavedWindowGeometryOnExit);
+            if (hadFilteredProjection)
+                renderRows(document, document.loadedRows);
+            else
+                document.status.setText(format("Showing %s/%s rows",
+                    document.loadedRows.length, document.loadedRows.length));
             return;
         }
+        document.filterApplied = true;
+        persistCurrentState(clearSavedWindowGeometryOnExit);
         /* Abort async filter results from previous requests, if any, by invalidating their requestId with a new one. */
         auto requestId = document.filterRequest.begin();
 
@@ -3774,7 +3850,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
             return;
         }
 
+        auto hadFilteredProjection = document.directorySourceFiltered;
         resetFilterState(document);
+        document.filterApplied = false;
         auto previousSyncState = isSyncingToolbarState;
         isSyncingToolbarState = true;
         document.filterEntry.setText("");
@@ -3787,6 +3865,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.filterArchiveWidget.setActive(false);
         document.filterTorrentWidget.setActive(false);
         isSyncingToolbarState = previousSyncState;
+        persistCurrentState(clearSavedWindowGeometryOnExit);
 
         if (currentDocument() is document)
             syncToolbarSensitivity();
@@ -3804,7 +3883,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.directorySource = document.unfilteredDirectorySource;
             }
             document.directorySourceFiltered = false;
-            renderRows(document, document.loadedRows);
+            if (hadFilteredProjection)
+                renderRows(document, document.loadedRows);
+            else
+                document.status.setText(format("Showing %s/%s rows",
+                    document.loadedRows.length, document.loadedRows.length));
         }
     };
 
@@ -4040,16 +4123,31 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     document.unfilteredDirectorySource = result.directorySource;
                     document.directorySourceFiltered = false;
                 }
-                auto initialTreeFilter = document.directorySourceRemote
-                    ? treeFilterForDocument(document, prefCaseSensitiveFilter) : FileFilter();
-                renderDirectoryTree(document.directoryTreeStore, document.directorySource,
-                    document.directoryTreeView, document.expandedDirectoryIds,
-                    initialTreeFilter, document.treeSortOrder);
-                if (document.reconcileDirectoryLoads !is null)
-                    new Idle({ document.reconcileDirectoryLoads(); return false; });
-                if (document.pendingTreeRevealFileId.length > 0 && revealTreeFile !is null)
-                    revealTreeFile(document, document.pendingTreeRevealFileId);
-                selectPendingTreeFile(document);
+                auto applyLoadedJsonFilter = !document.directorySourceRemote
+                    && shouldApplyDocumentFilter(documentFilterHasCriteria(
+                        document.filterQuery, document.filterVideo,
+                        document.filterAudio, document.filterImage, document.filterText,
+                        document.filterFileType, document.filterArchive,
+                        document.filterTorrent), document.filterApplied,
+                        prefAutoApplyFilter);
+                if (applyLoadedJsonFilter)
+                {
+                    showFilteringTreePlaceholder(document);
+                }
+                else
+                {
+                    auto initialTreeFilter = document.directorySourceRemote
+                        ? treeFilterForDocument(document, prefCaseSensitiveFilter) : FileFilter();
+                    renderDirectoryTree(document.directoryTreeStore,
+                        document.directorySource, document.directoryTreeView,
+                        document.expandedDirectoryIds, initialTreeFilter,
+                        document.treeSortOrder);
+                    if (document.reconcileDirectoryLoads !is null)
+                        new Idle({ document.reconcileDirectoryLoads(); return false; });
+                    if (document.pendingTreeRevealFileId.length > 0 && revealTreeFile !is null)
+                        revealTreeFile(document, document.pendingTreeRevealFileId);
+                    selectPendingTreeFile(document);
+                }
                 document.loadedDataVersion = result.dataVersion;
                 document.loadedRootShape = result.rootShape.length > 0 ? result.rootShape : "-";
                 document.loadedRootKeysSummary = result.rootKeysSummary.length > 0 ? result.rootKeysSummary
@@ -4107,17 +4205,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                             document.filterQuery, prefCaseSensitiveFilter));
                     }
                 }
-                else if (prefAutoApplyFilter && (
-                    document.filterQuery.length > 0 ||
-                    document.filterVideo ||
-                    document.filterAudio ||
-                    document.filterImage ||
-                    document.filterText ||
-                    document.filterMediaNegated ||
-                    document.filterFileType ||
-                    document.filterArchive ||
-                    document.filterTorrent
-                    ))
+                else if (applyLoadedJsonFilter)
                 {
                     // End the load request before starting the separate filter
                     // request; the filter worker uses the same global busy guard.

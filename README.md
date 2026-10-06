@@ -9,9 +9,11 @@ archive/torrent inspection, duplicate analysis, and JSON writing are currently
 started through the CLI.
 
 The planned direction is operation parity: both clients will invoke the same
-backend scan, metadata, and analysis operations. The GUI task runner, live
-progress, and cooperative cancellation are not implemented yet; see WP-09 in
-the backend plan at `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md`.
+backend scan, metadata, and analysis operations. WP-09.1 defines their shared
+request, progress, and cancellation contract, but backend execution and the GUI
+task runner are not implemented yet. Pause/resume is a planned WP-09.1b contract
+extension. See WP-09 in the backend plan at
+`https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md`.
 
 The GUI currently supports:
 
@@ -32,15 +34,19 @@ The GUI currently supports:
 - a fallback file overview for files without specialized metadata
 - persistent window geometry, splitter positions, tabs, preferences, and
   clipboard copy actions
-- background loading/filtering with cancel support and performance timings
+- background loading/filtering with stale-request cancellation and performance
+  timings
 - Previous/Next page navigation for SQLite repository documents
 - CSV and JSON export of the active tab's filtered row subset
 
 The GUI does not yet expose the scanner-side workflow from the overhauled
 DosierSkanilo backend. Use the CLI for scan, analyze, and write-back jobs.
 The planned direction is for CLI and GUI to start the same library operations;
-the shared progress/cancellation contract and GUI task runner are tracked as
-WP-09 in the backend plan at `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md`.
+backend execution, GUI task management, and the planned pause/resume extension
+are tracked as WP-09 in the backend plan at
+`https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md`.
+For the planned incremental TreeView filter model and GC-friendly GUI algorithms,
+see [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md).
 
 The GUI focuses on a traditional desktop workflow:
 

@@ -21,6 +21,12 @@ refactor.
 - [x] Verify the unfiltered JSON tree/source remains available after applying a
   filter and is restored by Clear. A filtered projection must not accidentally
   become the next filter's source.
+- [x] Persist whether each document's filter is applied; reapply an active saved
+  filter after JSON source binding even if global auto-filter is disabled, then
+  restore expanded directories against that filtered tree. New documents start
+  empty rather than inheriting the previous tab's filter.
+- [x] Persist Blob-table sort column/direction per document and use the existing
+  Directory tree / Blob table notebook tabs instead of a redundant view dropdown.
 - [x] Verify text case sensitivity, media negation, file-type/archive/torrent
   presence filters, sorting, and directory visibility match the JSON
   `DirectorySource` semantics. Blob/catalog case-sensitive parity is verified
@@ -57,19 +63,48 @@ boundaries. Backend API/SQL scope and dependency are defined in WP-10.1.
 
 ## P1 — Complete shared CLI/GTK operations
 
-Use backend work packages WP-09.1 through WP-09.5 as the source of truth. The
-GUI-specific deliverable is WP-09.4: explicit Tools actions for supported scan,
+Use backend work packages WP-09.1/WP-09.1b through WP-09.5 as the source of
+truth. The GUI-specific deliverable is WP-09.4: explicit Tools actions for supported scan,
 metadata, and analysis operations, an options/target flow that preserves the
 explicit JSON-versus-repository distinction, background execution, main-loop
-progress updates, cooperative cancellation, per-target write serialization, and
-view refresh after successful mutations. Do not implement scanner or analysis
-logic in GTK.
+progress updates, cooperative cancellation, pause/resume at backend-acknowledged
+safe checkpoints, per-target write serialization, and view refresh after
+successful mutations. Do not implement scanner or analysis logic in GTK.
 
-Before GTK operation implementation begins, WP-09.1 and the relevant WP-09.2
-backend slices must provide the shared request/control API and real cancellation.
+Before GTK operation implementation begins, WP-09.1 and its planned WP-09.1b
+pause/resume extension, plus the relevant WP-09.2 backend slices, must provide
+the shared request/control API and real cancellation and safe pause/resume.
 Implement and verify each CLI operation adapter (WP-09.3) as its backend slice
 lands; then use the CLI behavior as the reference for GTK WP-09.4. WP-09.5
 verifies parity across both frontends.
+
+## P1 — Reuse directory TreeView nodes across filter changes
+
+The current filter path creates a new JSON directory projection and
+`renderDirectoryTree()` clears the GTK `TreeStore`, discarding materialized rows.
+Replace that path with a stable per-document source model and a filtered view
+(`GtkTreeModelFilter` or equivalent) that changes row visibility while retaining
+existing nodes. See the target design in [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md).
+
+- [ ] Define stable tree-node IDs that survive filtering/sorting and distinguish
+  file-reference paths from their Blob IDs; preserve materialized rows when a
+  filter changes or is cleared.
+- [ ] Compute match state and visible ancestors off the GTK thread, then update
+  the filtered model on the GTK main loop. Visibility callbacks must not perform
+  source queries or recursive descendant scans.
+- [ ] Reconcile lazy SQLite results by stable ID, reusing existing rows and only
+  inserting newly materialized nodes; keep paging/query caches bounded.
+- [ ] For JSON, reuse the one loaded/indexed source and a compact match index;
+  do not rebuild a complete `DirectoryTree` and GTK model on every filter.
+- [ ] Preserve selection, expansion, sort, placeholder/loading states, and exact
+  text/media/presence/negation semantics through apply/change/clear cycles.
+- [ ] Add GTK model tests for underlying node retention and result parity; measure
+  repeated filter latency, peak memory, and GC allocation behavior where tooling
+  permits.
+
+**Acceptance:** filter changes update the visible projection without clearing or
+recreating existing source nodes; matching descendants keep their ancestor paths
+visible; repeated filtering is GC-friendly and preserves existing behavior.
 
 ## P2 — Stabilize GTK layout and video preview
 

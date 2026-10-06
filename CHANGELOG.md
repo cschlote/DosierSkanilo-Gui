@@ -41,10 +41,10 @@ All notable changes to this project are documented in this file.
 - Added CSV and versioned JSON export for rows matching the active tab's filters.
 - Media, file-type, archive, and torrent toggle states are now copied into the
   document query before auto-applying the filter.
-- JSON documents now build and show the unfiltered tree before any saved
-  auto-filter runs; Apply and Clear filter buttons are wired to the active tab.
-  Large filter results and their directory indexes are built off the GTK thread
-  with a temporary “Filtering files...” tree placeholder.
+- JSON documents now bind their data source before building the tree; saved
+  per-document filters are reapplied before expanded directories are restored.
+  Apply and Clear remain scoped to the active tab, and large filter projections
+  are built off the GTK thread with a temporary “Filtering files...” placeholder.
 - Case-sensitive path filtering now matches between the JSON/SQLite directory
   tree and repository Blob table; stale filter replies are invalidated on cancel.
 - Torrent and archive files now show a metadata/type overview instead of a raw
@@ -54,6 +54,16 @@ All notable changes to this project are documented in this file.
   and vertical scrolling; long lines are preserved instead of wrapped.
 - Tree-originated row selection no longer triggers a reciprocal table-to-tree
   reveal that can scroll the tree or reopen nested directories.
+- Tree-to-Blob selection now resolves the Blob row by its stable displayed index,
+  so column sorting cannot select a different file's details. Applying an empty
+  or whitespace-only JSON filter restores the existing unfiltered rows/tree
+  without rebuilding the full filter projection.
+- Per-document filter application state and Blob-table column sorting are now
+  persisted; saved filters are reapplied after source binding before directory
+  expansion is restored. Newly opened documents do not inherit another tab's
+  filter; an explicit startup query may still prefill the first document.
+- Removed the redundant Tree/Blob view dropdown; the notebook's Directory tree
+  and Blob table tabs are the view switch.
 - Directory rows toggle expansion on activation, and their context menu can
   expand or collapse the subtree.
 - Selection details are back below the Previous/Next controls; timing and source

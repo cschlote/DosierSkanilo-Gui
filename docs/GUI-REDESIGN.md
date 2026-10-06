@@ -70,6 +70,13 @@ Implemented:
 - Long preview summaries use a size-bounded two-axis scroll area and preserve
   long lines without expanding the containing window.
 - Per-tab filter toggles are captured in the query state before applying filters.
+- Per-document filters and Blob-table sorting are persisted. On reload, JSON
+  sources are filtered after the source projection is attached and expanded
+  directories are restored against the resulting tree. The directory/Blob
+  notebook tabs are the view switch; there is no separate view-mode dropdown.
+- Tree-to-Blob selection resolves the displayed row identity rather than using
+  its unsorted array position. An empty JSON filter takes the unfiltered fast
+  path instead of copying and rebuilding the same catalog projection.
 
 Known limitations:
 
@@ -90,7 +97,7 @@ Known limitations:
 
 The current working tree passes:
 
-- `dub test --compiler=ldc2` — 45 tests.
+- `dub test --compiler=ldc2` — 48 tests.
 - `dub build --compiler=ldc2`.
 - `git diff --check`.
 
@@ -241,6 +248,47 @@ The primary view should be a GTK `TreeView` backed by a lazy tree model:
 - sorting is explicit and stable
 - loading and error placeholder nodes are visible states
 
+### Reuse Nodes When Filters Change
+
+Filter changes must not clear and rebuild the existing directory `TreeStore`.
+Keep a canonical per-document source/model and retain materialized GTK nodes by
+stable source ID. Define file-node identity separately from Blob identity and
+filtered-array position: one Blob can have multiple path nodes. Put a filtered
+view (`GtkTreeModelFilter` or an equivalent
+wrapper) over that model and update precomputed visibility/match state when the
+filter changes. A directory is visible if it or any descendant contains a
+matching file; clearing the filter restores visibility on the same nodes.
+
+For JSON, parse/index the source once and compute a compact match bitmap or
+stable-ID match index on a worker instead of constructing a fresh full
+`DirectoryTree` for every query. For SQLite, preserve already materialized nodes
+and reconcile newly fetched, server-filtered children by stable ID; update
+existing rows and insert only missing nodes. Keep lazy loading and bounded query
+pages. Apply visibility changes on the GTK main loop after background matching
+finishes, preserve selection/expansion by stable ID, and keep the prior tree
+visible while a new filter is being calculated.
+
+The visibility callback must do only a bounded lookup in precomputed state; it
+must not query a source or traverse descendants. Compute parent visibility from
+match counts/indexes so directories with matching descendants remain reachable.
+Clearing, changing, or reapplying a filter should not recreate existing source
+nodes or duplicate rows.
+
+Verification should compare filter results with current semantics and assert
+stable underlying node IDs through apply/change/clear cycles. Measure large-tree
+latency, allocation churn, and peak memory as part of the change.
+
+## GC-Friendly Algorithms
+
+All GUI algorithms must be GC-friendly; this means bounded, low-churn allocation,
+not bypassing the D GC. Reuse canonical JSON/source indexes, node records, and
+per-document/per-worker scratch buffers. Avoid a fresh full row array, directory
+projection, path/string temporary, or GTK model per filter change. Keep SQLite
+pages and caches bounded, avoid repeated normalization/formatting in hot loops,
+and keep mutable reusable buffers owned by one worker. Verify repeated operations
+as well as first-load latency and peak memory; record GC measurements where the
+available tooling permits.
+
 Directory and file nodes should have context menus with actions appropriate to
 the node:
 
@@ -297,11 +345,15 @@ analysis. Operations should be explicit and available from a `Tools` menu:
 - scan torrent metadata
 - export the current selection
 
-Operations need a shared progress/cancellation contract, source-scope selection,
-and clear result ownership. A background task manager will marshal progress to
-the GTK main loop, serialize conflicting writes per repository, and refresh the
-active view after successful mutations. CLI output/exit-code behavior should be
-an adapter over the same operation results. JSON and SQLite remain explicit
+Operations use the shared progress/cancellation contract defined in backend
+WP-09.1; backend execution and the GUI task manager are still planned. Pause and
+resume are not in that frozen contract yet and must be added through WP-09.1b.
+The task manager will marshal progress to the GTK main loop, provide state-aware
+Pause/Resume/Cancel controls at backend-acknowledged safe checkpoints, serialize
+conflicting writes per repository, and refresh the active view after successful
+mutations. A paused task must not hold an active SQLite transaction and keeps its
+target lease until resume or cancellation. CLI output/exit-code behavior should
+be an adapter over the same operation results. JSON and SQLite remain explicit
 storage modes. See the backend plan at `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09`.
 
 ## Archive Passwords
@@ -350,16 +402,18 @@ a compatibility layer around the current table UI:
 The older immediate-plan checklist is complete except for scanner/analysis
 operations and the explicitly deferred GTK layout issues. Current actionable GUI
 work is tracked in [`TODO.md`](../TODO.md): asynchronous JSON filtering and
-case-sensitive Blob-table parity have been verified. Next, implement the GTK
-operations client after the backend and CLI reference slices are ready.
-Splitter/video behavior and UI maintenance remain lower-priority GUI work.
+case-sensitive Blob-table parity have been verified. The next GUI-owned model
+task is to retain existing directory nodes across filter changes; the GTK
+operations client follows the backend and CLI reference slices. Splitter/video
+behavior and UI maintenance remain lower-priority GUI work.
 
 The shared CLI/GTK operation work is tracked as WP-09 in the backend's
 [`SQLITE-IMPLEMENTATION-PLAN.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09).
 Its dependency order is intentional: agree the shared request/control contract,
-make backend operations report progress and stop safely, then build the CLI and
-GTK adapters, and finally verify parity. GTK must not introduce a second scanner
-or analysis implementation.
+extend it with safe pause/resume semantics, make backend operations report
+progress and stop/pause safely, then build the CLI and GTK adapters, and finally
+verify parity. GTK must not introduce a second scanner or analysis
+implementation.
 
 The current pagination and BlobRow table are temporary implementation details.
 They may be removed once the new source and tree model are usable.

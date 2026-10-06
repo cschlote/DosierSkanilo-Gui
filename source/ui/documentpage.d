@@ -7,7 +7,7 @@ import gtk.Builder;
 import gtk.Label;
 import gtk.ComboBoxText;
 
-import ui.builderutils : builderObject, builderObjectOrNull, loadUiBuilder;
+import ui.builderutils : builderObject, loadUiBuilder;
 import ui.filterbar : loadFilterBarUi;
 import ui.documenttab : DocumentTab;
 
@@ -58,16 +58,6 @@ DocumentPageUi loadDocumentPageUi(DocumentTab document)
     document.treeNextFileButton = builderObject!Button(pageBuilder, "page", "treeNextFileButton");
     document.pageSizeCombo = builderObject!ComboBoxText(pageBuilder, "page", "pageSizeCombo");
     document.treeSortCombo = builderObject!ComboBoxText(pageBuilder, "page", "treeSortCombo");
-    document.viewModeCombo = builderObjectOrNull!ComboBoxText(pageBuilder, "page", "viewModeCombo");
-    if (document.viewModeCombo is null)
-    {
-        document.viewModeCombo = new ComboBoxText();
-        document.viewModeCombo.appendText("Tree + table");
-        document.viewModeCombo.appendText("Tree only");
-        document.viewModeCombo.appendText("Blob table only");
-        ui.pageBar.packStart(document.viewModeCombo, false, false, 0);
-        document.viewModeCombo.show();
-    }
     document.pageStatus = builderObject!Label(pageBuilder, "page", "pageStatus");
     document.pageBar.setVisible(true);
     document.pageFirstButton.setVisible(false);
