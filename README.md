@@ -30,6 +30,8 @@ The GUI currently supports:
   and torrent metadata
 - archive and torrent entry trees in their respective scrollable Previewers;
   document-detail expanders show compact archive/torrent metadata summaries
+- text file contents in the large scrollable Previewer, with file attributes in
+  the summary below
 - vertically scrollable document details alongside the existing horizontal
   Previewer splitter
 - structured MediaInfo stream details with format, dimensions/channels, and

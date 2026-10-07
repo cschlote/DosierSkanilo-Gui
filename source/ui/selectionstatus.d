@@ -225,10 +225,15 @@ void clearSelectionDetails(DocumentTab document)
     }
     document.selectedPreviewIsArchive = false;
     document.selectedPreviewIsTorrent = false;
+    document.selectedPreviewIsText = false;
     if (document.detailPreviewArchiveScroll !is null)
         document.detailPreviewArchiveScroll.setVisible(false);
     if (document.detailPreviewTorrentScroll !is null)
         document.detailPreviewTorrentScroll.setVisible(false);
+    if (document.detailPreviewTextScroll !is null)
+        document.detailPreviewTextScroll.setVisible(false);
+    if (document.detailPreviewTextView !is null)
+        document.detailPreviewTextView.getBuffer().setText("");
     if (document.detailPreviewSummary !is null)
     {
         document.detailPreviewSummary.setText("No preview available.");

@@ -179,6 +179,8 @@ class DocumentTab
     Label detailPreviewTitle;
     Label detailPreviewSummary;
     ScrolledWindow detailPreviewSummaryScroll;
+    ScrolledWindow detailPreviewTextScroll;
+    TextView detailPreviewTextView;
     ScrolledWindow detailPreviewArchiveScroll;
     ScrolledWindow detailPreviewTorrentScroll;
     Label detailMediaInfoStatus;
@@ -263,6 +265,7 @@ class DocumentTab
     ulong previewPathRequestId;
     bool previewPathCheckPending;
     bool selectedPreviewIsImage;
+    bool selectedPreviewIsText;
     bool selectedPreviewIsArchive;
     bool selectedPreviewIsTorrent;
     PreviewScaleMode previewScaleMode = PreviewScaleMode.contain;

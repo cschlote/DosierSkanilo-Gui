@@ -74,6 +74,9 @@ All notable changes to this project are documented in this file.
   without changing its horizontal splitter to the Previewer.
 - Removed the collapsed MediaInfo expander's minimum-height allocation, which
   left unused blank space before the File Type section.
+- Text previews now display file contents in the large scrollable Previewer area;
+  the lower preview summary shows path, size, access rights, access/modified
+  times, type, and checksum state.
 - Per-document filter application state and Blob-table column sorting are now
   persisted; saved filters are reapplied after source binding before directory
   expansion is restored. Newly opened documents do not inherit another tab's

@@ -146,6 +146,34 @@
           </packing>
         </child>
         <child>
+          <object class="GtkScrolledWindow" id="detailPreviewTextScroll">
+            <property name="can-focus">False</property>
+            <property name="hexpand">True</property>
+            <property name="vexpand">True</property>
+            <property name="hscrollbar-policy">automatic</property>
+            <property name="vscrollbar-policy">automatic</property>
+            <property name="min-content-width">120</property>
+            <property name="min-content-height">120</property>
+            <property name="propagate-natural-width">False</property>
+            <property name="propagate-natural-height">False</property>
+            <property name="visible">False</property>
+            <child>
+              <object class="GtkTextView" id="detailPreviewTextView">
+                <property name="can-focus">True</property>
+                <property name="editable">False</property>
+                <property name="monospace">True</property>
+                <property name="wrap-mode">none</property>
+                <property name="cursor-visible">False</property>
+              </object>
+            </child>
+          </object>
+          <packing>
+            <property name="expand">True</property>
+            <property name="fill">True</property>
+            <property name="position">1</property>
+          </packing>
+        </child>
+        <child>
           <object class="GtkAspectFrame" id="detailPreviewVideoFrame">
             <property name="can-focus">False</property>
             <property name="hexpand">True</property>
@@ -171,7 +199,7 @@
           <packing>
             <property name="expand">True</property>
             <property name="fill">True</property>
-            <property name="position">1</property>
+            <property name="position">2</property>
           </packing>
         </child>
         <child>
@@ -377,7 +405,7 @@
           <packing>
             <property name="expand">False</property>
             <property name="fill">True</property>
-            <property name="position">2</property>
+            <property name="position">3</property>
           </packing>
         </child>
         <child>
@@ -400,7 +428,7 @@
           <packing>
             <property name="expand">True</property>
             <property name="fill">True</property>
-            <property name="position">3</property>
+            <property name="position">4</property>
           </packing>
         </child>
         <child>
@@ -423,7 +451,7 @@
           <packing>
             <property name="expand">True</property>
             <property name="fill">True</property>
-            <property name="position">4</property>
+            <property name="position">5</property>
           </packing>
         </child>
       </object>

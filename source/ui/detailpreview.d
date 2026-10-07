@@ -16,6 +16,7 @@ import gtk.Builder;
 import gtk.Range;
 import gtk.TreeStore;
 import gtk.TreeView;
+import gtk.TextView;
 import gtk.Widget;
 import gtk.c.types : GType;
 import gobject.Value;
@@ -63,6 +64,10 @@ DetailPreviewUi loadDetailPreviewUi(DocumentTab document)
     document.detailPreviewSummary = builderObject!Label(previewBuilder, "preview", "detailPreviewSummary");
     document.detailPreviewSummaryScroll = builderObject!ScrolledWindow(previewBuilder,
         "preview", "detailPreviewSummaryScroll");
+    document.detailPreviewTextScroll = builderObject!ScrolledWindow(previewBuilder,
+        "preview", "detailPreviewTextScroll");
+    document.detailPreviewTextView = builderObject!TextView(previewBuilder,
+        "preview", "detailPreviewTextView");
     document.detailPreviewSummary.setXalign(0);
     document.detailPreviewSummary.setYalign(0);
     document.detailPreviewArchiveScroll = builderObject!ScrolledWindow(previewBuilder,

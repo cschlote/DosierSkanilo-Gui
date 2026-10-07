@@ -828,6 +828,48 @@ private string previewText(const(ubyte)[] bytes, bool truncated)
     return text;
 }
 
+private string textFilePermissions(uint attributes)
+{
+    version (Posix)
+    {
+        auto mode = attributes & 0x1FF;
+        char[9] permissions = "---------";
+        if (mode & 0x100) permissions[0] = 'r';
+        if (mode & 0x080) permissions[1] = 'w';
+        if (mode & 0x040) permissions[2] = 'x';
+        if (mode & 0x020) permissions[3] = 'r';
+        if (mode & 0x010) permissions[4] = 'w';
+        if (mode & 0x008) permissions[5] = 'x';
+        if (mode & 0x004) permissions[6] = 'r';
+        if (mode & 0x002) permissions[7] = 'w';
+        if (mode & 0x001) permissions[8] = 'x';
+        return format("%03o (%s)", mode, permissions[]);
+    }
+    else
+        return format("platform attributes 0x%08X", attributes);
+}
+
+/** Compact lower-pane attributes for a text preview. */
+string textFileMetadataSummary(string path, ulong size, string permissions,
+    string accessedAt, string modifiedAt, string indexedModifiedAt,
+    string fileType, string checksumSummary)
+{
+    string[] lines = ["File: " ~ path, format("Size: %s bytes", size)];
+    if (permissions.length > 0)
+        lines ~= "Access rights: " ~ permissions;
+    if (accessedAt.length > 0)
+        lines ~= "Accessed: " ~ accessedAt;
+    if (modifiedAt.length > 0)
+        lines ~= "Modified: " ~ modifiedAt;
+    if (indexedModifiedAt.length > 0 && indexedModifiedAt != modifiedAt)
+        lines ~= "Indexed modified: " ~ indexedModifiedAt;
+    if (fileType.length > 0)
+        lines ~= "File type: " ~ fileType;
+    if (checksumSummary.length > 0)
+        lines ~= "Checksums: " ~ checksumSummary;
+    return lines.join("\n");
+}
+
 @("text previews preserve multiline UTF-8 and fall back to hex for invalid data")
 unittest
 {
@@ -836,6 +878,21 @@ unittest
 
     ubyte[] invalid = [0xFF, 0x00, 0x41];
     assert(previewText(invalid, false).canFind("ff 00 41"));
+}
+
+@("text preview metadata is compact and includes filesystem attributes")
+unittest
+{
+    auto summary = textFileMetadataSummary("docs/readme.txt", 1234,
+        "0640 (rw-r-----)", "2026-10-07T12:00:00", "2026-10-07T12:30:00",
+        "2026-10-07T12:29:00", "UTF-8 text", "full");
+    assert(summary.canFind("File: docs/readme.txt"));
+    assert(summary.canFind("Access rights: 0640 (rw-r-----)"));
+    assert(summary.canFind("Accessed: 2026-10-07T12:00:00"));
+    assert(summary.canFind("Modified: 2026-10-07T12:30:00"));
+    assert(summary.canFind("Indexed modified: 2026-10-07T12:29:00"));
+    assert(summary.canFind("File type: UTF-8 text"));
+    assert(summary.canFind("Checksums: full"));
 }
 
 @("text preview accepts file signatures and uses a bounded UTF-8 text prefix")
@@ -2098,6 +2155,23 @@ void refreshMediaPreview(DocumentTab document)
         return;
     }
 
+    if (document.selectedPreviewIsText)
+    {
+        stopVideoPreview(document);
+        if (document.detailPreviewImageControls !is null)
+            document.detailPreviewImageControls.setVisible(false);
+        if (document.detailPreviewScroll !is null)
+            document.detailPreviewScroll.setVisible(false);
+        if (document.detailPreviewVideoFrame !is null)
+            document.detailPreviewVideoFrame.setVisible(false);
+        if (document.detailPreviewVideoControls !is null)
+            document.detailPreviewVideoControls.setVisible(false);
+        if (document.detailPreviewTextScroll !is null)
+            document.detailPreviewTextScroll.setVisible(true);
+        document.detailPreviewImage.clear();
+        return;
+    }
+
     if (document.selectedPreviewIsVideo || document.selectedPreviewIsAudio)
     {
         if (document.detailPreviewImageControls !is null)
@@ -2176,12 +2250,15 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
 {
     import core.thread : Thread;
     import glib.Idle;
-    import std.file : exists, read;
+    import std.datetime.systime : SysTime;
+    import std.file : exists, getAttributes, getSize, getTimes, read;
 
     document.detailPreviewTitle.setText("Preview");
     setPreviewSummaryMonospace(document.detailPreviewSummary, false);
     auto requestId = ++document.previewPathRequestId;
     document.previewPathCheckPending = false;
+    if (document.detailPreviewTextView !is null)
+        document.detailPreviewTextView.getBuffer().setText("");
 
     auto fileName = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
     auto mediaSummary = row.mediaInfoDetails.length > 0 ? row.mediaInfoDetails : "No media metadata available.";
@@ -2190,8 +2267,11 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
 
     document.selectedPreviewSourcePath = "";
     document.selectedPreviewSourcePixbuf = null;
+    document.selectedPreviewIsText = false;
     document.selectedPreviewIsArchive = previewKind == PreviewContentKind.archive;
     document.selectedPreviewIsTorrent = previewKind == PreviewContentKind.torrent;
+    if (document.detailPreviewTextScroll !is null)
+        document.detailPreviewTextScroll.setVisible(false);
     if (document.detailPreviewArchiveScroll !is null)
         document.detailPreviewArchiveScroll.setVisible(false);
     if (document.detailPreviewTorrentScroll !is null)
@@ -2279,10 +2359,33 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
     auto isAudio = document.selectedPreviewIsAudio;
     auto isImage = document.selectedPreviewIsImage;
     auto isText = previewKind == PreviewContentKind.text;
+    auto metadataPath = document.selectedFilePath.length > 0
+        ? document.selectedFilePath : fileName;
+    string indexedModifiedAt = row.sourceBlob is null
+        ? "" : row.sourceBlob.timeLastModified;
+    if (row.sourceBlob !is null)
+    {
+        foreach (spec; row.sourceBlob.fileSpecs)
+        {
+            if (spec !is null && spec.fileName.length > 0
+                && spec.fileName == metadataPath && spec.timeLastModified.length > 0)
+            {
+                indexedModifiedAt = spec.timeLastModified;
+                break;
+            }
+        }
+    }
+    auto fileTypeMetadata = row.sourceBlob is null ? "" : row.fileTypeDetails;
+    auto checksumCount = (row.md5.length > 0 ? 1 : 0)
+        + (row.sha1.length > 0 ? 1 : 0) + (row.xxh64.length > 0 ? 1 : 0);
+    auto checksumMetadata = checksumCount == 0 ? "none"
+        : checksumCount == 3 ? "full"
+        : checksumCount == 1 ? "partial (1/3)" : "partial (2/3)";
     new Thread({
         bool fileExists;
         string error;
         string previewContent;
+        string textMetadata;
         try
         {
             fileExists = exists(previewPath);
@@ -2295,6 +2398,27 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
                     data = data[0 .. byteLimit];
                 previewContent = isText ? previewText(data, truncated)
                     : previewHexDump(data, truncated);
+            }
+            if (fileExists && isText)
+            {
+                try
+                {
+                    SysTime accessedAt;
+                    SysTime modifiedAt;
+                    auto attributes = getAttributes(previewPath);
+                    getTimes(previewPath, accessedAt, modifiedAt);
+                    textMetadata = textFileMetadataSummary(metadataPath,
+                        getSize(previewPath), textFilePermissions(attributes),
+                        accessedAt.toISOExtString(), modifiedAt.toISOExtString(),
+                        indexedModifiedAt, fileTypeMetadata, checksumMetadata);
+                }
+                catch (Exception metadataError)
+                {
+                    textMetadata = textFileMetadataSummary(metadataPath,
+                        row.fileSize, "", "", "", indexedModifiedAt,
+                        fileTypeMetadata, checksumMetadata)
+                        ~ "\nFilesystem attributes unavailable: " ~ metadataError.msg;
+                }
             }
         }
         catch (Exception ex)
@@ -2311,6 +2435,9 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
                 document.selectedPreviewIsVideo = false;
                 document.selectedPreviewIsAudio = false;
                 document.selectedPreviewIsImage = false;
+                document.selectedPreviewIsText = false;
+                if (document.detailPreviewTextScroll !is null)
+                    document.detailPreviewTextScroll.setVisible(false);
                 document.detailPreviewTitle.setText(error.length > 0
                     ? "Preview file unavailable" : "File missing");
                 document.detailPreviewSummary.setText(previewFileCheckFailure(
@@ -2320,10 +2447,21 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
 
             if (!isVideo && !isAudio && !isImage)
             {
-                setPreviewSummaryMonospace(document.detailPreviewSummary, true);
-                document.detailPreviewTitle.setText(isText
-                    ? "Text preview" : "Hex dump preview");
-                document.detailPreviewSummary.setText(previewContent);
+                if (isText)
+                {
+                    document.selectedPreviewIsText = true;
+                    document.detailPreviewTextView.getBuffer().setText(previewContent);
+                    document.detailPreviewTextScroll.setVisible(true);
+                    setPreviewSummaryMonospace(document.detailPreviewSummary, false);
+                    document.detailPreviewSummary.setText(textMetadata);
+                    document.detailPreviewTitle.setText("Text preview");
+                }
+                else
+                {
+                    setPreviewSummaryMonospace(document.detailPreviewSummary, true);
+                    document.detailPreviewTitle.setText("Hex dump preview");
+                    document.detailPreviewSummary.setText(previewContent);
+                }
                 return false;
             }
 

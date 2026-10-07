@@ -87,6 +87,9 @@ Implemented:
   their detail expanders show compact metadata summaries. The whole details
   column is vertically scrollable while its horizontal Previewer splitter stays
   in place.
+- Text content renders in the large preview scroller; the lower summary lists
+  path, size, access rights, access and modification times, file type, and
+  checksum availability.
 - In-memory JSON directory paging keeps a bounded sorted candidate window rather
   than materializing and sorting every file in the directory for each page.
 
@@ -109,7 +112,7 @@ Known limitations:
 
 The current working tree passes:
 
-- `dub test --compiler=ldc2` — 53 tests.
+- `dub test --compiler=ldc2` — 54 tests.
 - `dub build --compiler=ldc2`.
 - `git diff --check`.
 

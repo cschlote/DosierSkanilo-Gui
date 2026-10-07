@@ -102,6 +102,8 @@ pattern. Known file references can be navigated independently of the blob row.
 - alternative `TreeView`/`ListStore` blob table
 - split-view details column and Previewer, separated by a horizontal splitter
 - vertically scrollable detail expanders for metadata and known-file information
+- large scrollable text content in the Previewer, with filesystem attributes in
+  its lower summary area
 - archive/torrent entry trees in the large scrollable Previewer area; their
   detail expanders contain summary fields rather than duplicate lists
 - status, performance, and file-metadata lines
