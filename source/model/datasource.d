@@ -484,6 +484,85 @@ MetadataSummary scanDocumentArchives(string sourcePath,
     return summary;
 }
 
+/** Scan archive entries for the single file selected in a source context menu. */
+MetadataSummary scanDocumentArchive(string sourcePath, string filePath,
+    ArchivePasswordCallback passwordCallback)
+{
+    if (isRepositorySource(sourcePath))
+    {
+        auto repository = Repository.open(sourcePath);
+        scope (exit)
+            repository.close();
+        MetadataScanOptions options;
+        options.scanArchives = true;
+        options.deepArchiveScan = true;
+        options.rescan = true;
+        options.archivePasswordCallback = passwordCallback;
+        options.filePath = filePath;
+        auto summary = repository.updateMetadata(options);
+        if (summary.blobsVisited == 0)
+            throw new Exception("No repository file matches: " ~ filePath);
+        return summary;
+    }
+
+    auto blobs = deserializeDataClassJsonFile(sourcePath);
+    auto requestedPath = resolveDocumentSourcePath(sourcePath, filePath);
+    size_t[] matches;
+    foreach (index, blob; blobs)
+    {
+        foreach (spec; blob.fileSpecs)
+        {
+            if (spec !is null
+                && (resolveDocumentSourcePath(sourcePath, spec.fileName)
+                    == requestedPath || spec.fileName == filePath))
+            {
+                matches ~= index;
+                break;
+            }
+        }
+    }
+    if (matches.length == 0)
+        throw new Exception("No catalog file matches: " ~ filePath);
+    if (matches.length > 1)
+        throw new Exception("Filename is ambiguous in this catalog: " ~ filePath);
+
+    auto blob = blobs[matches[0]];
+    MetadataSummary summary;
+    summary.blobsVisited = 1;
+    {
+        string[] originalPaths;
+        foreach (spec; blob.fileSpecs)
+        {
+            if (spec is null)
+            {
+                originalPaths ~= "";
+                continue;
+            }
+            originalPaths ~= spec.fileName;
+            spec.fileName = resolveDocumentSourcePath(sourcePath,
+                spec.fileName);
+        }
+        scope (exit)
+        {
+            foreach (index, spec; blob.fileSpecs)
+                if (spec !is null)
+                    spec.fileName = originalPaths[index];
+        }
+        try
+        {
+            updateArchives(blob, true, true, null, null, passwordCallback);
+            if (blob.archiveSpecs !is null)
+                ++summary.archivesUpdated;
+        }
+        catch (ArchivePasswordCancelledException)
+            ++summary.failed;
+        catch (Exception)
+            ++summary.failed;
+    }
+    writeJsonCatalog(sourcePath, blobs);
+    return summary;
+}
+
 private void writeJsonCatalog(string sourcePath, NamedBinaryBlob[] blobs)
 {
     auto wrapper = NamedBinaryBlobCatalog(DATA_CLASS_VERSION3, blobs);
@@ -1006,4 +1085,17 @@ unittest
     setDocumentArchivePassword(jsonPath, "private.zip", "");
     auto cleared = deserializeDataClassJsonFile(jsonPath);
     assert(cleared[0].archivePassword.length == 0);
+
+    size_t selectedPrompts;
+    ArchivePasswordCallback selectedCallback = (string requestedPath,
+        string reason, out string password) {
+        ++selectedPrompts;
+        password = "catalog-secret";
+        return true;
+    };
+    auto selectedSummary = scanDocumentArchive(jsonPath, "private.zip",
+        selectedCallback);
+    assert(selectedPrompts == 1);
+    assert(selectedSummary.blobsVisited == 1);
+    assert(selectedSummary.archivesUpdated == 1);
 }

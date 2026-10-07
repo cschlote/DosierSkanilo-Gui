@@ -370,15 +370,16 @@ storage modes. See the backend plan at `https://github.com/cschlote/DosierSkanil
 
 ## Archive Passwords
 
-The File menu provides a filename-based Archive Passwords dialog and a Scan
-Archives action. A user-entered filename is resolved to its Blob; JSON sources
-store the optional `archivePassword` on `NamedBinaryBlob`, while SQLite
-repositories store it in the `archive_passwords` relation. During archive
-listing or deep extraction, DosierArkivo reports that a password is required or
-rejected. The GUI marshals that request to GTK, prompts the user, and the scan
-persists an accepted password with its catalog or repository. Blank password
-input in the manager removes the mapping. The current implementation stores
-passwords as plain text, as agreed for this feature.
+The File menu provides a filename-based Archive Passwords dialog and a catalog-wide
+Scan Archives action. Archive file context menus can scan just the selected
+archive. A user-entered filename is resolved to its Blob; JSON sources store the
+optional `archivePassword` on `NamedBinaryBlob`, while SQLite repositories store
+it in the `archive_passwords` relation. During archive listing or deep extraction,
+DosierArkivo reports that a password is required or rejected. The GUI marshals
+that request to GTK, prompts the user, and the scan persists an accepted password
+with its catalog or repository. Blank password input in the manager removes the
+mapping. The current implementation stores passwords as plain text, as agreed
+for this feature.
 
 ## Migration Sequence
 

@@ -88,7 +88,7 @@ import model.blobrow : BlobRow, extractRowsFromBlobs;
 import model.datasource : SourceQuery, isRepositorySource, loadDocumentDetails,
     loadDocumentCursorPage, loadDocumentPage, loadDocumentSource, loadRepositoryArchiveEntries,
     loadRepositoryTorrentFiles, openRepositoryDirectorySource,
-    scanDocumentArchives, setDocumentArchivePassword;
+    scanDocumentArchive, scanDocumentArchives, setDocumentArchivePassword;
 import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, FileCursor,
     FileFilter, FileNode, FilePage, FileSortOrder, NestedFileNode,
     ProjectedDirectorySource, jsonFileNodeId;
@@ -142,6 +142,7 @@ import ui.virtualblobtable : VirtualBlobTableModel;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : filterRowsByText;
 import dosierarkivo.archive : ArchivePasswordCallback;
+import dosierarkivo.factory : fileArchive;
 import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, NamedBinaryBlob;
 import dosierskanilo.repository.types : MetadataSummary, RepositoryBlobFlags;
 import dosierskanilo.repository.repository : Repository;
@@ -1697,6 +1698,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     Timeout windowSizePersistTimer;
     bool isLoading;
     bool isArchiveScanning;
+    void delegate(DocumentTab, string) scanSelectedArchiveAction;
     DocumentTab busyDocument;
     Timeout progressPulseTimer;
     Timeout previewVideoProgressTimer;
@@ -2506,6 +2508,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     applyFilterForDocument(document);
                 }
             }, "Filter this file", false));
+            if (fileArchive(resolveKnownFilePath(document, relativePath)) !is null
+                && scanSelectedArchiveAction !is null)
+            {
+                menu.append(new MenuItem((MenuItem _) {
+                    scanSelectedArchiveAction(document, relativePath);
+                }, "Scan this archive", false));
+            }
             menu.showAll();
             menu.popup(buttonEvent.button, buttonEvent.time);
             return true;
@@ -5077,10 +5086,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
         };
     }
 
-    /** Scan archive entries for the active source, prompting for passwords as needed. */
-    void scanArchivesForCurrentDocument()
+    /** Scan all archives or one selected archive, prompting for passwords as needed. */
+    void scanArchiveForDocument(DocumentTab document, string archivePath = "")
     {
-        auto document = currentDocument();
         if (document is null)
             return;
         if (isLoading)
@@ -5090,14 +5098,20 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
 
         auto sourcePath = document.filePath;
+        auto isSingleArchive = archivePath.length > 0;
         isArchiveScanning = true;
-        setLoadingState(document, true, "Scanning archives...");
+        auto loadingMessage = isSingleArchive
+            ? "Scanning archive " ~ baseName(archivePath) ~ "..."
+            : "Scanning archives...";
+        setLoadingState(document, true, loadingMessage);
         auto passwordCallback = archivePasswordPromptCallback();
         new Thread({
             MetadataSummary summary;
             string error;
             try
-                summary = scanDocumentArchives(sourcePath, passwordCallback);
+                summary = isSingleArchive
+                    ? scanDocumentArchive(sourcePath, archivePath, passwordCallback)
+                    : scanDocumentArchives(sourcePath, passwordCallback);
             catch (Exception ex)
                 error = ex.msg;
             new Idle({
@@ -5106,8 +5120,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 isArchiveScanning = false;
                 auto message = error.length > 0
                     ? "Archive scan failed: " ~ error
-                    : format("Archive scan finished: %s updated, %s failed.",
-                        summary.archivesUpdated, summary.failed);
+                    : isSingleArchive
+                        ? format("Scan of %s finished: %s updated, %s failed.",
+                            baseName(archivePath), summary.archivesUpdated,
+                            summary.failed)
+                        : format("Archive scan finished: %s updated, %s failed.",
+                            summary.archivesUpdated, summary.failed);
                 setLoadingState(document, false, message);
                 if (error.length == 0)
                     loadDocument(document, false);
@@ -5115,6 +5133,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
             });
         }).start();
     }
+
+    void scanArchivesForCurrentDocument()
+    {
+        scanArchiveForDocument(currentDocument());
+    }
+
+    scanSelectedArchiveAction = (DocumentTab document, string archivePath) {
+        scanArchiveForDocument(document, archivePath);
+    };
 
     /** Manage filename-to-blob passwords for the active JSON or repository source. */
     void manageArchivePasswordsForCurrentDocument()
