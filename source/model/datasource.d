@@ -3,12 +3,19 @@ module model.datasource;
 
 import std.file : exists, isDir;
 import std.conv : to;
-import std.path : baseName;
+import std.datetime.systime : Clock;
+import std.exception : enforce;
+import std.path : baseName, dirName;
 import std.string : empty;
 
+import dosierarkivo.archive : ArchivePasswordCallback,
+    ArchivePasswordCancelledException;
 import dosierskanilo;
 import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob,
-    deserializeDataClassJsonFile;
+    DATA_CLASS_VERSION3, NamedBinaryBlobCatalog, deserializeDataClassJsonFile,
+    updateArchives;
+import dosierskanilo.service.storageio : writeStorageJsonFile;
+import ui.contextpaths : resolveDocumentSourcePath;
 import model.treeprojection : DirectoryNode, DirectorySource, FileCursor, FileFilter, FileInput, FileNode,
     FilePage, FileSortOrder, NestedFileNode, DirectoryTree, ProjectedDirectorySource,
     buildDirectoryTree;
@@ -370,6 +377,119 @@ NamedBinaryBlob[] loadDocumentSource(string path)
     JsonExportOptions options;
     options.absolutePaths = true;
     return repository.loadCatalog(options);
+}
+
+/** Store or remove one password after resolving the user's filename to a blob. */
+void setDocumentArchivePassword(string sourcePath, string fileName, string password)
+{
+    if (isRepositorySource(sourcePath))
+    {
+        auto repository = Repository.open(sourcePath);
+        scope (exit)
+            repository.close();
+        repository.setArchivePasswordForPath(fileName, password);
+        return;
+    }
+
+    auto blobs = deserializeDataClassJsonFile(sourcePath);
+    auto requestedPath = resolveDocumentSourcePath(sourcePath, fileName);
+    size_t[] exactMatches;
+    size_t[] nameMatches;
+    foreach (index, blob; blobs)
+    {
+        foreach (spec; blob.fileSpecs)
+        {
+            if (spec is null)
+                continue;
+            auto knownPath = resolveDocumentSourcePath(sourcePath, spec.fileName);
+            if (knownPath == requestedPath || spec.fileName == fileName)
+            {
+                exactMatches ~= index;
+                break;
+            }
+            if (baseName(fileName) == fileName
+                && baseName(spec.fileName) == fileName)
+            {
+                nameMatches ~= index;
+                break;
+            }
+        }
+    }
+    auto matches = exactMatches.length > 0 ? exactMatches : nameMatches;
+    if (matches.length == 0)
+        throw new Exception("No catalog file matches: " ~ fileName);
+    if (matches.length > 1)
+        throw new Exception("Filename is ambiguous in this catalog: " ~ fileName);
+    blobs[matches[0]].archivePassword = password;
+    writeJsonCatalog(sourcePath, blobs);
+}
+
+/** Scan archive entries in a JSON catalog or SQLite repository. */
+MetadataSummary scanDocumentArchives(string sourcePath,
+    ArchivePasswordCallback passwordCallback)
+{
+    if (isRepositorySource(sourcePath))
+    {
+        auto repository = Repository.open(sourcePath);
+        scope (exit)
+            repository.close();
+        MetadataScanOptions options;
+        options.scanArchives = true;
+        options.deepArchiveScan = true;
+        options.rescan = true;
+        options.archivePasswordCallback = passwordCallback;
+        return repository.updateMetadata(options);
+    }
+
+    auto blobs = deserializeDataClassJsonFile(sourcePath);
+    MetadataSummary summary;
+    summary.blobsVisited = blobs.length;
+    foreach (blob; blobs)
+    {
+        string[] originalPaths;
+        foreach (spec; blob.fileSpecs)
+        {
+            if (spec is null)
+            {
+                originalPaths ~= "";
+                continue;
+            }
+            originalPaths ~= spec.fileName;
+            spec.fileName = resolveDocumentSourcePath(sourcePath,
+                spec.fileName);
+        }
+        scope (exit)
+        {
+            foreach (index, spec; blob.fileSpecs)
+                if (spec !is null)
+                    spec.fileName = originalPaths[index];
+        }
+        try
+        {
+            updateArchives(blob, true, true, null, null, passwordCallback);
+            if (blob.archiveSpecs !is null)
+                ++summary.archivesUpdated;
+        }
+        catch (ArchivePasswordCancelledException)
+        {
+            ++summary.failed;
+            break;
+        }
+        catch (Exception)
+        {
+            ++summary.failed;
+        }
+    }
+    writeJsonCatalog(sourcePath, blobs);
+    return summary;
+}
+
+private void writeJsonCatalog(string sourcePath, NamedBinaryBlob[] blobs)
+{
+    auto wrapper = NamedBinaryBlobCatalog(DATA_CLASS_VERSION3, blobs);
+    enforce(writeStorageJsonFile(sourcePath, wrapper, ".json",
+        Clock.currTime.toISOExtString, dirName(sourcePath)),
+        "Failed to safely save JSON archive metadata to " ~ sourcePath);
 }
 
 /** Load full details for one repository blob. */
@@ -833,4 +953,57 @@ unittest
         torrentFile.blobId, torrentPage.length, 251);
     assert(torrentContinuation.length == 1);
     assert(torrentContinuation[0].relativePath == "test/folder/entry-250.txt");
+}
+
+@("JSON archive scanning prompts once and persists the password mapping")
+unittest
+{
+    import dosierskanilo.model.namedbinaryblob : serializeDataClassArrayFile;
+    import std.datetime.systime : SysTime;
+    import std.file : exists, getSize, mkdirRecurse, rmdirRecurse, tempDir, write;
+    import std.path : buildPath;
+    import std.process : Config, execute;
+    import std.uuid : randomUUID;
+
+    auto root = buildPath(tempDir(), "gui-json-archive-password-"
+        ~ randomUUID().toString());
+    mkdirRecurse(root);
+    scope (exit)
+    {
+        if (exists(root))
+            rmdirRecurse(root);
+    }
+
+    write(buildPath(root, "payload.txt"), "archive payload\n");
+    auto archivePath = buildPath(root, "private.zip");
+    assert(execute(["zip", "-q", "-P", "catalog-secret", "private.zip",
+        "payload.txt"], null, Config.none, size_t.max, root).status == 0);
+    auto jsonPath = buildPath(root, "catalog.json");
+    auto blob = new NamedBinaryBlob("private.zip", archivePath.getSize,
+        SysTime(1_234_567));
+    serializeDataClassArrayFile(jsonPath, [blob]);
+
+    size_t prompts;
+    ArchivePasswordCallback callback = (string requestedPath, string reason,
+        out string password) {
+        assert(requestedPath == archivePath);
+        assert(reason.length > 0);
+        ++prompts;
+        password = "catalog-secret";
+        return true;
+    };
+    auto summary = scanDocumentArchives(jsonPath, callback);
+    assert(prompts == 1);
+    assert(summary.archivesUpdated == 1);
+    assert(summary.failed == 0);
+
+    auto scanned = deserializeDataClassJsonFile(jsonPath);
+    assert(scanned.length == 1);
+    assert(scanned[0].archivePassword == "catalog-secret");
+    assert(scanned[0].archiveSpecs.length == 1);
+    assert(scanned[0].archiveSpecs[0].fileName == "payload.txt");
+
+    setDocumentArchivePassword(jsonPath, "private.zip", "");
+    auto cleared = deserializeDataClassJsonFile(jsonPath);
+    assert(cleared[0].archivePassword.length == 0);
 }

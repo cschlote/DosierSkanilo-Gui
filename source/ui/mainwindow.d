@@ -68,6 +68,8 @@ import gdk.Event;
 
 import core.thread : Thread;
 import core.time : MonoTime;
+import core.sync.condition : Condition;
+import core.sync.mutex : Mutex;
 import std.algorithm : canFind, sort;
 import std.array : appender;
 import std.base64 : Base64;
@@ -85,7 +87,8 @@ import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
 import model.datasource : SourceQuery, isRepositorySource, loadDocumentDetails,
     loadDocumentCursorPage, loadDocumentPage, loadDocumentSource, loadRepositoryArchiveEntries,
-    loadRepositoryTorrentFiles, openRepositoryDirectorySource;
+    loadRepositoryTorrentFiles, openRepositoryDirectorySource,
+    scanDocumentArchives, setDocumentArchivePassword;
 import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, FileCursor,
     FileFilter, FileNode, FilePage, FileSortOrder, NestedFileNode,
     ProjectedDirectorySource, jsonFileNodeId;
@@ -120,6 +123,8 @@ import ui.directorytreefilter : createDirectoryTreeFilter,
 import ui.fileopendialog : FileOpenDialogCallbacks, chooseAndLoadPath,
     chooseAndLoadRepository;
 import ui.helpdialogs : showAbout, showShortcutsHelp;
+import ui.archivepasswords : ArchivePasswordManagerCallbacks,
+    requestArchivePassword, showArchivePasswordManager;
 import ui.loadingstatus;
 import ui.jsonfilter : JsonFilterOptions, filterJsonRows, projectRowsToDirectoryTree;
 import ui.preferencesdialog : PreferencesDialogCallbacks, showPreferencesDialog;
@@ -136,8 +141,9 @@ import ui.previewprogress : PreviewProgressCallbacks, startPreviewProgressTimer;
 import ui.virtualblobtable : VirtualBlobTableModel;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : filterRowsByText;
+import dosierarkivo.archive : ArchivePasswordCallback;
 import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, NamedBinaryBlob;
-import dosierskanilo.repository.types : RepositoryBlobFlags;
+import dosierskanilo.repository.types : MetadataSummary, RepositoryBlobFlags;
 import dosierskanilo.repository.repository : Repository;
 import cli.logging;
 
@@ -147,6 +153,21 @@ enum int TREE_COL_SORT_SIZE = 18;
 enum int TREE_COL_BASE_SUMMARY = 19;
 enum int TREE_COL_BASE_SORT_SIZE = 20;
 enum int TREE_COL_PROJECTION_INDEX = 21;
+
+private final class ArchivePasswordRequestState
+{
+    Mutex mutex;
+    Condition condition;
+    bool completed;
+    bool accepted;
+    string password;
+
+    this()
+    {
+        mutex = new Mutex();
+        condition = new Condition(mutex);
+    }
+}
 
 private void setTreeNodeVisible(TreeStore store, TreeIter iter, bool visible,
     Value reusableValue = null)
@@ -1616,6 +1637,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
     auto fileOpenRepositoryMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileOpenRepositoryMenuItem");
     auto fileExportCsvMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileExportCsvMenuItem");
     auto fileExportJsonMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileExportJsonMenuItem");
+    auto fileArchivePasswordsMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileArchivePasswordsMenuItem");
+    auto fileScanArchivesMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileScanArchivesMenuItem");
     auto fileCloseMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileCloseMenuItem");
     auto fileReloadMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileReloadMenuItem");
     auto fileCancelOperationMenuItem = builderObject!MenuItem(mainBuilder, "main", "fileCancelOperationMenuItem");
@@ -1673,6 +1696,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     int lastKnownWindowHeight = loadedState.windowHeight;
     Timeout windowSizePersistTimer;
     bool isLoading;
+    bool isArchiveScanning;
     DocumentTab busyDocument;
     Timeout progressPulseTimer;
     Timeout previewVideoProgressTimer;
@@ -1886,8 +1910,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
         fileReloadMenuItem.setSensitive(!isLoading && hasCurrentDocument);
         fileExportCsvMenuItem.setSensitive(!isLoading && hasCurrentDocument);
         fileExportJsonMenuItem.setSensitive(!isLoading && hasCurrentDocument);
-        btnCancelLoad.setSensitive(isLoading);
-        fileCancelOperationMenuItem.setSensitive(isLoading);
+        fileArchivePasswordsMenuItem.setSensitive(!isLoading && hasCurrentDocument);
+        fileScanArchivesMenuItem.setSensitive(!isLoading && hasCurrentDocument);
+        btnCancelLoad.setSensitive(isLoading && !isArchiveScanning);
+        fileCancelOperationMenuItem.setSensitive(isLoading && !isArchiveScanning);
         fileCloseMenuItem.setSensitive(!isLoading && hasCurrentDocument);
         fileOpenMenuItem.setSensitive(!isLoading);
         fileOpenRepositoryMenuItem.setSensitive(!isLoading);
@@ -5015,6 +5041,119 @@ int runMainWindow(string[] args, ref CliOptions cli)
         worker.start();
     };
 
+    /** Bridge the backend's synchronous worker callback to a GTK-thread dialog. */
+    ArchivePasswordCallback archivePasswordPromptCallback()
+    {
+        auto promptMutex = new Mutex();
+        return (string archivePath, string reason, out string password) {
+            synchronized (promptMutex)
+            {
+                auto request = new ArchivePasswordRequestState();
+                new Idle({
+                    bool accepted;
+                    string suppliedPassword;
+                    try
+                        accepted = requestArchivePassword(window, archivePath,
+                            reason, suppliedPassword);
+                    catch (Exception)
+                        accepted = false;
+                    synchronized (request.mutex)
+                    {
+                        request.accepted = accepted;
+                        request.password = suppliedPassword;
+                        request.completed = true;
+                        request.condition.notifyAll();
+                    }
+                    return false;
+                });
+                synchronized (request.mutex)
+                {
+                    while (!request.completed)
+                        request.condition.wait();
+                    password = request.password;
+                    return request.accepted;
+                }
+            }
+        };
+    }
+
+    /** Scan archive entries for the active source, prompting for passwords as needed. */
+    void scanArchivesForCurrentDocument()
+    {
+        auto document = currentDocument();
+        if (document is null)
+            return;
+        if (isLoading)
+        {
+            document.status.setText("Wait for the current operation before scanning archives.");
+            return;
+        }
+
+        auto sourcePath = document.filePath;
+        isArchiveScanning = true;
+        setLoadingState(document, true, "Scanning archives...");
+        auto passwordCallback = archivePasswordPromptCallback();
+        new Thread({
+            MetadataSummary summary;
+            string error;
+            try
+                summary = scanDocumentArchives(sourcePath, passwordCallback);
+            catch (Exception ex)
+                error = ex.msg;
+            new Idle({
+                if (findDocumentByPath(sourcePath) !is document)
+                    return false;
+                isArchiveScanning = false;
+                auto message = error.length > 0
+                    ? "Archive scan failed: " ~ error
+                    : format("Archive scan finished: %s updated, %s failed.",
+                        summary.archivesUpdated, summary.failed);
+                setLoadingState(document, false, message);
+                if (error.length == 0)
+                    loadDocument(document, false);
+                return false;
+            });
+        }).start();
+    }
+
+    /** Manage filename-to-blob passwords for the active JSON or repository source. */
+    void manageArchivePasswordsForCurrentDocument()
+    {
+        auto document = currentDocument();
+        if (document is null)
+            return;
+        if (isLoading)
+        {
+            document.status.setText("Wait for the current operation before editing archive passwords.");
+            return;
+        }
+
+        showArchivePasswordManager(window, document.selectedFilePath,
+            ArchivePasswordManagerCallbacks((string fileName, string password) {
+                auto sourcePath = document.filePath;
+                setLoadingState(document, true, "Saving archive password...");
+                new Thread({
+                    string error;
+                    try
+                        setDocumentArchivePassword(sourcePath, fileName, password);
+                    catch (Exception ex)
+                        error = ex.msg;
+                    new Idle({
+                        if (findDocumentByPath(sourcePath) !is document)
+                            return false;
+                        auto message = error.length > 0
+                            ? "Could not save archive password: " ~ error
+                            : password.length > 0 ? "Archive password saved."
+                                : "Archive password removed.";
+                        setLoadingState(document, false, message);
+                        if (error.length == 0)
+                            loadDocument(document, false);
+                        return false;
+                    });
+                }).start();
+            }));
+    }
+
     /** Cancel the currently active background request. */
     void cancelPendingLoad()
     {
@@ -5067,6 +5206,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
     });
     fileExportJsonMenuItem.addOnActivate((MenuItem _) {
         exportFilteredRows(currentDocument(), true);
+    });
+    fileArchivePasswordsMenuItem.addOnActivate((MenuItem _) {
+        manageArchivePasswordsForCurrentDocument();
+    });
+    fileScanArchivesMenuItem.addOnActivate((MenuItem _) {
+        scanArchivesForCurrentDocument();
     });
 
     fileReloadMenuItem.addOnActivate((MenuItem _) {

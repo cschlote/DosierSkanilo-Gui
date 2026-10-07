@@ -73,6 +73,25 @@
                           </object>
                         </child>
                         <child>
+                          <object class="GtkSeparatorMenuItem" id="fileArchiveSeparator">
+                            <property name="can-focus">False</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="fileArchivePasswordsMenuItem">
+                            <property name="can-focus">False</property>
+                            <property name="label">_Archive Passwords...</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="fileScanArchivesMenuItem">
+                            <property name="can-focus">False</property>
+                            <property name="label">Scan _Archives...</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
                           <object class="GtkMenuItem" id="fileCancelOperationMenuItem">
                             <property name="can-focus">False</property>
                             <property name="label">_Cancel Current Operation</property>

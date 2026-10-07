@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Added a filename-based archive password manager for JSON catalogs and SQLite
+  repositories, plus an asynchronous archive scan action that prompts on the GTK
+  thread and saves accepted passwords with the source catalog. JSON updates use
+  a backup beside the catalog file.
 - Repository root summaries now use bounded aggregate queries instead of
   materializing file references.
 - Repository directory-source operations now open independent read connections,

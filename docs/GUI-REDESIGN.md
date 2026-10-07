@@ -104,9 +104,10 @@ Known limitations:
   is still the primary navigation surface.
 - Several window splitters and video-preview layout behaviors remain on the
   open-issues list in `TODO.md`.
-- Scan, metadata scraping, and analysis actions are not yet available in GTK;
-  their shared CLI/GUI execution plan is described in the backend plan at
-`https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09`.
+- General scan, metadata scraping beyond archive entries, and analysis actions
+  are not yet available in GTK; their shared CLI/GUI execution plan is described
+  in the backend plan at
+  `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09`.
 
 ## Verification Baseline
 
@@ -369,21 +370,15 @@ storage modes. See the backend plan at `https://github.com/cschlote/DosierSkanil
 
 ## Archive Passwords
 
-### Desired user flow
-
-When the user opens a password-protected archive, the GUI prompts for its
-password. The archive context menu also offers an action to enter or retry the
-password. After a successful password check, the GUI asks whether to remember it
-for that archive. A remembered password is offered automatically on later opens;
-the context menu can forget it or replace it.
-
-The first implementation should use the simplest local persistence available to
-the GUI, separate from catalog metadata. Store an entry keyed by the source and
-archive identity in the user's GUI settings. There is no requirement for a
-keyring, encryption layer, repository-wide secret policy, or backend API. Do
-not save a password after a failed attempt or unless the user opts in. This
-feature is planned; the GUI does not currently prompt for or remember archive
-passwords.
+The File menu provides a filename-based Archive Passwords dialog and a Scan
+Archives action. A user-entered filename is resolved to its Blob; JSON sources
+store the optional `archivePassword` on `NamedBinaryBlob`, while SQLite
+repositories store it in the `archive_passwords` relation. During archive
+listing or deep extraction, DosierArkivo reports that a password is required or
+rejected. The GUI marshals that request to GTK, prompts the user, and the scan
+persists an accepted password with its catalog or repository. Blank password
+input in the manager removes the mapping. The current implementation stores
+passwords as plain text, as agreed for this feature.
 
 ## Migration Sequence
 
