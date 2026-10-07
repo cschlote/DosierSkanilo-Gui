@@ -2,7 +2,7 @@
 module model.treeprojection;
 
 import std.algorithm : any, canFind, filter, sort;
-import std.array : array;
+import std.array : appender, array;
 import std.conv : to;
 import std.path : baseName, dirName, buildNormalizedPath;
 import std.string : toLower;
@@ -17,6 +17,10 @@ struct DirectoryNode
     size_t childDirectoryCount;
     size_t fileCount;
     ulong aggregateSize;
+    /// Dense index in its owning DirectoryTree projection.
+    size_t sourceIndex;
+    /// Parent position in the same projection; root points to itself.
+    size_t parentIndex;
 }
 
 /** Read-only file node exposed to the GUI. */
@@ -36,6 +40,10 @@ struct FileNode
     bool hasText;
     bool hasArchive;
     bool hasTorrent;
+    /// Dense index in its owning DirectoryTree projection.
+    size_t sourceIndex;
+    /// Parent directory position in the same projection.
+    size_t parentIndex;
 }
 
 /** Lazy nested entry projection used by archive and torrent detail trees. */
@@ -219,6 +227,92 @@ final class ProjectedDirectorySource : DirectorySource
         return [];
     }
 
+    private int compareFiles(FileNode left, FileNode right, FileSortOrder order)
+    {
+        final switch (order)
+        {
+        case FileSortOrder.pathAscending:
+            if (left.relativePath != right.relativePath)
+                return left.relativePath < right.relativePath ? -1 : 1;
+            break;
+        case FileSortOrder.pathDescending:
+            if (left.relativePath != right.relativePath)
+                return left.relativePath > right.relativePath ? -1 : 1;
+            break;
+        case FileSortOrder.sizeAscending:
+            if (left.size != right.size)
+                return left.size < right.size ? -1 : 1;
+            if (left.relativePath != right.relativePath)
+                return left.relativePath < right.relativePath ? -1 : 1;
+            break;
+        case FileSortOrder.sizeDescending:
+            if (left.size != right.size)
+                return left.size > right.size ? -1 : 1;
+            if (left.relativePath != right.relativePath)
+                return left.relativePath < right.relativePath ? -1 : 1;
+            break;
+        }
+        if (left.cursorId == right.cursorId)
+            return 0;
+        auto descendingPath = order == FileSortOrder.pathDescending;
+        return descendingPath
+            ? (left.cursorId > right.cursorId ? -1 : 1)
+            : (left.cursorId < right.cursorId ? -1 : 1);
+    }
+
+    private void insertFileCandidate(ref FileNode[] candidates, FileNode file,
+        size_t capacity, FileSortOrder order, bool keepLargest = false)
+    {
+        if (capacity == 0)
+            return;
+        size_t low;
+        auto high = candidates.length;
+        while (low < high)
+        {
+            auto middle = low + (high - low) / 2;
+            if (compareFiles(candidates[middle], file, order) < 0)
+                low = middle + 1;
+            else
+                high = middle;
+        }
+        auto position = low;
+        if (candidates.length < capacity)
+        {
+            auto oldLength = candidates.length;
+            candidates.length = oldLength + 1;
+            foreach_reverse (index; position .. oldLength)
+                candidates[index + 1] = candidates[index];
+            candidates[position] = file;
+            return;
+        }
+        if (!keepLargest)
+        {
+            if (position >= capacity)
+                return;
+            foreach_reverse (index; position .. capacity - 1)
+                candidates[index + 1] = candidates[index];
+            candidates[position] = file;
+            return;
+        }
+        if (position == 0)
+            return;
+        foreach (index; 1 .. capacity)
+            candidates[index - 1] = candidates[index];
+        auto insertAt = position - 1;
+        foreach_reverse (index; insertAt .. capacity - 1)
+            candidates[index + 1] = candidates[index];
+        candidates[insertAt] = file;
+    }
+
+    private FileNode cursorNode(FileCursor cursor)
+    {
+        FileNode file;
+        file.relativePath = cursor.relativePath;
+        file.cursorId = cursor.id;
+        file.size = cursor.size;
+        return file;
+    }
+
     override FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250,
         string filter = "")
     {
@@ -240,26 +334,43 @@ final class ProjectedDirectorySource : DirectorySource
     override FilePage listFilesPage(string directoryId, FileCursor cursor = FileCursor(),
         size_t limit = 250, string filter = "")
     {
-        auto allFiles = listFiles(directoryId, 0, size_t.max, filter);
-        size_t offset;
-        if (cursor.id.length > 0)
-        {
-            foreach (index, file; allFiles)
-            {
-                if (file.cursorId == cursor.id && file.relativePath == cursor.relativePath)
-                {
-                    offset = index + 1;
-                    break;
-                }
-            }
-        }
+        FileFilter query;
+        query.text = filter;
+        return listFilteredFilesPage(directoryId, cursor, limit, query,
+            FileSortOrder.pathAscending);
+    }
+
+    override FilePage listFilteredFilesPage(string directoryId, FileCursor cursor = FileCursor(),
+        size_t limit = 250, FileFilter filter = FileFilter(),
+        FileSortOrder sortOrder = FileSortOrder.pathAscending)
+    {
         FilePage page;
-        auto end = offset + limit;
-        if (end > allFiles.length)
-            end = allFiles.length;
-        page.files = allFiles[offset .. end].dup;
-        page.hasMore = end < allFiles.length;
-        if (page.hasMore && page.files.length > 0)
+        auto files = filesFor(directoryId);
+        auto hasCursor = cursor.id.length > 0 || cursor.relativePath.length > 0;
+        auto cursorFile = cursorNode(cursor);
+        if (limit == size_t.max)
+        {
+            foreach (file; files)
+                if (matchesFileFilter(file, filter)
+                    && (!hasCursor || compareFiles(file, cursorFile, sortOrder) > 0))
+                    page.files ~= file;
+            sort!((a, b) => compareFiles(a, b, sortOrder) < 0)(page.files);
+            return page;
+        }
+
+        auto capacity = limit + 1;
+        FileNode[] candidates;
+        foreach (file; filesFor(directoryId))
+        {
+            if (!matchesFileFilter(file, filter)
+                || (hasCursor && compareFiles(file, cursorFile, sortOrder) <= 0))
+                continue;
+            insertFileCandidate(candidates, file, capacity, sortOrder);
+        }
+        page.hasMore = candidates.length > limit;
+        auto visibleCount = page.hasMore ? limit : candidates.length;
+        page.files = candidates[0 .. visibleCount].dup;
+        if (page.files.length > 0)
         {
             auto last = page.files[$ - 1];
             page.nextCursor = FileCursor(last.relativePath, last.cursorId, last.size);
@@ -267,64 +378,26 @@ final class ProjectedDirectorySource : DirectorySource
         return page;
     }
 
-    override FilePage listFilteredFilesPage(string directoryId, FileCursor cursor = FileCursor(),
-        size_t limit = 250, FileFilter filter = FileFilter(),
-        FileSortOrder sortOrder = FileSortOrder.pathAscending)
-    {
-        FileNode[] allFiles;
-        foreach (file; filesFor(directoryId))
-            if (matchesFileFilter(file, filter))
-                allFiles ~= file;
-        sort!((a, b) {
-            final switch (sortOrder)
-            {
-            case FileSortOrder.pathAscending:
-                return a.relativePath < b.relativePath || (a.relativePath == b.relativePath && a.cursorId < b.cursorId);
-            case FileSortOrder.pathDescending:
-                return a.relativePath > b.relativePath || (a.relativePath == b.relativePath && a.cursorId > b.cursorId);
-            case FileSortOrder.sizeAscending:
-                return a.size < b.size || (a.size == b.size && a.relativePath < b.relativePath);
-            case FileSortOrder.sizeDescending:
-                return a.size > b.size || (a.size == b.size && a.relativePath < b.relativePath);
-            }
-        })(allFiles);
-        size_t offset;
-        if (cursor.id.length > 0)
-            foreach (index, file; allFiles)
-                if (file.cursorId == cursor.id && file.relativePath == cursor.relativePath) { offset = index + 1; break; }
-        FilePage page;
-        auto end = offset + limit;
-        if (end > allFiles.length) end = allFiles.length;
-        page.files = allFiles[offset .. end].dup;
-        page.hasMore = end < allFiles.length;
-        if (page.hasMore) { auto last = page.files[$ - 1]; page.nextCursor = FileCursor(last.relativePath, last.cursorId, last.size); }
-        return page;
-    }
-
     override FilePage listPreviousFilteredFilesPage(string directoryId, FileCursor cursor,
         size_t limit = 250, FileFilter filter = FileFilter(),
         FileSortOrder sortOrder = FileSortOrder.pathAscending)
     {
-        FileNode[] allFiles;
-        foreach (file; filesFor(directoryId))
-            if (matchesFileFilter(file, filter))
-                allFiles ~= file;
-        sort!((a, b) {
-            final switch (sortOrder)
-            {
-            case FileSortOrder.pathAscending: return a.relativePath < b.relativePath || (a.relativePath == b.relativePath && a.cursorId < b.cursorId);
-            case FileSortOrder.pathDescending: return a.relativePath > b.relativePath || (a.relativePath == b.relativePath && a.cursorId > b.cursorId);
-            case FileSortOrder.sizeAscending: return a.size < b.size || (a.size == b.size && a.relativePath < b.relativePath);
-            case FileSortOrder.sizeDescending: return a.size > b.size || (a.size == b.size && a.relativePath < b.relativePath);
-            }
-        })(allFiles);
-        size_t cursorIndex;
-        foreach (index, file; allFiles)
-            if (file.cursorId == cursor.id && file.relativePath == cursor.relativePath) { cursorIndex = index; break; }
-        auto start = cursorIndex > limit ? cursorIndex - limit : 0;
         FilePage page;
-        page.files = allFiles[start .. cursorIndex].dup;
-        page.hasMore = start > 0;
+        if (cursor.id.length == 0 && cursor.relativePath.length == 0)
+            return page;
+        auto cursorFile = cursorNode(cursor);
+        FileNode[] candidates;
+        size_t matchCount;
+        foreach (file; filesFor(directoryId))
+        {
+            if (!matchesFileFilter(file, filter)
+                || compareFiles(file, cursorFile, sortOrder) >= 0)
+                continue;
+            ++matchCount;
+            insertFileCandidate(candidates, file, limit, sortOrder, true);
+        }
+        page.files = candidates;
+        page.hasMore = matchCount > limit;
         if (page.hasMore && page.files.length > 0)
         {
             auto first = page.files[0];
@@ -341,6 +414,8 @@ DirectoryTree buildDirectoryTree(const(FileInput)[] inputs)
 {
     DirectoryTree tree;
     tree.directories ~= DirectoryNode("root", "", "", "", 0, 0, 0);
+    tree.directories[0].sourceIndex = 0;
+    tree.directories[0].parentIndex = 0;
     size_t[string] directoryIndexes;
     directoryIndexes[""] = 0;
     size_t[] parentIndexes = [0];
@@ -355,8 +430,10 @@ DirectoryTree buildDirectoryTree(const(FileInput)[] inputs)
         auto directoryIndex = ensureDirectory(tree, directoryPath, directoryIndexes,
             parentIndexes);
         auto directoryId = tree.directories[directoryIndex].id;
-        auto fileId = "file:" ~ index.to!string;
+        auto fileId = input.id.length > 0 ? input.id : "file:" ~ index.to!string;
         FileNode file;
+        file.sourceIndex = tree.files.length;
+        file.parentIndex = directoryIndex;
         file.id = fileId;
         file.cursorId = fileId;
         file.directoryId = directoryId;
@@ -398,6 +475,14 @@ struct FileInput
     bool hasText;
     bool hasArchive;
     bool hasTorrent;
+    /// Stable source-reference identity; falls back to the input ordinal.
+    string id;
+}
+
+/** Stable identity for one JSON file reference, independent of filtered order. */
+string jsonFileNodeId(size_t sourceOrdinal, size_t referenceOrdinal)
+{
+    return "file:json:" ~ sourceOrdinal.to!string ~ ":" ~ referenceOrdinal.to!string;
 }
 
 private size_t ensureDirectory(ref DirectoryTree tree, string path,
@@ -418,6 +503,8 @@ private size_t ensureDirectory(ref DirectoryTree tree, string path,
     auto id = "directory:" ~ path;
     tree.directories ~= DirectoryNode(id, tree.directories[parentIndex].id,
         baseName(path), path, 0, 0, 0);
+    tree.directories[directoryIndex].sourceIndex = directoryIndex;
+    tree.directories[directoryIndex].parentIndex = parentIndex;
     parentIndexes ~= parentIndex;
     directoryIndexes[path] = directoryIndex;
     ++tree.directories[parentIndex].childDirectoryCount;
@@ -466,6 +553,36 @@ unittest
     auto secondPage = source.listFilesPage(album[0].id, firstPage.nextCursor, 1);
     assert(secondPage.files.length == 1);
     assert(!secondPage.hasMore);
+}
+
+@("in-memory directory pages retain sort/cursor parity with bounded results")
+unittest
+{
+    import std.format : format;
+
+    FileInput[] inputs;
+    foreach (index; 0 .. 2_000)
+        inputs ~= FileInput(format("files/file-%04d.dat", index), index + 1);
+    DirectorySource source = new ProjectedDirectorySource(buildDirectoryTree(inputs));
+
+    auto firstPage = source.listFilteredFilesPage("directory:files", FileCursor(),
+        31, FileFilter(), FileSortOrder.pathAscending);
+    assert(firstPage.files.length == 31);
+    assert(firstPage.hasMore);
+    assert(firstPage.files[0].name == "file-0000.dat");
+    assert(firstPage.files[$ - 1].name == "file-0030.dat");
+
+    auto secondPage = source.listFilteredFilesPage("directory:files",
+        firstPage.nextCursor, 31, FileFilter(), FileSortOrder.pathAscending);
+    assert(secondPage.files.length == 31);
+    assert(secondPage.files[0].name == "file-0031.dat");
+    assert(secondPage.files[$ - 1].id != firstPage.files[$ - 1].id);
+
+    auto reversePage = source.listFilteredFilesPage("directory:files", FileCursor(),
+        31, FileFilter(), FileSortOrder.pathDescending);
+    assert(reversePage.files.length == 31);
+    assert(reversePage.files[0].name == "file-1999.dat");
+    assert(reversePage.files[$ - 1].name == "file-1969.dat");
 }
 
 @("JSON directory source applies typed presence filters")

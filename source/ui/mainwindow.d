@@ -50,6 +50,7 @@ import gtk.TextView;
 import gtk.ToggleButton;
 import gtk.TreeIter;
 import gtk.TreeModelIF;
+import gtk.TreeModelFilter;
 import gtk.TreeSelection;
 import gtk.TreeSortableIF;
 import gtk.TreeStore;
@@ -67,7 +68,7 @@ import gdk.Event;
 
 import core.thread : Thread;
 import core.time : MonoTime;
-import std.algorithm : sort;
+import std.algorithm : canFind, sort;
 import std.array : appender;
 import std.base64 : Base64;
 import std.conv : to;
@@ -87,7 +88,7 @@ import model.datasource : SourceQuery, isRepositorySource, loadDocumentDetails,
     loadRepositoryTorrentFiles, openRepositoryDirectorySource;
 import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, FileCursor,
     FileFilter, FileNode, FilePage, FileSortOrder, NestedFileNode,
-    ProjectedDirectorySource;
+    ProjectedDirectorySource, jsonFileNodeId;
 import ui.appstate : AppState, DocumentFilterState, TableSortState, TreeCursorState, loadAppState,
     saveAppState;
 import ui.builderutils : builderObject;
@@ -111,6 +112,10 @@ import ui.detailswidgets : setDetailEntry,
 import ui.documentactions : DocumentActionCallbacks, closeCurrentDocument, reloadCurrentDocument;
 import ui.documentfilterstate : documentFilterHasCriteria,
     shouldApplyDocumentFilter;
+import ui.directorytreefilter : createDirectoryTreeFilter,
+    directoryTreeNodeVisible, directoryTreeNodeVisibleByIndex,
+    setDirectoryTreeNodeVisible, treeFileMatchesFilter, treeNodeIdColumn,
+    treeVisibleColumn;
 import ui.fileopendialog : FileOpenDialogCallbacks, chooseAndLoadPath,
     chooseAndLoadRepository;
 import ui.helpdialogs : showAbout, showShortcutsHelp;
@@ -134,6 +139,131 @@ import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, NamedBinaryBlo
 import dosierskanilo.repository.types : RepositoryBlobFlags;
 import dosierskanilo.repository.repository : Repository;
 import cli.logging;
+
+enum int TREE_COL_NODE_ID = treeNodeIdColumn;
+enum int TREE_COL_VISIBLE = treeVisibleColumn;
+enum int TREE_COL_SORT_SIZE = 18;
+enum int TREE_COL_BASE_SUMMARY = 19;
+enum int TREE_COL_BASE_SORT_SIZE = 20;
+enum int TREE_COL_PROJECTION_INDEX = 21;
+
+private void setTreeNodeVisible(TreeStore store, TreeIter iter, bool visible,
+    Value reusableValue = null)
+{
+    if (reusableValue is null)
+        setDirectoryTreeNodeVisible(store, iter, visible);
+    else
+    {
+        reusableValue.setBoolean(visible);
+        store.setValue(iter, TREE_COL_VISIBLE, reusableValue);
+    }
+}
+
+private bool findTreeChildById(TreeStore store, TreeIter parent, string nodeId,
+    out TreeIter result)
+{
+    TreeIter child;
+    if (!store.iterChildren(child, parent))
+        return false;
+    do
+    {
+        if (store.getValueString(child, TREE_COL_NODE_ID) == nodeId)
+        {
+            result = child;
+            return true;
+        }
+    }
+    while (store.iterNext(child));
+    return false;
+}
+
+private void removeTreeChildById(TreeStore store, TreeIter parent, string nodeId)
+{
+    TreeIter child;
+    if (!store.iterChildren(child, parent))
+        return;
+    do
+    {
+        if (store.getValueString(child, TREE_COL_NODE_ID) == nodeId)
+        {
+            if (!store.remove(child))
+                return;
+        }
+        else if (!store.iterNext(child))
+            return;
+    }
+    while (true);
+}
+
+private void reorderTreeChildren(TreeStore store, TreeIter parent, TreeSortOrder order)
+{
+    struct SortRow
+    {
+        int oldIndex;
+        int rank;
+        string name;
+        string size;
+        string id;
+    }
+    auto childCount = store.iterNChildren(parent);
+    if (childCount <= 1)
+        return;
+    auto rows = new SortRow[childCount];
+    TreeIter child;
+    if (!store.iterChildren(child, parent))
+        return;
+    int rowPosition;
+    do
+    {
+        auto kind = store.getValueString(child, 1);
+        auto rank = kind == "Directory" ? 0 : kind == "File" ? 1 : 2;
+        rows[rowPosition] = SortRow(rowPosition, rank, store.getValueString(child, 0),
+            store.getValueString(child, TREE_COL_SORT_SIZE),
+            store.getValueString(child, TREE_COL_NODE_ID));
+        ++rowPosition;
+    }
+    while (store.iterNext(child));
+    sort!((a, b) {
+        if (a.rank != b.rank)
+            return a.rank < b.rank;
+        if (a.rank == 2)
+            return a.id < b.id;
+        if (order == TreeSortOrder.sizeAscending
+            || order == TreeSortOrder.sizeDescending)
+        {
+            if (a.size != b.size)
+                return order == TreeSortOrder.sizeAscending
+                    ? a.size < b.size : a.size > b.size;
+        }
+        if (a.name != b.name)
+            return order == TreeSortOrder.nameDescending
+                ? a.name > b.name : a.name < b.name;
+        return a.id < b.id;
+    })(rows);
+    auto newOrder = new int[rows.length];
+    foreach (orderIndex, row; rows)
+        newOrder[orderIndex] = row.oldIndex;
+    store.reorder(parent, newOrder);
+}
+
+private TreeIter treeStoreIter(DocumentTab document, TreeIter viewIter)
+{
+    if (document.directoryTreeFilterModel is null)
+        return viewIter;
+    TreeIter storeIter;
+    document.directoryTreeFilterModel.convertIterToChildIter(storeIter, viewIter);
+    return storeIter;
+}
+
+private TreeIter treeViewIter(DocumentTab document, TreeIter storeIter)
+{
+    if (document.directoryTreeFilterModel is null)
+        return storeIter;
+    TreeIter viewIter;
+    if (!document.directoryTreeFilterModel.convertChildIterToIter(viewIter, storeIter))
+        return null;
+    return viewIter;
+}
 
 /** Configure the transitional directory tree columns. */
 void configureDirectoryTreeColumns(TreeView treeView)
@@ -201,8 +331,6 @@ private DirectoryNode[] sortedDirectories(DirectorySource source, string parentI
 private FileFilter treeFilterForDocument(DocumentTab document, bool caseSensitive)
 {
     FileFilter filter;
-    if (document.directorySourceFiltered)
-        return filter;
     filter.text = document.filterQuery;
     filter.caseSensitive = caseSensitive;
     filter.video = document.filterVideo;
@@ -262,14 +390,24 @@ private SourceQuery sourceQueryForDocument(DocumentTab document, bool caseSensit
 
 private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
     const DirectoryNode node, TreeIter parent, FileFilter filter = FileFilter(),
-    TreeSortOrder order = TreeSortOrder.nameAscending)
+    TreeSortOrder order = TreeSortOrder.nameAscending, Value visibilityValue = null)
 {
-    auto iter = store.createIter(parent);
+    TreeIter iter;
+    if (!findTreeChildById(store, parent, node.id, iter))
+        iter = store.createIter(parent);
     store.setValue(iter, 0, node.name.length > 0 ? node.name : "(source root)");
     store.setValue(iter, 1, "Directory");
     store.setValue(iter, 2, format("%s files | %s bytes", node.fileCount, node.aggregateSize));
+    store.setValue(iter, TREE_COL_BASE_SUMMARY,
+        format("%s files | %s bytes", node.fileCount, node.aggregateSize));
     store.setValue(iter, 3, node.id);
     store.setValue(iter, 5, node.relativePath);
+    store.setValue(iter, TREE_COL_NODE_ID, node.id);
+    store.setValue(iter, TREE_COL_PROJECTION_INDEX, node.sourceIndex.to!string);
+    store.setValue(iter, TREE_COL_SORT_SIZE, format("%020d", node.aggregateSize));
+    store.setValue(iter, TREE_COL_BASE_SORT_SIZE,
+        format("%020d", node.aggregateSize));
+    setTreeNodeVisible(store, iter, true, visibilityValue);
     auto hasActiveFilter = filter.text.length > 0 || filter.video || filter.audio
         || filter.image || filter.textStream || filter.fileType || filter.archive
         || filter.torrent;
@@ -277,13 +415,18 @@ private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
         ? source.listDirectories(node.id, filter).length > 0
             || source.hasMatchingFileInDirectory(node.id, filter)
         : node.childDirectoryCount > 0 || node.fileCount > 0;
-    if (hasChildren)
+    if (hasChildren && store.iterNChildren(iter) == 0)
     {
         auto loadingIter = store.createIter(iter);
         store.setValue(loadingIter, 0, "Loading...");
         store.setValue(loadingIter, 1, "Placeholder");
         store.setValue(loadingIter, 2, "");
         store.setValue(loadingIter, 3, node.id);
+        store.setValue(loadingIter, TREE_COL_NODE_ID, "Placeholder:" ~ node.id);
+        store.setValue(loadingIter, TREE_COL_PROJECTION_INDEX,
+            node.sourceIndex.to!string);
+        store.setValue(loadingIter, TREE_COL_SORT_SIZE, "");
+        setTreeNodeVisible(store, loadingIter, true, visibilityValue);
     }
 }
 
@@ -291,51 +434,33 @@ private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
     TreeIter parent, string directoryId, FileCursor cursor = FileCursor(), bool includeDirectories = true,
     FileFilter filter = FileFilter(), TreeSortOrder order = TreeSortOrder.nameAscending)
 {
+    auto visibilityValue = new Value();
+    visibilityValue.init(GType.BOOLEAN);
     if (includeDirectories)
     {
         foreach (child; sortedDirectories(source, directoryId, order, filter))
-            appendDirectoryTreeNode(store, source, child, parent, filter, order);
+            appendDirectoryTreeNode(store, source, child, parent, filter, order,
+                visibilityValue);
     }
     auto page = source.listFilteredFilesPage(directoryId, cursor, 251, filter,
         sourceFileSortOrder(order));
-    auto files = page.files;
-    auto fileLimit = files.length > 250 ? 250 : files.length;
-    foreach (file; files[0 .. fileLimit])
-    {
-        auto fileIter = store.createIter(parent);
-        store.setValue(fileIter, 0, file.name);
-        store.setValue(fileIter, 1, "File");
-        store.setValue(fileIter, 2, format("%s bytes", file.size));
-        store.setValue(fileIter, 3, file.id);
-        store.setValue(fileIter, 5, file.relativePath);
-        store.setValue(fileIter, 6, file.cursorId);
-        store.setValue(fileIter, 7, file.size.to!string);
-        store.setValue(fileIter, 8, file.hasFileType ? "1" : "0");
-        store.setValue(fileIter, 9, file.hasMedia ? "1" : "0");
-        store.setValue(fileIter, 10, file.hasVideo ? "1" : "0");
-        store.setValue(fileIter, 11, file.hasAudio ? "1" : "0");
-        store.setValue(fileIter, 12, file.hasImage ? "1" : "0");
-        store.setValue(fileIter, 13, file.hasText ? "1" : "0");
-        store.setValue(fileIter, 14, file.hasArchive ? "1" : "0");
-        store.setValue(fileIter, 15, file.hasTorrent ? "1" : "0");
-    }
-    if (page.hasMore)
-    {
-        auto moreIter = store.createIter(parent);
-        store.setValue(moreIter, 0, "More files available...");
-        store.setValue(moreIter, 1, "Page");
-        store.setValue(moreIter, 2, "");
-        store.setValue(moreIter, 3, directoryId);
-        store.setValue(moreIter, 4, page.nextCursor.relativePath);
-        store.setValue(moreIter, 5, page.nextCursor.id);
-        store.setValue(moreIter, 6, page.nextCursor.size.to!string);
-    }
+    populateDirectoryTreeRows(store, parent, [], page.files, false, order,
+        page.hasMore, page.nextCursor, visibilityValue);
 }
 
 private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
     const(DirectoryNode)[] directories, const(FileNode)[] files,
-    bool includeDirectories = true, TreeSortOrder order = TreeSortOrder.nameAscending)
+    bool includeDirectories = true, TreeSortOrder order = TreeSortOrder.nameAscending,
+    bool hasMore = false, FileCursor nextCursor = FileCursor(),
+    Value visibilityValue = null)
 {
+    if (visibilityValue is null)
+    {
+        visibilityValue = new Value();
+        visibilityValue.init(GType.BOOLEAN);
+    }
+    auto directoryId = store.getValueString(parent, 3);
+    removeTreeChildById(store, parent, "Placeholder:" ~ directoryId);
     auto sortedDirectoryRows = directories.dup;
     auto sortedFileRows = files.dup;
     sort!((a, b) {
@@ -359,26 +484,49 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
     if (includeDirectories)
     foreach (directory; sortedDirectoryRows)
     {
-        auto directoryIter = store.createIter(parent);
+        TreeIter directoryIter;
+        if (!findTreeChildById(store, parent, directory.id, directoryIter))
+            directoryIter = store.createIter(parent);
         store.setValue(directoryIter, 0, directory.name);
         store.setValue(directoryIter, 1, "Directory");
         store.setValue(directoryIter, 2, format("%s files | %s bytes",
             directory.fileCount, directory.aggregateSize));
+        store.setValue(directoryIter, TREE_COL_BASE_SUMMARY,
+            format("%s files | %s bytes", directory.fileCount,
+                directory.aggregateSize));
         store.setValue(directoryIter, 3, directory.id);
         store.setValue(directoryIter, 5, directory.relativePath);
-        if (directory.childDirectoryCount > 0 || directory.fileCount > 0)
+        store.setValue(directoryIter, TREE_COL_NODE_ID, directory.id);
+        store.setValue(directoryIter, TREE_COL_PROJECTION_INDEX,
+            directory.sourceIndex.to!string);
+        store.setValue(directoryIter, TREE_COL_SORT_SIZE,
+            format("%020d", directory.aggregateSize));
+        store.setValue(directoryIter, TREE_COL_BASE_SORT_SIZE,
+            format("%020d", directory.aggregateSize));
+        setTreeNodeVisible(store, directoryIter, true, visibilityValue);
+        if ((directory.childDirectoryCount > 0 || directory.fileCount > 0)
+            && store.iterNChildren(directoryIter) == 0)
         {
             auto loadingIter = store.createIter(directoryIter);
             store.setValue(loadingIter, 0, "Loading...");
             store.setValue(loadingIter, 1, "Placeholder");
             store.setValue(loadingIter, 2, "");
             store.setValue(loadingIter, 3, directory.id);
+            store.setValue(loadingIter, TREE_COL_NODE_ID,
+                "Placeholder:" ~ directory.id);
+            store.setValue(loadingIter, TREE_COL_PROJECTION_INDEX,
+                directory.sourceIndex.to!string);
+            store.setValue(loadingIter, TREE_COL_SORT_SIZE, "");
+            setTreeNodeVisible(store, loadingIter, true, visibilityValue);
         }
     }
     auto fileLimit = sortedFileRows.length > 250 ? 250 : sortedFileRows.length;
     foreach (file; sortedFileRows[0 .. fileLimit])
     {
-        auto fileIter = store.createIter(parent);
+        auto nodeId = file.cursorId.length > 0 ? file.cursorId : file.id;
+        TreeIter fileIter;
+        if (!findTreeChildById(store, parent, nodeId, fileIter))
+            fileIter = store.createIter(parent);
         store.setValue(fileIter, 0, file.name);
         store.setValue(fileIter, 1, "File");
         store.setValue(fileIter, 2, format("%s bytes", file.size));
@@ -394,16 +542,42 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
         store.setValue(fileIter, 13, file.hasText ? "1" : "0");
         store.setValue(fileIter, 14, file.hasArchive ? "1" : "0");
         store.setValue(fileIter, 15, file.hasTorrent ? "1" : "0");
+        store.setValue(fileIter, TREE_COL_NODE_ID, nodeId);
+        store.setValue(fileIter, TREE_COL_PROJECTION_INDEX,
+            file.sourceIndex.to!string);
+        store.setValue(fileIter, TREE_COL_SORT_SIZE, format("%020d", file.size));
+        setTreeNodeVisible(store, fileIter, true, visibilityValue);
     }
     if (sortedFileRows.length > fileLimit)
     {
-        auto moreIter = store.createIter(parent);
+        hasMore = true;
+        auto lastVisible = sortedFileRows[fileLimit - 1];
+        nextCursor = FileCursor(lastVisible.relativePath, lastVisible.cursorId,
+            lastVisible.size);
+    }
+    auto pageNodeId = "Page:" ~ directoryId;
+    if (hasMore)
+    {
+        TreeIter moreIter;
+        if (!findTreeChildById(store, parent, pageNodeId, moreIter))
+            moreIter = store.createIter(parent);
         store.setValue(moreIter, 0, "More files available...");
         store.setValue(moreIter, 1, "Page");
         store.setValue(moreIter, 2, "");
-        store.setValue(moreIter, 3, "");
-        store.setValue(moreIter, 4, fileLimit.to!string);
+        store.setValue(moreIter, 3, directoryId);
+        store.setValue(moreIter, 4, nextCursor.relativePath);
+        store.setValue(moreIter, 5, nextCursor.id);
+        store.setValue(moreIter, 6, nextCursor.size.to!string);
+        store.setValue(moreIter, TREE_COL_NODE_ID, pageNodeId);
+        store.setValue(moreIter, TREE_COL_PROJECTION_INDEX,
+            store.getValueString(parent, TREE_COL_PROJECTION_INDEX));
+        store.setValue(moreIter, TREE_COL_SORT_SIZE, "");
+        setTreeNodeVisible(store, moreIter, true, visibilityValue);
     }
+    else
+        removeTreeChildById(store, parent, pageNodeId);
+
+    reorderTreeChildren(store, parent, order);
 }
 
 private bool findNestedDirectoryChild(TreeModelIF model, TreeIter parent, string relativePath,
@@ -597,8 +771,13 @@ private void selectPendingTreeFile(DocumentTab document)
         return;
     TreeIter root;
     TreeIter fileIter;
-    if (findDirectoryTreeIter(document.directoryTreeView.getModel(), root, false,
-        document.pendingTreeRevealFileId, fileIter))
+    auto model = document.directoryTreeView.getModel();
+    auto found = findDirectoryTreeIter(model, root, false,
+        document.pendingTreeRevealFileId, fileIter);
+    if (!found && document.selectedTreeCursor.relativePath.length > 0)
+        found = findTreeIterByValue(model, root, false, 5,
+            document.selectedTreeCursor.relativePath, fileIter);
+    if (found)
     {
         document.syncingTreeSelection = true;
         document.directoryTreeView.getSelection().selectIter(fileIter);
@@ -607,34 +786,221 @@ private void selectPendingTreeFile(DocumentTab document)
     }
 }
 
-/** Render the projection into a GTK tree store and restore per-tab expansion. */
-void renderDirectoryTree(TreeStore store, DirectorySource source, TreeView treeView,
+private void updateTreeNodeVisibility(DocumentTab document, TreeIter iter,
+    Value visibilityValue)
+{
+    auto store = document.directoryTreeStore;
+    auto kind = store.getValueString(iter, 1);
+    auto nodeId = store.getValueString(iter, TREE_COL_NODE_ID);
+    auto parentId = store.getValueString(iter, 3);
+    auto sourceIndexText = store.getValueString(iter, TREE_COL_PROJECTION_INDEX);
+    size_t sourceIndex = size_t.max;
+    if (sourceIndexText.length > 0)
+    {
+        try
+            sourceIndex = to!size_t(sourceIndexText);
+        catch (Exception)
+        {
+        }
+    }
+    if (kind == "Directory")
+    {
+        if (document.directorySourceFiltered && !document.directorySourceRemote)
+        {
+            auto fileCount = sourceIndex < document.visibleDirectoryFileCounts.length
+                ? document.visibleDirectoryFileCounts[sourceIndex] : 0;
+            auto aggregateSize = sourceIndex
+                < document.visibleDirectoryAggregateSizes.length
+                ? document.visibleDirectoryAggregateSizes[sourceIndex] : 0;
+            store.setValue(iter, 2, format("%s files | %s bytes",
+                fileCount, aggregateSize));
+            store.setValue(iter, TREE_COL_SORT_SIZE,
+                format("%020d", aggregateSize));
+        }
+        else if (!document.directorySourceFiltered)
+        {
+            store.setValue(iter, 2,
+                store.getValueString(iter, TREE_COL_BASE_SUMMARY));
+            store.setValue(iter, TREE_COL_SORT_SIZE,
+                store.getValueString(iter, TREE_COL_BASE_SORT_SIZE));
+        }
+    }
+    auto visible = document.directorySourceFiltered
+        ? (document.directorySourceRemote
+            ? directoryTreeNodeVisible(kind, nodeId, parentId, true,
+                document.visibleTreeNodeIds)
+            : directoryTreeNodeVisibleByIndex(kind, sourceIndex, true,
+                document.visibleTreeFileIndexes,
+                document.visibleTreeDirectoryIndexes,
+                document.hasVisibleTreeMatches))
+        : true;
+    setTreeNodeVisible(store, iter, visible, visibilityValue);
+
+    TreeIter child;
+    if (store.iterChildren(child, iter))
+    {
+        do
+            updateTreeNodeVisibility(document, child, visibilityValue);
+        while (store.iterNext(child));
+    }
+    if (kind == "Directory"
+        && (document.treeSortOrder == TreeSortOrder.sizeAscending
+            || document.treeSortOrder == TreeSortOrder.sizeDescending))
+        reorderTreeChildren(store, iter, document.treeSortOrder);
+}
+
+private bool collectMaterializedTreeMatches(DocumentTab document, TreeIter iter,
+    string parentDirectoryId, FileFilter filter)
+{
+    auto store = document.directoryTreeStore;
+    auto kind = store.getValueString(iter, 1);
+    auto nodeId = store.getValueString(iter, TREE_COL_NODE_ID);
+    bool visible;
+    if (kind == "Directory")
+    {
+        visible = nodeId == "root"
+            || (nodeId in document.visibleTreeNodeIds) !is null;
+        TreeIter child;
+        if (store.iterChildren(child, iter))
+        {
+            do
+                visible = collectMaterializedTreeMatches(document, child,
+                    nodeId, filter) || visible;
+            while (store.iterNext(child));
+        }
+        if (visible)
+            document.visibleTreeNodeIds[nodeId] = true;
+        return visible;
+    }
+    if (kind == "File"
+        && treeFileMatchesFilter(store.getValueString(iter, 0),
+            store.getValueString(iter, 5),
+            store.getValueString(iter, 10) == "1",
+            store.getValueString(iter, 11) == "1",
+            store.getValueString(iter, 12) == "1",
+            store.getValueString(iter, 13) == "1",
+            store.getValueString(iter, 8) == "1",
+            store.getValueString(iter, 14) == "1",
+            store.getValueString(iter, 15) == "1", filter))
+    {
+        document.visibleTreeNodeIds[nodeId] = true;
+        document.visibleTreeNodeIds[parentDirectoryId] = true;
+        return true;
+    }
+    return false;
+}
+
+private void updateTreeModelVisibility(DocumentTab document, FileFilter filter)
+{
+    if (document.directorySourceFiltered && document.directorySourceRemote)
+    {
+        document.visibleTreeNodeIds["root"] = true;
+        TreeIter root;
+        if (document.directoryTreeStore.getIterFirst(root))
+            collectMaterializedTreeMatches(document, root, "", filter);
+    }
+    auto visibilityValue = new Value();
+    visibilityValue.init(GType.BOOLEAN);
+    TreeIter iter;
+    if (document.directoryTreeStore.getIterFirst(iter))
+    {
+        do
+            updateTreeNodeVisibility(document, iter, visibilityValue);
+        while (document.directoryTreeStore.iterNext(iter));
+    }
+    document.directoryTreeFilterModel.refilter();
+}
+
+private void setTreeSubtreeVisible(TreeStore store, TreeIter iter, bool visible,
+    Value visibilityValue = null)
+{
+    if (visibilityValue is null)
+    {
+        visibilityValue = new Value();
+        visibilityValue.init(GType.BOOLEAN);
+    }
+    setTreeNodeVisible(store, iter, visible, visibilityValue);
+    TreeIter child;
+    if (store.iterChildren(child, iter))
+    {
+        do
+            setTreeSubtreeVisible(store, child, visible, visibilityValue);
+        while (store.iterNext(child));
+    }
+}
+
+/** Render or update a source projection while preserving materialized JSON nodes. */
+void renderDirectoryTree(DocumentTab document, DirectorySource source,
     string[] expandedIds, FileFilter filter = FileFilter(),
     TreeSortOrder order = TreeSortOrder.nameAscending)
 {
-    store.clear();
-    appendDirectoryTreeNode(store, source, source.root, null, filter, order);
+    auto store = document.directoryTreeStore;
+    auto treeView = document.directoryTreeView;
+    string previousSelectionId;
+    TreeModelIF previousSelectionModel;
+    TreeIter previousSelectionIter;
+    if (treeView.getSelection().getSelected(previousSelectionModel,
+            previousSelectionIter)
+        && previousSelectionModel.getValueString(previousSelectionIter, 1) == "File")
+    {
+        previousSelectionId = previousSelectionModel.getValueString(
+            previousSelectionIter, 3);
+        document.selectedTreeFileId = previousSelectionId;
+        document.selectedTreeCursor.relativePath = previousSelectionModel.getValueString(
+            previousSelectionIter, 5);
+    }
+    auto resetTree = !document.reuseDirectoryTreeNodes;
+    if (resetTree)
+        store.clear();
+
+    TreeIter root;
+    auto rootNode = source.root;
+    if (!findDirectoryTreeIter(store, new TreeIter(), false, rootNode.id, root))
+        appendDirectoryTreeNode(store, source, rootNode, null, filter, order);
+    else
+    {
+        store.setValue(root, 0, rootNode.name.length > 0
+            ? rootNode.name : "(source root)");
+        store.setValue(root, 2,
+            format("%s files | %s bytes", rootNode.fileCount, rootNode.aggregateSize));
+        store.setValue(root, 5, rootNode.relativePath);
+        store.setValue(root, TREE_COL_PROJECTION_INDEX,
+            rootNode.sourceIndex.to!string);
+        store.setValue(root, TREE_COL_BASE_SUMMARY,
+            format("%s files | %s bytes", rootNode.fileCount,
+                rootNode.aggregateSize));
+        store.setValue(root, TREE_COL_SORT_SIZE,
+            format("%020d", rootNode.aggregateSize));
+        store.setValue(root, TREE_COL_BASE_SORT_SIZE,
+            format("%020d", rootNode.aggregateSize));
+    }
+
+    if (document.directorySourceFiltered)
+        updateTreeModelVisibility(document, filter);
+    else
+    {
+        TreeIter iter;
+        auto visibilityValue = new Value();
+        visibilityValue.init(GType.BOOLEAN);
+        if (store.getIterFirst(iter))
+        {
+            do
+                setTreeSubtreeVisible(store, iter, true, visibilityValue);
+            while (store.iterNext(iter));
+        }
+        document.directoryTreeFilterModel.refilter();
+    }
+    document.reuseDirectoryTreeNodes = true;
     restoreExpandedDirectories(treeView, expandedIds);
+    if (previousSelectionId.length > 0)
+        document.pendingTreeRevealFileId = previousSelectionId;
+    selectPendingTreeFile(document);
 }
 
-/** Replace the visible JSON tree contents while its background filter runs. */
+/** Keep the current tree visible while its background filter runs. */
 private void showFilteringTreePlaceholder(DocumentTab document)
 {
-    document.directoryTreeStore.clear();
-    auto rootNode = document.directoryTree.root;
-    auto root = document.directoryTreeStore.createIter(null);
-    document.directoryTreeStore.setValue(root, 0,
-        rootNode.name.length > 0 ? rootNode.name : "(source root)");
-    document.directoryTreeStore.setValue(root, 1, "Directory");
-    document.directoryTreeStore.setValue(root, 2,
-        format("%s files | %s bytes", rootNode.fileCount, rootNode.aggregateSize));
-    document.directoryTreeStore.setValue(root, 3, rootNode.id);
-    document.directoryTreeStore.setValue(root, 5, rootNode.relativePath);
-    auto placeholder = document.directoryTreeStore.createIter(root);
-    document.directoryTreeStore.setValue(placeholder, 0, "Filtering files...");
-    document.directoryTreeStore.setValue(placeholder, 1, "Filtering");
-    document.directoryTreeStore.setValue(placeholder, 3, rootNode.id);
-    document.directoryTreeView.expandRow(document.directoryTreeStore.getPath(root), false);
+    document.status.setText("Filtering files...");
 }
 
 /** Show a non-expandable loading row until a document source is attached. */
@@ -644,6 +1010,76 @@ private void showDocumentTreeLoadingPlaceholder(DocumentTab document)
     auto iter = document.directoryTreeStore.createIter(null);
     document.directoryTreeStore.setValue(iter, 0, "Loading directory tree...");
     document.directoryTreeStore.setValue(iter, 1, "Loading");
+    document.directoryTreeStore.setValue(iter, TREE_COL_NODE_ID, "Loading:source");
+    setTreeNodeVisible(document.directoryTreeStore, iter, true);
+}
+
+private void collectDirectoryTreeNodeIds(TreeStore store, TreeIter parent,
+    bool hasParent, ref string[] ids, ref bool[string] seen,
+    const(bool[string]) expandedIds)
+{
+    TreeIter iter;
+    if (hasParent)
+    {
+        if (!store.iterChildren(iter, parent))
+            return;
+    }
+    else if (!store.getIterFirst(iter))
+        return;
+
+    do
+    {
+        if (store.getValueString(iter, 1) == "Directory")
+        {
+            auto id = store.getValueString(iter, 3);
+            bool hasLoadedChildren;
+            TreeIter child;
+            if (store.iterChildren(child, iter))
+            {
+                do
+                {
+                    auto childKind = store.getValueString(child, 1);
+                    if (childKind != "Placeholder" && childKind != "Loading"
+                        && childKind != "Page" && childKind != "LoadingPage")
+                    {
+                        hasLoadedChildren = true;
+                        break;
+                    }
+                }
+                while (store.iterNext(child));
+            }
+            if (id.length > 0 && id !in seen
+                && ((id in expandedIds) !is null || hasLoadedChildren))
+            {
+                seen[id] = true;
+                ids ~= id;
+            }
+        }
+        if (store.iterHasChild(iter))
+            collectDirectoryTreeNodeIds(store, iter, true, ids, seen,
+                expandedIds);
+    }
+    while (store.iterNext(iter));
+}
+
+private string[] directoryTreeIdsToRefresh(TreeStore store,
+    const(string)[] expandedIds)
+{
+    string[] ids;
+    bool[string] seen;
+    bool[string] expanded;
+    foreach (id; expandedIds)
+    {
+        if (id.length > 0 && id !in seen)
+        {
+            seen[id] = true;
+            expanded[id] = true;
+            ids ~= id;
+        }
+    }
+    collectDirectoryTreeNodeIds(store, new TreeIter(), false, ids, seen,
+        expanded);
+    return ids;
 }
 
 /** Worker result payload for background JSON loading. */
@@ -652,6 +1088,8 @@ struct AsyncLoadResult
     BlobRow[] allRows;
     DirectoryTree directoryTree;
     DirectorySource directorySource;
+    bool[string] visibleTreeNodeIds;
+    AsyncExpandedDirectoryRows[] expandedDirectoryRows;
     string filePath;
     int dataVersion = -1;
     string rootShape;
@@ -694,16 +1132,87 @@ struct AsyncNestedEntryResult
 enum size_t repositoryPageSize = 250;
 
 /** Worker result payload for background text filtering. */
+struct AsyncExpandedDirectoryRows
+{
+    string directoryId;
+    DirectoryNode[] directories;
+    FilePage filePage;
+}
+
 struct AsyncFilterResult
 {
     BlobRow[] filteredRows;
-    DirectoryTree directoryTree;
-    DirectorySource directorySource;
+    bool[] visibleTreeFileIndexes;
+    bool[] visibleTreeDirectoryIndexes;
+    size_t[] visibleDirectoryFileCounts;
+    ulong[] visibleDirectoryAggregateSizes;
+    size_t[] visibleDirectoryChildCounts;
+    bool hasVisibleTreeMatches;
+    AsyncExpandedDirectoryRows[] expandedDirectoryRows;
     string query;
     bool caseSensitive;
     string mediaStats;
     string error;
     long elapsedMs;
+}
+
+/** Reconcile only already-expanded JSON directories without rebuilding the tree. */
+private void refreshExpandedJsonDirectories(DocumentTab document, FileFilter filter,
+    TreeSortOrder order, bool caseSensitive)
+{
+    auto source = document.unfilteredDirectorySource;
+    if (source is null || document.directorySourceRemote)
+        return;
+    auto sourcePath = document.filePath;
+    auto requestId = ++document.directoryTreeRefreshRequestId;
+    auto expandedIds = directoryTreeIdsToRefresh(document.directoryTreeStore,
+        document.expandedDirectoryIds);
+    new Thread({
+        AsyncExpandedDirectoryRows[] pages;
+        string error;
+        try
+        {
+            foreach (directoryId; expandedIds)
+            {
+                AsyncExpandedDirectoryRows page;
+                page.directoryId = directoryId;
+                page.directories = source.listDirectories(directoryId, filter);
+                page.filePage = source.listFilteredFilesPage(directoryId,
+                    FileCursor(), 251, filter, sourceFileSortOrder(order));
+                pages ~= page;
+            }
+        }
+        catch (Exception ex)
+            error = ex.msg;
+        new Idle({
+            if (document.filePath != sourcePath
+                || requestId != document.directoryTreeRefreshRequestId
+                || document.directorySourceFiltered
+                || !sameTreeFilter(filter,
+                    treeFilterForDocument(document, caseSensitive)))
+                return false;
+            if (error.length > 0)
+            {
+                document.status.setText("Failed to restore directory rows: " ~ error);
+                return false;
+            }
+            foreach (page; pages)
+            {
+                TreeIter root;
+                TreeIter parent;
+                if (!findDirectoryTreeIter(document.directoryTreeStore, root, false,
+                        page.directoryId, parent))
+                    continue;
+                populateDirectoryTreeRows(document.directoryTreeStore, parent,
+                    page.directories, page.filePage.files, true, order,
+                    page.filePage.hasMore, page.filePage.nextCursor);
+            }
+            updateTreeModelVisibility(document, filter);
+            restoreExpandedDirectories(document.directoryTreeView,
+                document.expandedDirectoryIds);
+            return false;
+        });
+    }).start();
 }
 
 /** Smallest window width accepted when restoring geometry. */
@@ -742,7 +1251,7 @@ string checksumSetStatus(const(BlobRow) row)
     {
         return "full";
     }
-    return format("partial (%s/3)", present);
+    return present == 1 ? "partial (1/3)" : "partial (2/3)";
 }
 
 /** Summarize media subtype flags for the list view.
@@ -755,29 +1264,27 @@ string checksumSetStatus(const(BlobRow) row)
  */
 string mediaInfoSummary(const(BlobRow) row)
 {
-    auto labels = appender!(string[])();
-    if (row.hasVideo)
+    auto flags = (row.hasVideo ? 1 : 0) | (row.hasAudio ? 2 : 0)
+        | (row.hasImage ? 4 : 0) | (row.hasText ? 8 : 0);
+    final switch (flags)
     {
-        labels.put("V");
+    case 0: return row.hasMedia ? "yes" : "-";
+    case 1: return "V";
+    case 2: return "A";
+    case 3: return "V,A";
+    case 4: return "I";
+    case 5: return "V,I";
+    case 6: return "A,I";
+    case 7: return "V,A,I";
+    case 8: return "T";
+    case 9: return "V,T";
+    case 10: return "A,T";
+    case 11: return "V,A,T";
+    case 12: return "I,T";
+    case 13: return "V,I,T";
+    case 14: return "A,I,T";
+    case 15: return "V,A,I,T";
     }
-    if (row.hasAudio)
-    {
-        labels.put("A");
-    }
-    if (row.hasImage)
-    {
-        labels.put("I");
-    }
-    if (row.hasText)
-    {
-        labels.put("T");
-    }
-
-    if (labels.data.length > 0)
-    {
-        return labels.data.join(",");
-    }
-    return row.hasMedia ? "yes" : "-";
 }
 
 /** Estimate the natural width required for the blob table columns.
@@ -1018,6 +1525,23 @@ string mediaHitStats(const(BlobRow)[] rows)
     }
 
     return format("hits V:%s A:%s I:%s T:%s FT:%s AR:%s TO:%s", videoCount, audioCount, imageCount, textCount, fileTypeCount, archiveCount, torrentCount);
+}
+
+private string primaryTreeFileNodeId(const(BlobRow) row, size_t fallbackOrdinal)
+{
+    auto sourceOrdinal = row.sourceOrdinal == size_t.max
+        ? fallbackOrdinal : row.sourceOrdinal;
+    if (row.sourceBlob !is null)
+    {
+        foreach (referenceIndex, spec; row.sourceBlob.fileSpecs)
+        {
+            if (spec !is null && spec.fileName.length > 0
+                && (row.primaryFileName.length == 0
+                    || spec.fileName == row.primaryFileName))
+                return jsonFileNodeId(sourceOrdinal, referenceIndex);
+        }
+    }
+    return jsonFileNodeId(sourceOrdinal, 0);
 }
 
 /** Convert a base64-encoded digest into lowercase hexadecimal text.
@@ -1833,8 +2357,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             GType.STRING,
             GType.STRING,
             GType.STRING,
-            GType.STRING,
-            GType.STRING,
+            GType.UINT64,
+            GType.UINT64,
             GType.STRING,
             GType.STRING,
             GType.STRING,
@@ -1867,9 +2391,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
             GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING,
             GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING,
             GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING,
-            GType.STRING
+            GType.STRING, GType.STRING, GType.BOOLEAN, GType.STRING,
+            GType.STRING, GType.STRING, GType.STRING
         ]);
-        document.directoryTreeView = new TreeView(document.directoryTreeStore);
+        document.directoryTreeFilterModel = createDirectoryTreeFilter(
+            document.directoryTreeStore);
+        document.directoryTreeView = new TreeView(document.directoryTreeFilterModel);
         configureDirectoryTreeColumns(document.directoryTreeView);
         showDocumentTreeLoadingPlaceholder(document);
         document.directoryTreeView.addOnButtonPress((Event event, Widget _) {
@@ -2023,8 +2550,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 : markerKind != "Page")
                 return;
             auto loadingKind = cursor.id.length == 0 ? "Loading" : "LoadingPage";
-            document.directoryTreeStore.setValue(loadingIter, 0, "Loading...");
-            document.directoryTreeStore.setValue(loadingIter, 1, loadingKind);
+            auto loadingStoreIter = treeStoreIter(document, loadingIter);
+            document.directoryTreeStore.setValue(loadingStoreIter, 0, "Loading...");
+            document.directoryTreeStore.setValue(loadingStoreIter, 1, loadingKind);
             auto filePath = document.filePath;
             auto fileFilter = treeFilterForDocument(document, prefCaseSensitiveFilter);
             auto treeSortOrder = document.treeSortOrder;
@@ -2077,19 +2605,28 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         || !model.getIter(rowToRemove, rowToRemovePath)
                         || model.getValueString(rowToRemove, 1) != "LoadingPage")
                         return false;
-                    document.directoryTreeStore.remove(rowToRemove);
+                    auto parentStore = treeStoreIter(document, parent);
+                    auto removeStore = treeStoreIter(document, rowToRemove);
+                    document.directoryTreeStore.remove(removeStore);
                     if (result.error.length > 0)
                     {
-                        auto errorIter = document.directoryTreeStore.createIter(parent);
+                        auto errorIter = document.directoryTreeStore.createIter(parentStore);
                         document.directoryTreeStore.setValue(errorIter, 0,
                             "Failed to load: " ~ result.error);
                         document.directoryTreeStore.setValue(errorIter, 1, "Error");
                         document.directoryTreeStore.setValue(errorIter, 2, "");
                         document.directoryTreeStore.setValue(errorIter, 3, result.directoryId);
+                        document.directoryTreeStore.setValue(errorIter, TREE_COL_NODE_ID,
+                            "Error:" ~ result.directoryId);
+                        document.directoryTreeStore.setValue(errorIter,
+                            TREE_COL_PROJECTION_INDEX,
+                            document.directoryTreeStore.getValueString(parentStore,
+                                TREE_COL_PROJECTION_INDEX));
+                        setTreeNodeVisible(document.directoryTreeStore, errorIter, true);
                     }
                     else
                     {
-                        populateDirectoryTreeRows(document.directoryTreeStore, parent,
+                        populateDirectoryTreeRows(document.directoryTreeStore, parentStore,
                             result.directories, result.files, result.initial,
                             document.treeSortOrder);
                         restoreExpandedDirectories(document.directoryTreeView,
@@ -2139,9 +2676,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     model.getPath(child));
                 return;
             }
-            document.directoryTreeStore.remove(child);
+            auto parentStore = treeStoreIter(document, iter);
+            auto childStore = treeStoreIter(document, child);
+            document.directoryTreeStore.remove(childStore);
             populateDirectoryTreeNode(document.directoryTreeStore, document.directorySource,
-                iter, directoryId, FileCursor(), true, treeFilterForDocument(document, prefCaseSensitiveFilter),
+                parentStore, directoryId, FileCursor(), true,
+                treeFilterForDocument(document, prefCaseSensitiveFilter),
                 document.treeSortOrder);
             restoreExpandedDirectories(document.directoryTreeView,
                 document.expandedDirectoryIds);
@@ -2192,9 +2732,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 loadRemoteDirectory(model.getPath(parentIter), directoryId, cursor, path);
             else
             {
-                document.directoryTreeStore.remove(pageIter);
+                auto parentStore = treeStoreIter(document, parentIter);
+                auto pageStore = treeStoreIter(document, pageIter);
+                document.directoryTreeStore.remove(pageStore);
                 populateDirectoryTreeNode(document.directoryTreeStore,
-                    document.directorySource, parentIter, directoryId, cursor, false,
+                    document.directorySource, parentStore, directoryId, cursor, false,
                     treeFilterForDocument(document, prefCaseSensitiveFilter), document.treeSortOrder);
             }
         });
@@ -2472,26 +3014,42 @@ int runMainWindow(string[] args, ref CliOptions cli)
                             TreeIter parent;
                             if (findDirectoryTreeIter(model, root, false, directoryId, parent))
                             {
-                                targetIter = document.directoryTreeStore.createIter(parent);
-                                document.directoryTreeStore.setValue(targetIter, 0, target.name);
-                                document.directoryTreeStore.setValue(targetIter, 1, "File");
-                                document.directoryTreeStore.setValue(targetIter, 2,
+                                auto parentStore = treeStoreIter(document, parent);
+                                auto targetStore = document.directoryTreeStore.createIter(
+                                    parentStore);
+                                document.directoryTreeStore.setValue(targetStore, 0, target.name);
+                                document.directoryTreeStore.setValue(targetStore, 1, "File");
+                                document.directoryTreeStore.setValue(targetStore, 2,
                                     format("%s bytes", target.size));
-                                document.directoryTreeStore.setValue(targetIter, 3, target.id);
-                                document.directoryTreeStore.setValue(targetIter, 5, target.relativePath);
-                                document.directoryTreeStore.setValue(targetIter, 6, target.cursorId);
-                                document.directoryTreeStore.setValue(targetIter, 7, target.size.to!string);
-                                document.directoryTreeStore.setValue(targetIter, 8, target.hasFileType ? "1" : "0");
-                                document.directoryTreeStore.setValue(targetIter, 9, target.hasMedia ? "1" : "0");
-                                document.directoryTreeStore.setValue(targetIter, 10, target.hasVideo ? "1" : "0");
-                                document.directoryTreeStore.setValue(targetIter, 11, target.hasAudio ? "1" : "0");
-                                document.directoryTreeStore.setValue(targetIter, 12, target.hasImage ? "1" : "0");
-                                document.directoryTreeStore.setValue(targetIter, 13, target.hasText ? "1" : "0");
-                                document.directoryTreeStore.setValue(targetIter, 14, target.hasArchive ? "1" : "0");
-                                document.directoryTreeStore.setValue(targetIter, 15, target.hasTorrent ? "1" : "0");
+                                document.directoryTreeStore.setValue(targetStore, 3, target.id);
+                                document.directoryTreeStore.setValue(targetStore, 5, target.relativePath);
+                                document.directoryTreeStore.setValue(targetStore, 6, target.cursorId);
+                                document.directoryTreeStore.setValue(targetStore, 7, target.size.to!string);
+                                document.directoryTreeStore.setValue(targetStore, 8, target.hasFileType ? "1" : "0");
+                                document.directoryTreeStore.setValue(targetStore, 9, target.hasMedia ? "1" : "0");
+                                document.directoryTreeStore.setValue(targetStore, 10, target.hasVideo ? "1" : "0");
+                                document.directoryTreeStore.setValue(targetStore, 11, target.hasAudio ? "1" : "0");
+                                document.directoryTreeStore.setValue(targetStore, 12, target.hasImage ? "1" : "0");
+                                document.directoryTreeStore.setValue(targetStore, 13, target.hasText ? "1" : "0");
+                                document.directoryTreeStore.setValue(targetStore, 14, target.hasArchive ? "1" : "0");
+                                document.directoryTreeStore.setValue(targetStore, 15, target.hasTorrent ? "1" : "0");
+                                document.directoryTreeStore.setValue(targetStore,
+                                    TREE_COL_NODE_ID, target.cursorId.length > 0
+                                        ? target.cursorId : target.id);
+                                document.directoryTreeStore.setValue(targetStore,
+                                    TREE_COL_PROJECTION_INDEX,
+                                    target.sourceIndex.to!string);
+                                document.directoryTreeStore.setValue(targetStore,
+                                    TREE_COL_SORT_SIZE, format("%020d", target.size));
+                                setTreeNodeVisible(document.directoryTreeStore,
+                                    targetStore, true);
+                                reorderTreeChildren(document.directoryTreeStore,
+                                    parentStore, document.treeSortOrder);
+                                targetIter = treeViewIter(document, targetStore);
                             }
                         }
-                        document.directoryTreeView.getSelection().selectIter(targetIter);
+                        if (targetIter !is null)
+                            document.directoryTreeView.getSelection().selectIter(targetIter);
                     }
                     document.treePreviousFileButton.setSensitive(true);
                     document.treeNextFileButton.setSensitive(true);
@@ -2675,8 +3233,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.treeSortOrder = cast(TreeSortOrder) active;
             if (document.directorySource !is null)
             {
-                renderDirectoryTree(document.directoryTreeStore, document.directorySource,
-                    document.directoryTreeView, document.expandedDirectoryIds,
+                document.reuseDirectoryTreeNodes = false;
+                renderDirectoryTree(document, document.directorySource,
+                    document.expandedDirectoryIds,
                     treeFilterForDocument(document, prefCaseSensitiveFilter), document.treeSortOrder);
                 selectPendingTreeFile(document);
                 if (document.reconcileDirectoryLoads !is null)
@@ -3051,6 +3610,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
 
         size_t nextIndex = 0;
+        auto indexSortValue = new Value();
+        indexSortValue.init(GType.UINT64);
+        auto fileSizeSortValue = new Value();
+        fileSizeSortValue.init(GType.UINT64);
         bool delegate() renderStep;
         renderStep = {
             if (localRenderRequestId != document.renderRequestId)
@@ -3077,31 +3640,32 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 auto archiveText = boolStatusIcon(row.hasArchive);
                 auto torrentText = boolStatusIcon(row.hasTorrent);
 
-                auto indexSortText = format("%020d", cast(ulong) globalIndex + 1);
-                auto sizeSortText = format("%020d", row.fileSize);
-
                 TreeIter iter;
                 document.tableStore.append(iter);
                 document.tableStore.set(
                     iter,
                     [
                     COL_INDEX, COL_FILE_SIZE, COL_CHECKSUM_SET, COL_FILE_TYPE,
-                    COL_MEDIA_INFO, COL_HAS_ARCHIVE, COL_HAS_TORRENT,
-                    COL_INDEX_SORT, COL_FILE_SIZE_SORT, COL_SOURCE_ID,
+                    COL_MEDIA_INFO, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_SOURCE_ID,
                     COL_HAS_FILE_TYPE_FLAG, COL_HAS_MEDIA_FLAG, COL_HAS_VIDEO_FLAG,
                     COL_HAS_AUDIO_FLAG, COL_HAS_IMAGE_FLAG, COL_HAS_TEXT_FLAG,
                     COL_HAS_ARCHIVE_FLAG, COL_HAS_TORRENT_FLAG
                 ],
                     [
                     indexText, sizeText, checksumsText, fileTypeText,
-                    mediaInfoText, archiveText, torrentText, indexSortText,
-                    sizeSortText, row.sourceId >= 0 ? row.sourceId.to!string : "",
+                    mediaInfoText, archiveText, torrentText,
+                    row.sourceId >= 0 ? row.sourceId.to!string : "",
                     row.hasFileType ? "1" : "0", row.hasMedia ? "1" : "0",
                     row.hasVideo ? "1" : "0", row.hasAudio ? "1" : "0",
                     row.hasImage ? "1" : "0", row.hasText ? "1" : "0",
                     row.hasArchive ? "1" : "0", row.hasTorrent ? "1" : "0"
                 ]
                 );
+                indexSortValue.setUint64(cast(ulong) globalIndex + 1);
+                document.tableStore.setValue(iter, COL_INDEX_SORT, indexSortValue);
+                fileSizeSortValue.setUint64(row.fileSize);
+                document.tableStore.setValue(iter, COL_FILE_SIZE_SORT,
+                    fileSizeSortValue);
             }
 
             nextIndex = endIndex;
@@ -3157,8 +3721,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.tableView.setModel(document.tableStore);
             if (document.directorySource !is null && !appendRows)
             {
-                renderDirectoryTree(document.directoryTreeStore, document.directorySource,
-                    document.directoryTreeView, document.expandedDirectoryIds,
+                renderDirectoryTree(document, document.directorySource,
+                    document.expandedDirectoryIds,
                     treeFilterForDocument(document, prefCaseSensitiveFilter), document.treeSortOrder);
                 if (document.reconcileDirectoryLoads !is null)
                     new Idle({ document.reconcileDirectoryLoads(); return false; });
@@ -3307,8 +3871,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
 
         auto treeSelectionId = row.sourceId >= 0
-            ? row.sourceId.to!string
-            : "file:" ~ rowIndex.to!string;
+            ? row.sourceId.to!string : primaryTreeFileNodeId(row, rowIndex);
         TreeIter treeRoot;
         TreeIter treeFile;
         auto foundTreeFile = !document.syncingTreeSelection
@@ -3658,6 +4221,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         if (isRepositorySource(document.filePath))
         {
             document.filterApplied = true;
+            document.preserveDirectoryTreeNodesOnNextLoad = true;
             persistCurrentState(clearSavedWindowGeometryOnExit);
             document.pageOffset = 0;
             document.drainPageRequest = false;
@@ -3669,10 +4233,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.filterText, document.filterFileType, document.filterArchive,
             document.filterTorrent);
         auto hadFilteredProjection = document.directorySourceFiltered;
-        if (!jsonFilterNeedsRebuild(hasFilterCriteria, hadFilteredProjection))
+        ++document.directoryTreeRefreshRequestId;
+        if (!jsonFilterNeedsRebuild(hasFilterCriteria))
         {
             document.filterApplied = false;
             document.directorySourceFiltered = false;
+            document.visibleTreeNodeIds = null;
+            document.visibleTreeFileIndexes = null;
+            document.visibleTreeDirectoryIndexes = null;
+            document.visibleDirectoryFileCounts = null;
+            document.visibleDirectoryAggregateSizes = null;
+            document.visibleDirectoryChildCounts = null;
+            document.hasVisibleTreeMatches = false;
             if (document.unfilteredDirectorySource !is null)
             {
                 document.directoryTree = document.unfilteredDirectoryTree;
@@ -3680,7 +4252,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
             persistCurrentState(clearSavedWindowGeometryOnExit);
             if (hadFilteredProjection)
+            {
+                if (document.directorySource !is null)
+                    renderDirectoryTree(document, document.directorySource,
+                        document.expandedDirectoryIds, FileFilter(),
+                        document.treeSortOrder);
+                refreshExpandedJsonDirectories(document, FileFilter(),
+                    document.treeSortOrder, prefCaseSensitiveFilter);
                 renderRows(document, document.loadedRows);
+            }
             else
                 document.status.setText(format("Showing %s/%s rows",
                     document.loadedRows.length, document.loadedRows.length));
@@ -3690,6 +4270,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         persistCurrentState(clearSavedWindowGeometryOnExit);
         /* Abort async filter results from previous requests, if any, by invalidating their requestId with a new one. */
         auto requestId = document.filterRequest.begin();
+        ++document.directoryTreeRefreshRequestId;
 
         /* Check the filter requirements set for this document. */
         auto query = document.filterQuery;
@@ -3711,6 +4292,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
         // until this worker finishes, so share the stable slice instead of
         // synchronously copying a potentially huge catalog on the GTK thread.
         const(BlobRow)[] sourceRows = document.loadedRows;
+        auto sourceTree = document.unfilteredDirectoryTree;
+        auto treeSource = document.unfilteredDirectorySource !is null
+            ? document.unfilteredDirectorySource : document.directorySource;
+        auto expandedTreeIds = directoryTreeIdsToRefresh(
+            document.directoryTreeStore, document.expandedDirectoryIds);
+        auto treeFilterSnapshot = treeFilterForDocument(document,
+            prefCaseSensitiveFilter);
+        auto treeSortSnapshot = document.treeSortOrder;
 
         string mediaFilterSummary()
         {
@@ -3762,12 +4351,30 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 filterOptions.fileType = requireFileType;
                 filterOptions.archive = requireArchive;
                 filterOptions.torrent = requireTorrent;
-                auto filtered = filterJsonRows(sourceRows, filterOptions);
+                auto filtered = filterJsonRows(sourceRows, sourceTree, filterOptions);
                 result.filteredRows = filtered.rows;
+                result.visibleTreeFileIndexes = filtered.visibleTreeFileIndexes;
+                result.visibleTreeDirectoryIndexes = filtered.visibleTreeDirectoryIndexes;
+                result.visibleDirectoryFileCounts = filtered.visibleDirectoryFileCounts;
+                result.visibleDirectoryAggregateSizes =
+                    filtered.visibleDirectoryAggregateSizes;
+                result.visibleDirectoryChildCounts = filtered.visibleDirectoryChildCounts;
+                result.hasVisibleTreeMatches = filtered.hasVisibleTreeMatches;
                 result.mediaStats = mediaHitStats(result.filteredRows);
-                result.directoryTree = filtered.tree;
-                result.directorySource = new ProjectedDirectorySource(
-                    result.directoryTree);
+                if (treeSource !is null)
+                {
+                    foreach (directoryId; expandedTreeIds)
+                    {
+                        AsyncExpandedDirectoryRows directoryRows;
+                        directoryRows.directoryId = directoryId;
+                        directoryRows.directories = treeSource.listDirectories(
+                            directoryId, treeFilterSnapshot);
+                        directoryRows.filePage = treeSource.listFilteredFilesPage(
+                            directoryId, FileCursor(), 251, treeFilterSnapshot,
+                            sourceFileSortOrder(treeSortSnapshot));
+                        result.expandedDirectoryRows ~= directoryRows;
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -3787,8 +4394,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     document.tableView.setSensitive(true);
                     document.directoryTreeView.setSensitive(true);
                     if (document.directorySource !is null)
-                        renderDirectoryTree(document.directoryTreeStore,
-                            document.directorySource, document.directoryTreeView,
+                        renderDirectoryTree(document, document.directorySource,
                             document.expandedDirectoryIds,
                             treeFilterForDocument(document, prefCaseSensitiveFilter),
                             document.treeSortOrder);
@@ -3813,9 +4419,34 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     filterLabel = filterLabel.length > 0
                     ? format("%s | %s", filterLabel, result.mediaStats) : result.mediaStats;
                 }
-                document.directoryTree = result.directoryTree;
-                document.directorySource = result.directorySource;
+                document.visibleTreeNodeIds = null;
+                document.visibleTreeFileIndexes = result.visibleTreeFileIndexes;
+                document.visibleTreeDirectoryIndexes = result.visibleTreeDirectoryIndexes;
+                document.visibleDirectoryFileCounts = result.visibleDirectoryFileCounts;
+                document.visibleDirectoryAggregateSizes =
+                    result.visibleDirectoryAggregateSizes;
+                document.visibleDirectoryChildCounts = result.visibleDirectoryChildCounts;
+                document.hasVisibleTreeMatches = result.hasVisibleTreeMatches;
                 document.directorySourceFiltered = true;
+                if (!document.reuseDirectoryTreeNodes && document.directorySource !is null)
+                    renderDirectoryTree(document, document.directorySource,
+                        document.expandedDirectoryIds,
+                        treeFilterForDocument(document, prefCaseSensitiveFilter),
+                        document.treeSortOrder);
+                foreach (directoryRows; result.expandedDirectoryRows)
+                {
+                    TreeIter root;
+                    TreeIter parent;
+                    if (!findDirectoryTreeIter(document.directoryTreeStore, root, false,
+                            directoryRows.directoryId, parent))
+                        continue;
+                    populateDirectoryTreeRows(document.directoryTreeStore, parent,
+                        directoryRows.directories, directoryRows.filePage.files, true,
+                        document.treeSortOrder, directoryRows.filePage.hasMore,
+                        directoryRows.filePage.nextCursor);
+                }
+                updateTreeModelVisibility(document,
+                    treeFilterForDocument(document, prefCaseSensitiveFilter));
                 renderRows(document, result.filteredRows, filterLabel, false,
                     requestId);
                 return false;
@@ -3853,6 +4484,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto hadFilteredProjection = document.directorySourceFiltered;
         resetFilterState(document);
         document.filterApplied = false;
+        document.visibleTreeNodeIds = null;
+        document.visibleTreeFileIndexes = null;
+        document.visibleTreeDirectoryIndexes = null;
+        document.visibleDirectoryFileCounts = null;
+        document.visibleDirectoryAggregateSizes = null;
+        document.visibleDirectoryChildCounts = null;
+        document.hasVisibleTreeMatches = false;
+        ++document.directoryTreeRefreshRequestId;
         auto previousSyncState = isSyncingToolbarState;
         isSyncingToolbarState = true;
         document.filterEntry.setText("");
@@ -3871,6 +4510,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             syncToolbarSensitivity();
         if (isRepositorySource(document.filePath))
         {
+            document.preserveDirectoryTreeNodesOnNextLoad = true;
             document.pageOffset = 0;
             document.drainPageRequest = false;
             loadDocument(document, false);
@@ -3884,7 +4524,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
             document.directorySourceFiltered = false;
             if (hadFilteredProjection)
+            {
+                renderDirectoryTree(document, document.directorySource,
+                    document.expandedDirectoryIds, FileFilter(),
+                    document.treeSortOrder);
+                refreshExpandedJsonDirectories(document, FileFilter(),
+                    document.treeSortOrder, prefCaseSensitiveFilter);
                 renderRows(document, document.loadedRows);
+            }
             else
                 document.status.setText(format("Showing %s/%s rows",
                     document.loadedRows.length, document.loadedRows.length));
@@ -3928,6 +4575,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
         auto requestId = ++document.loadRequestId;
         auto repositorySource = isRepositorySource(document.filePath);
+        auto preserveTreeNodes = document.preserveDirectoryTreeNodesOnNextLoad;
+        document.preserveDirectoryTreeNodesOnNextLoad = false;
+        if (!preserveTreeNodes)
+            document.reuseDirectoryTreeNodes = false;
         if (repositorySource)
         {
             if (!document.drainPageRequest)
@@ -3948,6 +4599,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
             ", fitAfterLoad=", fitHorizontalSplitAfterLoad,
             ", verbose=", cli.argVerboseOutputs);
         setLoadingState(document, true, format("Loading %s ...", document.filePath));
+        auto sourceQuerySnapshot = sourceQueryForDocument(document,
+            prefCaseSensitiveFilter);
+        auto treeFilterSnapshot = treeFilterForDocument(document,
+            prefCaseSensitiveFilter);
+        auto expandedTreeIdsSnapshot = directoryTreeIdsToRefresh(
+            document.directoryTreeStore, document.expandedDirectoryIds);
+        auto treeSortSnapshot = document.treeSortOrder;
+        auto hasTreeFilterSnapshot = documentFilterHasCriteria(
+            treeFilterSnapshot.text, treeFilterSnapshot.video, treeFilterSnapshot.audio,
+            treeFilterSnapshot.image, treeFilterSnapshot.textStream,
+            treeFilterSnapshot.fileType, treeFilterSnapshot.archive,
+            treeFilterSnapshot.torrent);
 
         auto worker = new Thread({
             MonoTime started = MonoTime.currTime;
@@ -3966,11 +4629,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 {
                     if (document.drainRepositoryPages)
                     {
-                        auto sourceQuery = sourceQueryForDocument(document,
-                            prefCaseSensitiveFilter);
                         result.pageOffset = document.repositoryRowsLoaded;
                         auto page = loadDocumentCursorPage(document.filePath,
-                            document.repositoryBlobCursor, document.pageSize, sourceQuery);
+                            document.repositoryBlobCursor, document.pageSize,
+                            sourceQuerySnapshot);
                         blobs = page.blobs;
                         result.blobIds = page.blobIds;
                         result.blobFlags = page.flags;
@@ -3980,10 +4642,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     }
                     else if (document.loadAllRows)
                     {
-                        auto sourceQuery = sourceQueryForDocument(document,
-                            prefCaseSensitiveFilter);
                         auto page = loadDocumentPage(document.filePath, 0,
-                            size_t.max, sourceQuery);
+                            size_t.max, sourceQuerySnapshot);
                         blobs = page.blobs;
                         result.blobIds = page.blobIds;
                         result.blobFlags = page.flags;
@@ -3992,10 +4652,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     }
                     else
                     {
-                        auto sourceQuery = sourceQueryForDocument(document,
-                            prefCaseSensitiveFilter);
                         auto page = loadDocumentPage(document.filePath,
-                            document.pageOffset, document.pageSize, sourceQuery);
+                            document.pageOffset, document.pageSize,
+                            sourceQuerySnapshot);
                         blobs = page.blobs;
                         result.blobIds = page.blobIds;
                         result.blobFlags = page.flags;
@@ -4049,7 +4708,52 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     }
                 }
                 if (isRepositorySource(document.filePath))
+                {
                     result.directoryTree = DirectoryTree();
+                    if (hasTreeFilterSnapshot || preserveTreeNodes)
+                    {
+                        auto treeSource = openRepositoryDirectorySource(
+                            document.filePath);
+                        scope (exit)
+                            treeSource.close();
+                        if (hasTreeFilterSnapshot)
+                            result.visibleTreeNodeIds["root"] = true;
+                        auto queryDirectoryIds = expandedTreeIdsSnapshot.dup;
+                        if (hasTreeFilterSnapshot
+                            && !queryDirectoryIds.canFind("root")
+                            && (treeSource.listDirectories("root",
+                                treeFilterSnapshot).length > 0
+                                || treeSource.hasMatchingFileInDirectory("root",
+                                    treeFilterSnapshot)))
+                            result.visibleTreeNodeIds["root:match"] = true;
+                        foreach (directoryId; queryDirectoryIds)
+                        {
+                            AsyncExpandedDirectoryRows directoryRows;
+                            directoryRows.directoryId = directoryId;
+                            directoryRows.directories = treeSource.listDirectories(
+                                directoryId, treeFilterSnapshot);
+                            directoryRows.filePage = treeSource.listFilteredFilesPage(
+                                directoryId, FileCursor(), 251, treeFilterSnapshot,
+                                sourceFileSortOrder(treeSortSnapshot));
+                            if (hasTreeFilterSnapshot
+                                && (directoryRows.directories.length > 0
+                                    || directoryRows.filePage.files.length > 0))
+                                result.visibleTreeNodeIds[directoryId] = true;
+                            foreach (directory; directoryRows.directories)
+                            {
+                                if (hasTreeFilterSnapshot)
+                                {
+                                    result.visibleTreeNodeIds[directory.id] = true;
+                                    result.visibleTreeNodeIds[directory.parentId] = true;
+                                }
+                            }
+                            if (hasTreeFilterSnapshot)
+                                foreach (file; directoryRows.filePage.files)
+                                    result.visibleTreeNodeIds[file.cursorId] = true;
+                            result.expandedDirectoryRows ~= directoryRows;
+                        }
+                    }
+                }
                 else
                 {
                     setLoadingPhase(document, requestId,
@@ -4113,7 +4817,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     document.unfilteredDirectoryTree = DirectoryTree();
                     document.directorySource = openRepositoryDirectorySource(document.filePath);
                     document.unfilteredDirectorySource = null;
-                    document.directorySourceFiltered = false;
+                    document.directorySourceFiltered = documentFilterHasCriteria(
+                        document.filterQuery, document.filterVideo,
+                        document.filterAudio, document.filterImage,
+                        document.filterText, document.filterFileType,
+                        document.filterArchive, document.filterTorrent);
+                    document.visibleTreeNodeIds = result.visibleTreeNodeIds;
+                    document.visibleTreeFileIndexes = null;
+                    document.visibleTreeDirectoryIndexes = null;
+                    document.visibleDirectoryFileCounts = null;
+                    document.visibleDirectoryAggregateSizes = null;
+                    document.visibleDirectoryChildCounts = null;
+                    document.hasVisibleTreeMatches = false;
                 }
                 else
                 {
@@ -4122,6 +4837,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     document.directorySource = result.directorySource;
                     document.unfilteredDirectorySource = result.directorySource;
                     document.directorySourceFiltered = false;
+                    document.visibleTreeNodeIds = null;
+                    document.visibleTreeFileIndexes = null;
+                    document.visibleTreeDirectoryIndexes = null;
+                    document.visibleDirectoryFileCounts = null;
+                    document.visibleDirectoryAggregateSizes = null;
+                    document.visibleDirectoryChildCounts = null;
+                    document.hasVisibleTreeMatches = false;
                 }
                 auto applyLoadedJsonFilter = !document.directorySourceRemote
                     && shouldApplyDocumentFilter(documentFilterHasCriteria(
@@ -4138,11 +4860,41 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 {
                     auto initialTreeFilter = document.directorySourceRemote
                         ? treeFilterForDocument(document, prefCaseSensitiveFilter) : FileFilter();
-                    renderDirectoryTree(document.directoryTreeStore,
-                        document.directorySource, document.directoryTreeView,
+                    renderDirectoryTree(document, document.directorySource,
                         document.expandedDirectoryIds, initialTreeFilter,
                         document.treeSortOrder);
-                    if (document.reconcileDirectoryLoads !is null)
+                    if (document.directorySourceRemote
+                        && result.expandedDirectoryRows.length > 0)
+                    {
+                        foreach (directoryRows; result.expandedDirectoryRows)
+                        {
+                            TreeIter root;
+                            TreeIter parent;
+                            if (!findDirectoryTreeIter(document.directoryTreeStore,
+                                    root, false, directoryRows.directoryId, parent))
+                                continue;
+                            populateDirectoryTreeRows(document.directoryTreeStore,
+                                parent, directoryRows.directories,
+                                directoryRows.filePage.files, true,
+                                document.treeSortOrder,
+                                directoryRows.filePage.hasMore,
+                                directoryRows.filePage.nextCursor);
+                        }
+                        if (document.directorySourceFiltered)
+                            updateTreeModelVisibility(document, initialTreeFilter);
+                        else
+                        {
+                            TreeIter treeRoot;
+                            if (document.directoryTreeStore.getIterFirst(treeRoot))
+                                setTreeSubtreeVisible(document.directoryTreeStore,
+                                    treeRoot, true);
+                            document.directoryTreeFilterModel.refilter();
+                        }
+                        restoreExpandedDirectories(document.directoryTreeView,
+                            document.expandedDirectoryIds);
+                        selectPendingTreeFile(document);
+                    }
+                    else if (document.reconcileDirectoryLoads !is null)
                         new Idle({ document.reconcileDirectoryLoads(); return false; });
                     if (document.pendingTreeRevealFileId.length > 0 && revealTreeFile !is null)
                         revealTreeFile(document, document.pendingTreeRevealFileId);
@@ -4552,4 +5304,58 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     Main.run();
     return 0;
+}
+
+@("expanded directory refresh removes stale placeholders and upserts rows by ID")
+unittest
+{
+    auto types = new GType[TREE_COL_PROJECTION_INDEX + 1];
+    types[] = GType.STRING;
+    types[TREE_COL_VISIBLE] = GType.BOOLEAN;
+    auto store = new TreeStore(types);
+
+    TreeIter root;
+    store.append(root, null);
+    store.setValue(root, 0, "root");
+    store.setValue(root, 1, "Directory");
+    store.setValue(root, 3, "root");
+    store.setValue(root, TREE_COL_NODE_ID, "root");
+    store.setValue(root, TREE_COL_PROJECTION_INDEX, "0");
+    setTreeNodeVisible(store, root, true);
+
+    TreeIter directory;
+    store.append(directory, root);
+    store.setValue(directory, 0, "music");
+    store.setValue(directory, 1, "Directory");
+    store.setValue(directory, 3, "directory:music");
+    store.setValue(directory, TREE_COL_NODE_ID, "directory:music");
+    store.setValue(directory, TREE_COL_PROJECTION_INDEX, "1");
+    setTreeNodeVisible(store, directory, true);
+
+    TreeIter placeholder;
+    store.append(placeholder, directory);
+    store.setValue(placeholder, 0, "Loading...");
+    store.setValue(placeholder, 1, "Placeholder");
+    store.setValue(placeholder, 3, "directory:music");
+    store.setValue(placeholder, TREE_COL_NODE_ID, "Placeholder:directory:music");
+    store.setValue(placeholder, TREE_COL_PROJECTION_INDEX, "1");
+    setTreeNodeVisible(store, placeholder, true);
+
+    FileNode file;
+    file.id = "blob-1";
+    file.cursorId = "file-ref-1";
+    file.directoryId = "directory:music";
+    file.name = "song.mkv";
+    file.relativePath = "music/song.mkv";
+    file.size = 123;
+    populateDirectoryTreeRows(store, directory, [], [file], false);
+
+    assert(store.iterNChildren(directory) == 1);
+    TreeIter materialized;
+    assert(store.iterChildren(materialized, directory));
+    assert(store.getValueString(materialized, 1) == "File");
+    assert(store.getValueString(materialized, TREE_COL_NODE_ID) == "file-ref-1");
+
+    populateDirectoryTreeRows(store, directory, [], [file], false);
+    assert(store.iterNChildren(directory) == 1);
 }

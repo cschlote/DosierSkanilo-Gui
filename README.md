@@ -36,6 +36,8 @@ The GUI currently supports:
   clipboard copy actions
 - background loading/filtering with stale-request cancellation and performance
   timings
+- directory filtering reuses materialized TreeView nodes through a filtered GTK
+  model, preserving node identity and expanded state across filter changes
 - Previous/Next page navigation for SQLite repository documents
 - CSV and JSON export of the active tab's filtered row subset
 
@@ -45,8 +47,8 @@ The planned direction is for CLI and GUI to start the same library operations;
 backend execution, GUI task management, and the planned pause/resume extension
 are tracked as WP-09 in the backend plan at
 `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md`.
-For the planned incremental TreeView filter model and GC-friendly GUI algorithms,
-see [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md).
+For the filtered TreeView model and GC-friendly GUI algorithm design, see
+[`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md).
 
 The GUI focuses on a traditional desktop workflow:
 

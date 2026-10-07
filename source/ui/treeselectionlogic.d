@@ -28,10 +28,10 @@ bool tableIndexMatchesVisibleRow(string displayedIndex, size_t visibleRowIndex)
     return displayedIndex == (visibleRowIndex + 1).to!string;
 }
 
-/** Skip JSON filter materialization when the active criteria are all empty. */
-bool jsonFilterNeedsRebuild(bool hasActiveCriteria, bool sourceCurrentlyFiltered)
+/** Skip a filter-worker projection when the active criteria are all empty. */
+bool jsonFilterNeedsRebuild(bool hasActiveCriteria)
 {
-    return hasActiveCriteria || sourceCurrentlyFiltered;
+    return hasActiveCriteria;
 }
 
 @("tree selection sync guard prevents reciprocal reveal and expansion")
@@ -52,8 +52,7 @@ unittest
     assert(tableIndexMatchesVisibleRow(displayedIndices[1], 0));
     assert(tableIndexMatchesVisibleRow(displayedIndices[2], 1));
     assert(!tableIndexMatchesVisibleRow(displayedIndices[0], 0));
-    assert(!jsonFilterNeedsRebuild(false, false));
-    assert(jsonFilterNeedsRebuild(false, true),
-        "clearing a filtered projection still needs to restore source rows");
-    assert(jsonFilterNeedsRebuild(true, false));
+    assert(!jsonFilterNeedsRebuild(false),
+        "clearing uses loaded rows directly without a filter projection");
+    assert(jsonFilterNeedsRebuild(true));
 }

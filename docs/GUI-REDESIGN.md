@@ -77,6 +77,14 @@ Implemented:
 - Tree-to-Blob selection resolves the displayed row identity rather than using
   its unsorted array position. An empty JSON filter takes the unfiltered fast
   path instead of copying and rebuilding the same catalog projection.
+- JSON and SQLite filter changes reuse materialized directory TreeStore rows via
+  `GtkTreeModelFilter`, stable file-reference IDs, precomputed match/ancestor
+  indexes, and worker-fetched pages for materialized directories.
+- JSON filtering evaluates text/media/presence predicates in one pass and uses
+  dense file/directory projection-index bitmaps; table sorting uses numeric
+  hidden keys instead of formatted strings.
+- In-memory JSON directory paging keeps a bounded sorted candidate window rather
+  than materializing and sorting every file in the directory for each page.
 
 Known limitations:
 
@@ -97,7 +105,7 @@ Known limitations:
 
 The current working tree passes:
 
-- `dub test --compiler=ldc2` — 48 tests.
+- `dub test --compiler=ldc2` — 52 tests.
 - `dub build --compiler=ldc2`.
 - `git diff --check`.
 
@@ -238,7 +246,7 @@ of that tab.
 
 ## Tree View
 
-The primary view should be a GTK `TreeView` backed by a lazy tree model:
+The primary view is a GTK `TreeView` backed by a lazy tree model:
 
 - directories are expandable nodes
 - files are children of directories
@@ -248,35 +256,31 @@ The primary view should be a GTK `TreeView` backed by a lazy tree model:
 - sorting is explicit and stable
 - loading and error placeholder nodes are visible states
 
-### Reuse Nodes When Filters Change
+### Reuse Nodes When Filters Change (Implemented)
 
-Filter changes must not clear and rebuild the existing directory `TreeStore`.
-Keep a canonical per-document source/model and retain materialized GTK nodes by
-stable source ID. Define file-node identity separately from Blob identity and
-filtered-array position: one Blob can have multiple path nodes. Put a filtered
-view (`GtkTreeModelFilter` or an equivalent
-wrapper) over that model and update precomputed visibility/match state when the
-filter changes. A directory is visible if it or any descendant contains a
-matching file; clearing the filter restores visibility on the same nodes.
+Filter changes retain the per-document canonical directory `TreeStore`; a
+`GtkTreeModelFilter` changes row visibility without clearing loaded nodes.
+File-node identity is separate from Blob identity and filtered-array position:
+one Blob can have multiple path nodes. JSON uses stable source-row/reference
+ordinals; SQLite uses file-reference cursor IDs.
 
-For JSON, parse/index the source once and compute a compact match bitmap or
-stable-ID match index on a worker instead of constructing a fresh full
-`DirectoryTree` for every query. For SQLite, preserve already materialized nodes
-and reconcile newly fetched, server-filtered children by stable ID; update
-existing rows and insert only missing nodes. Keep lazy loading and bounded query
-pages. Apply visibility changes on the GTK main loop after background matching
-finishes, preserve selection/expansion by stable ID, and keep the prior tree
-visible while a new filter is being calculated.
+For JSON, parse/index the source once and compute stable-ID visibility and
+filtered directory summaries on a worker; no new full `DirectoryTree` is built
+per query. For SQLite, preserve materialized nodes and reconcile
+server-filtered rows from bounded pages by stable ID. Apply visibility changes on
+the GTK main loop, preserve selection/expansion by stable ID, and keep the prior
+tree visible while matching runs.
 
-The visibility callback must do only a bounded lookup in precomputed state; it
-must not query a source or traverse descendants. Compute parent visibility from
-match counts/indexes so directories with matching descendants remain reachable.
-Clearing, changing, or reapplying a filter should not recreate existing source
-nodes or duplicate rows.
+Visibility is a bounded lookup over precomputed IDs; it does not query a source
+or traverse descendants. Directories remain visible when they have matching
+descendants. Clearing, changing, and reapplying filters upsert rows by stable ID,
+refresh already materialized directories, and restore the same canonical nodes.
 
-Verification should compare filter results with current semantics and assert
-stable underlying node IDs through apply/change/clear cycles. Measure large-tree
-latency, allocation churn, and peak memory as part of the change.
+Unit/model tests cover filter parity, stable IDs, ancestor visibility, and
+retention of underlying rows. A display-backed JSON filter smoke test passed with
+`G_DEBUG=fatal-warnings`. Measure large-tree latency, allocation churn, and peak
+memory on representative catalogs as a follow-up; include Blob-table rendering
+at 95,001 JSON rows and record per-batch time and GC behavior.
 
 ## GC-Friendly Algorithms
 
@@ -402,10 +406,11 @@ a compatibility layer around the current table UI:
 The older immediate-plan checklist is complete except for scanner/analysis
 operations and the explicitly deferred GTK layout issues. Current actionable GUI
 work is tracked in [`TODO.md`](../TODO.md): asynchronous JSON filtering and
-case-sensitive Blob-table parity have been verified. The next GUI-owned model
-task is to retain existing directory nodes across filter changes; the GTK
-operations client follows the backend and CLI reference slices. Splitter/video
-behavior and UI maintenance remain lower-priority GUI work.
+case-sensitive Blob-table parity and stable TreeView-node reuse across filter
+changes have been verified. Measure large-catalog filter latency, GC allocation
+churn, and peak memory; the GTK operations client follows the backend and CLI
+reference slices. Splitter/video behavior and UI maintenance remain lower-priority
+GUI work.
 
 The shared CLI/GTK operation work is tracked as WP-09 in the backend's
 [`SQLITE-IMPLEMENTATION-PLAN.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09).

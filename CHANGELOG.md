@@ -58,6 +58,16 @@ All notable changes to this project are documented in this file.
   so column sorting cannot select a different file's details. Applying an empty
   or whitespace-only JSON filter restores the existing unfiltered rows/tree
   without rebuilding the full filter projection.
+- Directory filtering now updates a `GtkTreeModelFilter` over the retained
+  per-document `TreeStore`; JSON and SQLite filter changes reuse materialized
+  nodes by stable file-reference IDs and refresh expanded directories in place.
+- Large JSON filtering now computes row predicates in one pass and uses compact
+  projection-index bitmaps instead of per-file string-key maps or a copied tree.
+  Blob-table hidden sort keys are numeric, and media summaries no longer build
+  temporary label arrays for every row.
+- JSON directory pages now retain only the requested sorted result window while
+  scanning the in-memory source; they no longer build and sort a full temporary
+  `FileNode[]` for each page request.
 - Per-document filter application state and Blob-table column sorting are now
   persisted; saved filters are reapplied after source binding before directory
   expansion is restored. Newly opened documents do not inherit another tab's

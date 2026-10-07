@@ -80,31 +80,32 @@ verifies parity across both frontends.
 
 ## P1 — Reuse directory TreeView nodes across filter changes
 
-The current filter path creates a new JSON directory projection and
-`renderDirectoryTree()` clears the GTK `TreeStore`, discarding materialized rows.
-Replace that path with a stable per-document source model and a filtered view
-(`GtkTreeModelFilter` or equivalent) that changes row visibility while retaining
-existing nodes. See the target design in [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md).
+Status: **implemented for JSON and SQLite filter changes**. The former path
+created a new JSON projection and cleared the GTK `TreeStore`; the current path
+retains its per-document store behind `GtkTreeModelFilter`. See
+[`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md).
 
-- [ ] Define stable tree-node IDs that survive filtering/sorting and distinguish
+- [x] Define stable tree-node IDs that survive filtering/sorting and distinguish
   file-reference paths from their Blob IDs; preserve materialized rows when a
   filter changes or is cleared.
-- [ ] Compute match state and visible ancestors off the GTK thread, then update
+- [x] Compute match state and visible ancestors off the GTK thread, then update
   the filtered model on the GTK main loop. Visibility callbacks must not perform
   source queries or recursive descendant scans.
-- [ ] Reconcile lazy SQLite results by stable ID, reusing existing rows and only
+- [x] Reconcile lazy SQLite results by stable ID, reusing existing rows and only
   inserting newly materialized nodes; keep paging/query caches bounded.
-- [ ] For JSON, reuse the one loaded/indexed source and a compact match index;
+- [x] For JSON, reuse the one loaded/indexed source and a compact match index;
   do not rebuild a complete `DirectoryTree` and GTK model on every filter.
-- [ ] Preserve selection, expansion, sort, placeholder/loading states, and exact
+- [x] Preserve selection, expansion, sort, placeholder/loading states, and exact
   text/media/presence/negation semantics through apply/change/clear cycles.
-- [ ] Add GTK model tests for underlying node retention and result parity; measure
-  repeated filter latency, peak memory, and GC allocation behavior where tooling
-  permits.
+- [x] Add GTK model tests for underlying node retention and result parity.
+- [ ] Measure repeated filter latency and peak memory on representative JSON and
+  SQLite catalogs; profile Blob-table rendering at 95,001 JSON rows, including
+  GC allocation behavior and batch time.
 
 **Acceptance:** filter changes update the visible projection without clearing or
 recreating existing source nodes; matching descendants keep their ancestor paths
-visible; repeated filtering is GC-friendly and preserves existing behavior.
+visible; repeated filtering is GC-friendly and preserves existing behavior. Unit
+tests and the display-backed startup/filter smoke test pass.
 
 ## P2 — Stabilize GTK layout and video preview
 

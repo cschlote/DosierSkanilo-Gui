@@ -33,6 +33,7 @@ import cli.logging;
 struct BlobRow
 {
     long sourceId = -1; /// Stable repository blob ID when available.
+    size_t sourceOrdinal = size_t.max; /// Stable source-array ordinal for JSON rows.
     bool detailsLoaded = true; /// False while repository details are lazy.
     bool hasSummaryFlags; /// True when metadata presence came from SQLite.
     bool summaryHasMedia;
@@ -233,9 +234,10 @@ private BlobRow rowFromNamedBinaryBlob(NamedBinaryBlob blob)
 BlobRow[] extractRowsFromBlobs(NamedBinaryBlob[] blobs)
 {
     auto rows = appender!(BlobRow[])();
-    foreach (blob; blobs)
+    foreach (index, blob; blobs)
     {
         auto row = rowFromNamedBinaryBlob(blob);
+        row.sourceOrdinal = index;
         rows.put(row);
     }
     return rows.data;
