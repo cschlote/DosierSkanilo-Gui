@@ -28,6 +28,10 @@ The GUI currently supports:
   info, archive, and torrent flags
 - detail panes for checksums, known file names, MediaInfo, file type, archive,
   and torrent metadata
+- archive and torrent entry trees in their respective scrollable Previewers;
+  document-detail expanders show compact archive/torrent metadata summaries
+- vertically scrollable document details alongside the existing horizontal
+  Previewer splitter
 - structured MediaInfo stream details with format, dimensions/channels, and
   available rate, language, and duration fields
 - wrapped, selectable file-type signatures in the detail pane

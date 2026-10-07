@@ -104,7 +104,8 @@ import ui.directoryactions : toggleDirectoryExpansion, toggleDirectorySubtree;
 import ui.directoryloading : loadExpandedDirectoryPlaceholders;
 import ui.documentpage : loadDocumentPageUi;
 import ui.detailswidgets : setDetailEntry,
-    setMetadataStatusLabel, setMetadataDetails, setFileTypeDetails, setKnownFilesTable,
+    setMetadataStatusLabel, setMetadataDetails, archiveMetadataSummary,
+    torrentMetadataSummary, setFileTypeDetails, setKnownFilesTable,
     setMediaPreview, setMediaInfoStreamDetails, setFallbackDetails,
     refreshMediaPreview, syncVideoPreviewWindow, setVideoPreviewVolume, playVideoPreview,
     pauseVideoPreview, jumpVideoPreview, stopVideoPreview, syncVideoPreviewPosition,
@@ -3989,10 +3990,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
         setFallbackDetails(document, row);
         setFileTypeDetails(document.detailFileTypeExpander, document.detailFileTypeLabel,
             row.fileTypeDetails);
-        setMetadataDetails(document.detailArchiveExpander, document.detailArchiveView, "Archive", row
-                .archiveDetails);
-        setMetadataDetails(document.detailTorrentExpander, document.detailTorrentView, "Torrent", row
-                .torrentDetails);
+        setMetadataDetails(document.detailArchiveExpander, document.detailArchiveView,
+            "Archive", archiveMetadataSummary(row));
+        setMetadataDetails(document.detailTorrentExpander, document.detailTorrentView,
+            "Torrent", torrentMetadataSummary(row));
         setMediaPreview(document, row);
         if (document.selectedPreviewIsVideo)
         {

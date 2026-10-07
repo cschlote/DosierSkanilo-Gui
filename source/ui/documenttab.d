@@ -36,7 +36,6 @@ import gstreamer.Element;
 import gstinterfaces.VideoOverlay;
 import model.blobrow : BlobRow;
 import model.treeprojection : DirectorySource, DirectoryTree, FileCursor;
-import model.treeprojection : NestedFileNode;
 import ui.filterrequeststate : FilterRequestState;
 
 /** Column index for the row number in the main table model. */
@@ -180,6 +179,8 @@ class DocumentTab
     Label detailPreviewTitle;
     Label detailPreviewSummary;
     ScrolledWindow detailPreviewSummaryScroll;
+    ScrolledWindow detailPreviewArchiveScroll;
+    ScrolledWindow detailPreviewTorrentScroll;
     Label detailMediaInfoStatus;
     Label detailFileTypeStatus;
     Label detailArchiveStatus;
@@ -229,8 +230,6 @@ class DocumentTab
     TreeView detailArchiveTreeView;
     TreeStore detailTorrentTreeStore;
     TreeView detailTorrentTreeView;
-    NestedFileNode[] archiveTreeEntries;
-    NestedFileNode[] torrentTreeEntries;
     ulong nestedEntryRequestId;
     ListStore detailFileNamesStore;
     TreeView detailFileNamesView;
@@ -264,6 +263,8 @@ class DocumentTab
     ulong previewPathRequestId;
     bool previewPathCheckPending;
     bool selectedPreviewIsImage;
+    bool selectedPreviewIsArchive;
+    bool selectedPreviewIsTorrent;
     PreviewScaleMode previewScaleMode = PreviewScaleMode.contain;
     bool previewVideoAutostart;
     double previewVideoVolume = 0.5;

@@ -100,7 +100,10 @@ pattern. Known file references can be navigated independently of the blob row.
 - toolbar with load/filter controls
 - primary lazy directory `TreeView`
 - alternative `TreeView`/`ListStore` blob table
-- split-view detail pane with metadata expanders and known-file table
+- split-view details column and Previewer, separated by a horizontal splitter
+- vertically scrollable detail expanders for metadata and known-file information
+- archive/torrent entry trees in the large scrollable Previewer area; their
+  detail expanders contain summary fields rather than duplicate lists
 - status, performance, and file-metadata lines
 
 ## 5. Filter Changes and Stable Tree Nodes

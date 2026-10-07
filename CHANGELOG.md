@@ -68,6 +68,12 @@ All notable changes to this project are documented in this file.
 - JSON directory pages now retain only the requested sorted result window while
   scanning the in-memory source; they no longer build and sort a full temporary
   `FileNode[]` for each page request.
+- Archive and torrent file trees now live in their large, scrollable Previewer
+  areas; their detail expanders show compact metadata summaries instead of
+  duplicate entry lists. The document-details column now scrolls vertically
+  without changing its horizontal splitter to the Previewer.
+- Removed the collapsed MediaInfo expander's minimum-height allocation, which
+  left unused blank space before the File Type section.
 - Per-document filter application state and Blob-table column sorting are now
   persisted; saved filters are reapplied after source binding before directory
   expansion is restored. Newly opened documents do not inherit another tab's

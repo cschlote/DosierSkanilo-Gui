@@ -72,12 +72,22 @@
         <property name="can-focus">False</property>
         <property name="wide-handle">True</property>
         <child>
-          <object class="GtkBox" id="detailsBody">
+          <object class="GtkScrolledWindow" id="detailsBodyScroll">
             <property name="can-focus">False</property>
-            <property name="valign">start</property>
-            <property name="border-width">6</property>
-            <property name="orientation">vertical</property>
-            <property name="spacing">10</property>
+            <property name="hexpand">True</property>
+            <property name="vexpand">True</property>
+            <property name="hscrollbar-policy">never</property>
+            <property name="vscrollbar-policy">automatic</property>
+            <property name="min-content-height">120</property>
+            <property name="propagate-natural-height">False</property>
+            <child>
+              <object class="GtkBox" id="detailsBody">
+                <property name="can-focus">False</property>
+                <property name="hexpand">True</property>
+                <property name="vexpand">True</property>
+                <property name="border-width">6</property>
+                <property name="orientation">vertical</property>
+                <property name="spacing">10</property>
             <child>
               <object class="GtkBox" id="detailVisuals">
                 <property name="can-focus">False</property>
@@ -248,8 +258,8 @@
                       <object class="GtkScrolledWindow" id="detailMediaInfoScroll">
                         <property name="can-focus">False</property>
                         <property name="hexpand">True</property>
-                        <property name="vexpand">True</property>
-                        <property name="min-content-height">120</property>
+                        <property name="vexpand">False</property>
+                        <property name="propagate-natural-height">False</property>
                         <child>
                           <object class="GtkTreeView" id="detailMediaInfoTreeView">
                             <property name="can-focus">True</property>
@@ -262,7 +272,7 @@
                   <packing>
                     <property name="expand">False</property>
                     <property name="fill">True</property>
-                    <property name="position">1</property>
+                    <property name="position">2</property>
                   </packing>
                 </child>
                 <child>
@@ -299,7 +309,7 @@
                   <packing>
                     <property name="expand">False</property>
                     <property name="fill">True</property>
-                    <property name="position">2</property>
+                    <property name="position">3</property>
                   </packing>
                 </child>
                 <child>
@@ -323,23 +333,11 @@
                         <property name="can-focus">False</property>
                         <property name="orientation">vertical</property>
                         <child>
-                          <object class="GtkScrolledWindow" id="detailArchiveTreeScroll">
-                            <property name="can-focus">False</property>
-                            <property name="hexpand">True</property>
-                            <property name="vexpand">True</property>
-                            <property name="min-content-height">180</property>
-                            <child>
-                              <object class="GtkTreeView" id="detailArchiveTreeView">
-                                <property name="can-focus">True</property>
-                                <property name="headers-visible">True</property>
-                              </object>
-                            </child>
-                          </object>
-                        </child>
-                        <child>
                           <object class="GtkTextView" id="detailArchiveView">
                             <property name="visible">False</property>
                             <property name="editable">False</property>
+                            <property name="wrap-mode">word-char</property>
+                            <property name="cursor-visible">False</property>
                           </object>
                         </child>
                       </object>
@@ -348,7 +346,7 @@
                   <packing>
                     <property name="expand">False</property>
                     <property name="fill">True</property>
-                    <property name="position">3</property>
+                    <property name="position">4</property>
                   </packing>
                 </child>
                 <child>
@@ -372,23 +370,11 @@
                         <property name="can-focus">False</property>
                         <property name="orientation">vertical</property>
                         <child>
-                          <object class="GtkScrolledWindow" id="detailTorrentTreeScroll">
-                            <property name="can-focus">False</property>
-                            <property name="hexpand">True</property>
-                            <property name="vexpand">True</property>
-                            <property name="min-content-height">180</property>
-                            <child>
-                              <object class="GtkTreeView" id="detailTorrentTreeView">
-                                <property name="can-focus">True</property>
-                                <property name="headers-visible">True</property>
-                              </object>
-                            </child>
-                          </object>
-                        </child>
-                        <child>
                           <object class="GtkTextView" id="detailTorrentView">
                             <property name="visible">False</property>
                             <property name="editable">False</property>
+                            <property name="wrap-mode">word-char</property>
+                            <property name="cursor-visible">False</property>
                           </object>
                         </child>
                       </object>
@@ -397,7 +383,7 @@
                   <packing>
                     <property name="expand">False</property>
                     <property name="fill">True</property>
-                    <property name="position">4</property>
+                    <property name="position">5</property>
                   </packing>
                 </child>
               </object>
@@ -546,9 +532,11 @@
                 <property name="position">3</property>
               </packing>
             </child>
+              </object>
+            </child>
           </object>
           <packing>
-            <property name="resize">False</property>
+            <property name="resize">True</property>
             <property name="shrink">True</property>
           </packing>
         </child>
@@ -570,7 +558,7 @@
         </child>
       </object>
       <packing>
-        <property name="expand">False</property>
+        <property name="expand">True</property>
         <property name="fill">True</property>
         <property name="position">1</property>
       </packing>

@@ -14,11 +14,15 @@ import gtk.Scale;
 import gtk.ToggleButton;
 import gtk.Builder;
 import gtk.Range;
+import gtk.TreeStore;
+import gtk.TreeView;
 import gtk.Widget;
+import gtk.c.types : GType;
 import gobject.Value;
 import gstreamer.c.types : GstState, GstStateChangeReturn;
 
 import ui.builderutils : builderObject, loadUiBuilder;
+import ui.detailpane : configureNestedEntryTree;
 import ui.documenttab : DocumentTab, PreviewScaleMode;
 import ui.detailswidgets : jumpVideoPreview, pauseVideoPreview, playVideoPreview,
     refreshMediaPreview, resumePendingVideoPreview, seekVideoPreview,
@@ -61,6 +65,22 @@ DetailPreviewUi loadDetailPreviewUi(DocumentTab document)
         "preview", "detailPreviewSummaryScroll");
     document.detailPreviewSummary.setXalign(0);
     document.detailPreviewSummary.setYalign(0);
+    document.detailPreviewArchiveScroll = builderObject!ScrolledWindow(previewBuilder,
+        "preview", "detailPreviewArchiveScroll");
+    document.detailPreviewTorrentScroll = builderObject!ScrolledWindow(previewBuilder,
+        "preview", "detailPreviewTorrentScroll");
+    document.detailArchiveTreeStore = new TreeStore([GType.STRING, GType.STRING,
+        GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING]);
+    document.detailArchiveTreeView = builderObject!TreeView(previewBuilder,
+        "preview", "detailArchiveTreeView");
+    document.detailArchiveTreeView.setModel(document.detailArchiveTreeStore);
+    configureNestedEntryTree(document.detailArchiveTreeView);
+    document.detailTorrentTreeStore = new TreeStore([GType.STRING, GType.STRING,
+        GType.STRING, GType.STRING, GType.STRING, GType.STRING, GType.STRING]);
+    document.detailTorrentTreeView = builderObject!TreeView(previewBuilder,
+        "preview", "detailTorrentTreeView");
+    document.detailTorrentTreeView.setModel(document.detailTorrentTreeStore);
+    configureNestedEntryTree(document.detailTorrentTreeView);
     document.detailPreviewImageControls = builderObject!Box(previewBuilder, "preview", "previewControls");
     document.detailPreviewScroll = builderObject!ScrolledWindow(previewBuilder, "preview", "detailPreviewScroll");
     document.detailPreviewImage = builderObject!Image(previewBuilder, "preview", "detailPreviewImage");

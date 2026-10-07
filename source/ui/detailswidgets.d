@@ -171,7 +171,7 @@ private string containerPreviewSummary(const(BlobRow) row, PreviewContentKind ki
             if (torrent.files.length > 0)
                 lines ~= "Files: " ~ torrent.files.length.to!string;
             else
-                lines ~= "File list: see the Torrent section.";
+                lines ~= "File list: see the Torrent Previewer.";
         }
     }
     else if (row.hasArchive)
@@ -179,7 +179,7 @@ private string containerPreviewSummary(const(BlobRow) row, PreviewContentKind ki
         if (row.sourceBlob !is null && row.sourceBlob.archiveSpecs.length > 0)
             lines ~= "Entries: " ~ row.sourceBlob.archiveSpecs.length.to!string;
         else
-            lines ~= "Entry list: see the Archive section.";
+            lines ~= "Entry list: see the Archive Previewer.";
     }
     else
     {
@@ -189,9 +189,74 @@ private string containerPreviewSummary(const(BlobRow) row, PreviewContentKind ki
     return lines.join("\n");
 }
 
+/** Compact archive metadata for the details expander; full paths live in the preview tree. */
+string archiveMetadataSummary(const(BlobRow) row)
+{
+    if (row.sourceBlob is null)
+        return row.hasArchive
+            ? "Archive entries are indexed; the full listing is in the Archive Previewer."
+            : "";
+
+    size_t entryCount;
+    size_t entriesWithChecksums;
+    ulong totalSize;
+    ulong largestSize;
+    string largestName;
+    foreach (entry; row.sourceBlob.archiveSpecs)
+    {
+        if (entry is null)
+            continue;
+        ++entryCount;
+        totalSize += entry.fileSize;
+        if (entry.fileSize > largestSize)
+        {
+            largestSize = entry.fileSize;
+            largestName = entry.fileName;
+        }
+        if (entry.checkSums.hasDigests)
+            ++entriesWithChecksums;
+    }
+    if (entryCount == 0)
+        return "";
+
+    string[] lines = [
+        format("Total expanded size: %s bytes", totalSize),
+        format("Entries with all checksums: %s", entriesWithChecksums)
+    ];
+    if (largestName.length > 0)
+        lines ~= format("Largest entry: %s (%s bytes)", largestName, largestSize);
+    lines ~= "Full entry paths are shown in the Archive Previewer.";
+    return lines.join("\n");
+}
+
+/** Compact torrent metadata for the details expander; the previewer owns the file tree. */
+string torrentMetadataSummary(const(BlobRow) row)
+{
+    auto torrent = row.sourceBlob is null ? null : row.sourceBlob.torrentInfo;
+    if (torrent is null)
+        return row.hasTorrent
+            ? "Torrent metadata is indexed; full metadata is loading or unavailable."
+            : "";
+    auto hasTorrentDetails = torrent.name.length > 0 || torrent.magnetURI.length > 0
+        || torrent.infoHashHex.length > 0 || torrent.announce.length > 0
+        || torrent.totalSize > 0 || torrent.pieceLength > 0 || torrent.piecesCount > 0
+        || torrent.files.length > 0;
+    if (!hasTorrentDetails)
+        return "";
+
+    string[] lines = [format("Mode: %s", torrent.isMultiFile
+        ? "multi-file" : "single-file")];
+    if (torrent.announce.length > 0)
+        lines ~= "Announce: " ~ torrent.announce;
+    if (torrent.pieceLength > 0)
+        lines ~= format("Piece length: %s bytes", torrent.pieceLength);
+    if (torrent.piecesCount > 0)
+        lines ~= format("Pieces: %s", torrent.piecesCount);
+    return lines.length > 0 ? lines.join("\n") : "No torrent details are available.";
+}
+
 import dosierskanilo.metadata.mediainfosig : MediaInfoAudio, MediaInfoSig, MediaInfoText, MediaInfoVideo;
 import model.blobrow : BlobRow;
-import model.treeprojection : NestedFileNode;
 import ui.documenttab : DocumentTab, PreviewScaleMode;
 import ui.contextpaths : resolveDocumentSourcePath;
 import ui.fallbackrenderer : fallbackDetailRows;
@@ -244,6 +309,9 @@ void setMetadataDetails(Expander expander, TextView view, string title, string d
     expander.setExpanded(false);
     expander.setVisible(true);
     view.getBuffer().setText(hasDetails ? detailsText : "No details available.");
+    view.setWrapMode(GtkWrapMode.WORD_CHAR);
+    view.setCursorVisible(false);
+    view.setVisible(hasDetails);
 }
 
 /** Present the `file` utility signature as a wrapped, selectable description. */
@@ -419,7 +487,6 @@ private void appendNestedPath(TreeStore store, string path, string sizeText,
 private void populateArchiveEntryTree(DocumentTab document, const(BlobRow) row)
 {
     document.detailArchiveTreeStore.clear();
-    document.archiveTreeEntries = [];
     if (document.directorySourceRemote && row.sourceId >= 0 && row.hasArchive)
     {
         auto root = document.detailArchiveTreeStore.createIter(null);
@@ -442,8 +509,6 @@ private void populateArchiveEntryTree(DocumentTab document, const(BlobRow) row)
         {
             if (entry !is null && entry.fileName.length > 0)
             {
-                document.archiveTreeEntries ~= NestedFileNode(entry.fileName, entry.fileName,
-                    entry.fileName, cast(ulong) entry.fileSize, entry.timeLastModified);
                 appendNestedPath(document.detailArchiveTreeStore, entry.fileName,
                     format("%s bytes", entry.fileSize), directories);
             }
@@ -455,7 +520,6 @@ private void populateArchiveEntryTree(DocumentTab document, const(BlobRow) row)
 private void populateTorrentFileTree(DocumentTab document, const(BlobRow) row)
 {
     document.detailTorrentTreeStore.clear();
-    document.torrentTreeEntries = [];
     if (document.directorySourceRemote && row.sourceId >= 0 && row.hasTorrent)
     {
         auto root = document.detailTorrentTreeStore.createIter(null);
@@ -479,8 +543,6 @@ private void populateTorrentFileTree(DocumentTab document, const(BlobRow) row)
             if (entry !is null && entry.path.length > 0)
             {
                 auto relativePath = entry.path.join("/");
-                document.torrentTreeEntries ~= NestedFileNode(relativePath, relativePath,
-                    relativePath, entry.length, "");
                 appendNestedPath(document.detailTorrentTreeStore, entry.path.join("/"),
                     format("%s bytes", entry.length), directories);
             }
@@ -637,6 +699,51 @@ unittest
     archiveBlob.fileType = "application/octet-stream";
     assert(previewContentKind(archiveRow) == PreviewContentKind.archive,
         "archive extensions remain a fallback hint when `file` is inconclusive");
+}
+
+@("archive and torrent details summarize metadata without repeating entry lists")
+unittest
+{
+    import dosierskanilo.metadata.torrentinfo : TorrentFileEntry, TorrentInfo;
+    import dosierskanilo.model.archivespec : ArchiveSpec, CheckSums;
+    import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob;
+    import std.datetime.systime : SysTime;
+
+    auto archiveBlob = new NamedBinaryBlob("bundle.zip", 1_500, SysTime(1_000));
+    archiveBlob.archiveSpecs = [
+        new ArchiveSpec("small.txt", 500, "", CheckSums("md5", "sha1", "xxh64")),
+        new ArchiveSpec("large.bin", 1_000, "", CheckSums())
+    ];
+    BlobRow archiveRow;
+    archiveRow.sourceBlob = archiveBlob;
+    archiveRow.primaryFileName = "bundle.zip";
+    archiveRow.fileSize = 1_500;
+    auto archiveSummary = archiveMetadataSummary(archiveRow);
+    assert(archiveSummary.canFind("Total expanded size: 1500 bytes"));
+    assert(archiveSummary.canFind("Largest entry: large.bin (1000 bytes)"));
+    assert(archiveSummary.canFind("Entries with all checksums: 1"));
+    assert(!archiveSummary.canFind("small.txt"));
+
+    auto torrentBlob = new NamedBinaryBlob("bundle.torrent", 100, SysTime(2_000));
+    torrentBlob.torrentInfo = new TorrentInfo();
+    torrentBlob.torrentInfo.name = "Example bundle";
+    torrentBlob.torrentInfo.isMultiFile = true;
+    torrentBlob.torrentInfo.totalSize = 4096;
+    torrentBlob.torrentInfo.infoHashHex = "deadbeef";
+    torrentBlob.torrentInfo.announce = "https://tracker.example/announce";
+    torrentBlob.torrentInfo.pieceLength = 16384;
+    torrentBlob.torrentInfo.piecesCount = 1;
+    torrentBlob.torrentInfo.files = [new TorrentFileEntry()];
+    torrentBlob.torrentInfo.files[0].path = ["folder", "payload.bin"];
+    torrentBlob.torrentInfo.files[0].length = 4096;
+    BlobRow torrentRow;
+    torrentRow.sourceBlob = torrentBlob;
+    torrentRow.primaryFileName = "bundle.torrent";
+    auto torrentSummary = torrentMetadataSummary(torrentRow);
+    assert(torrentSummary.canFind("Mode: multi-file"));
+    assert(torrentSummary.canFind("Announce: https://tracker.example/announce"));
+    assert(torrentSummary.canFind("Piece length: 16384 bytes"));
+    assert(!torrentSummary.canFind("payload.bin"));
 }
 
 /** Decide whether the selected row should use the embedded video preview. */
@@ -1969,6 +2076,28 @@ void refreshMediaPreview(DocumentTab document)
     if (document.previewPathCheckPending)
         return;
 
+    if (document.selectedPreviewIsArchive || document.selectedPreviewIsTorrent)
+    {
+        stopVideoPreview(document);
+        syncVideoTrackSelectors(document);
+        if (document.detailPreviewImageControls !is null)
+            document.detailPreviewImageControls.setVisible(false);
+        if (document.detailPreviewScroll !is null)
+            document.detailPreviewScroll.setVisible(false);
+        if (document.detailPreviewVideoFrame !is null)
+            document.detailPreviewVideoFrame.setVisible(false);
+        if (document.detailPreviewVideoControls !is null)
+            document.detailPreviewVideoControls.setVisible(false);
+        if (document.detailPreviewArchiveScroll !is null)
+            document.detailPreviewArchiveScroll.setVisible(
+                document.selectedPreviewIsArchive);
+        if (document.detailPreviewTorrentScroll !is null)
+            document.detailPreviewTorrentScroll.setVisible(
+                document.selectedPreviewIsTorrent);
+        document.detailPreviewImage.clear();
+        return;
+    }
+
     if (document.selectedPreviewIsVideo || document.selectedPreviewIsAudio)
     {
         if (document.detailPreviewImageControls !is null)
@@ -2061,6 +2190,12 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
 
     document.selectedPreviewSourcePath = "";
     document.selectedPreviewSourcePixbuf = null;
+    document.selectedPreviewIsArchive = previewKind == PreviewContentKind.archive;
+    document.selectedPreviewIsTorrent = previewKind == PreviewContentKind.torrent;
+    if (document.detailPreviewArchiveScroll !is null)
+        document.detailPreviewArchiveScroll.setVisible(false);
+    if (document.detailPreviewTorrentScroll !is null)
+        document.detailPreviewTorrentScroll.setVisible(false);
     document.selectedPreviewIsVideo = previewPath.length > 0
         && previewKind == PreviewContentKind.video;
     document.selectedPreviewIsAudio = !document.selectedPreviewIsVideo
@@ -2093,6 +2228,12 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
             ? "Torrent overview" : "Archive overview");
         setPreviewSummaryMonospace(document.detailPreviewSummary, false);
         document.detailPreviewSummary.setText(containerPreviewSummary(row, previewKind));
+        if (document.detailPreviewArchiveScroll !is null)
+            document.detailPreviewArchiveScroll.setVisible(
+                previewKind == PreviewContentKind.archive);
+        if (document.detailPreviewTorrentScroll !is null)
+            document.detailPreviewTorrentScroll.setVisible(
+                previewKind == PreviewContentKind.torrent);
         return;
     }
 

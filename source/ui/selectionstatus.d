@@ -223,6 +223,12 @@ void clearSelectionDetails(DocumentTab document)
     {
         document.detailPreviewVideoControls.setVisible(false);
     }
+    document.selectedPreviewIsArchive = false;
+    document.selectedPreviewIsTorrent = false;
+    if (document.detailPreviewArchiveScroll !is null)
+        document.detailPreviewArchiveScroll.setVisible(false);
+    if (document.detailPreviewTorrentScroll !is null)
+        document.detailPreviewTorrentScroll.setVisible(false);
     if (document.detailPreviewSummary !is null)
     {
         document.detailPreviewSummary.setText("No preview available.");
