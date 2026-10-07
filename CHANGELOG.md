@@ -43,8 +43,9 @@ All notable changes to this project are documented in this file.
   document query before auto-applying the filter.
 - JSON documents now bind their data source before building the tree; saved
   per-document filters are reapplied before expanded directories are restored.
-  Apply and Clear remain scoped to the active tab, and large filter projections
-  are built off the GTK thread with a temporary “Filtering files...” placeholder.
+  Apply and Clear remain scoped to the active tab; filter projections are built
+  off the GTK thread while the existing tree stays visible and is refiltered on
+  the GTK main loop.
 - Case-sensitive path filtering now matches between the JSON/SQLite directory
   tree and repository Blob table; stale filter replies are invalidated on cancel.
 - Torrent and archive files now show a metadata/type overview instead of a raw
