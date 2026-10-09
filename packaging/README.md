@@ -12,7 +12,7 @@ public source repository is
 The CLI/backend is packaged separately as `dosierskanilo` and
 `dosierskanilo-git`. There is intentionally no umbrella package.
 
-The latest tagged release is `0.7.0` (`v0.7.0`). Replace checksum placeholders
+The latest tagged release is `0.8.0` (`v0.8.0`). Replace checksum placeholders
 before publishing packages. The GUI compiles the `DosierSkanilo` D modules into
 the executable and requires GTK3/GTKD runtime libraries; it does not require
 the `dosierskanilo` CLI package at runtime. The project is licensed under

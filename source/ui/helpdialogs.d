@@ -49,7 +49,7 @@ void showAbout(Window window)
     dialog.setModal(true);
     dialog.setLogoIconName("help-about");
     dialog.setProgramName("DosierSkanilo GUI");
-    dialog.setVersion("0.7.0");
+    dialog.setVersion("0.8.0");
     dialog.setComments("GTK frontend for the DosierSkanilo library backend. " ~
         "The CLI and GUI share the same repository and JSON operations.");
     dialog.setAuthors(["Carsten Schlote"]);

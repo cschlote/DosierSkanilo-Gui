@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## Release 0.8.0 - 2026-10-09
+
 - Video overlay setup now stays on the GTK main thread instead of using a
   GStreamer streaming-thread callback.
 - GLib timeout and idle callbacks are retained until their sources are removed,
