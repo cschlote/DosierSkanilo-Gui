@@ -1,11 +1,11 @@
 /** UI helpers for the periodic video preview progress timer. */
 module ui.previewprogress;
 
-import glib.Timeout;
 import gstreamer.GStreamer : GstState;
 import gstreamer.c.types : GstStateChangeReturn;
 
 import ui.documenttab : DocumentTab;
+import ui.mainsources : UiMainSource, scheduleUiTimeout;
 
 /** Callbacks required by the preview progress timer. */
 struct PreviewProgressCallbacks
@@ -24,9 +24,9 @@ struct PreviewProgressCallbacks
  * Returns: A repeating GTK timeout that keeps the preview UI in sync.
  * Throws: Timer creation failures may propagate.
  */
-Timeout startPreviewProgressTimer(PreviewProgressCallbacks callbacks)
+UiMainSource startPreviewProgressTimer(PreviewProgressCallbacks callbacks)
 {
-    return new Timeout(250, {
+    return scheduleUiTimeout(250, {
         auto document = callbacks.currentDocument();
         if (document !is null && (document.selectedPreviewIsVideo || document.selectedPreviewIsAudio)
             && document.previewVideoPlayer !is null)

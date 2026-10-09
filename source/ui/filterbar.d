@@ -14,6 +14,7 @@ struct FilterBarUi
 {
     Box filterBar;
     Entry filterEntry;
+    CheckButton filterCaseSensitive;
     CheckButton filterVideo;
     CheckButton filterAudio;
     CheckButton filterImage;
@@ -41,6 +42,7 @@ FilterBarUi loadFilterBarUi(Box filterSlot)
     ui.filterBar = builderObject!Box(filterBuilder, "filter", "filterBar");
     filterSlot.add(ui.filterBar);
     ui.filterEntry = builderObject!Entry(filterBuilder, "filter", "filterEntry");
+    ui.filterCaseSensitive = builderObject!CheckButton(filterBuilder, "filter", "filterCaseSensitive");
     ui.filterVideo = builderObject!CheckButton(filterBuilder, "filter", "filterVideo");
     ui.filterAudio = builderObject!CheckButton(filterBuilder, "filter", "filterAudio");
     ui.filterImage = builderObject!CheckButton(filterBuilder, "filter", "filterImage");

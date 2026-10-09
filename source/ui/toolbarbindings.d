@@ -38,9 +38,10 @@ void bindToolbarButtons(Button btnReload, Button btnRelayout, Button btnCancelLo
 void bindFilterSignals(Entry filterEntry, ToggleButton filterVideo, ToggleButton filterAudio,
     ToggleButton filterImage, ToggleButton filterText, ToggleButton filterMediaNot,
     ToggleButton filterFileType, ToggleButton filterArchive, ToggleButton filterTorrent,
-    void delegate() applyFilter)
+    ToggleButton filterCaseSensitive, void delegate() applyFilter)
 {
     filterEntry.addOnActivate((Entry _) { applyFilter(); });
+    filterCaseSensitive.addOnToggled((ToggleButton _) { applyFilter(); });
     filterVideo.addOnToggled((ToggleButton _) { applyFilter(); });
     filterAudio.addOnToggled((ToggleButton _) { applyFilter(); });
     filterImage.addOnToggled((ToggleButton _) { applyFilter(); });
@@ -83,6 +84,7 @@ void captureDocumentFilterState(DocumentTab document)
  *     filterFileType = File-type filter toggle.
  *     filterArchive = Archive filter toggle.
  *     filterTorrent = Torrent filter toggle.
+ *     filterCaseSensitive = Case-sensitive text matching toggle.
  *     callbacks = Action callbacks for the toolbar controls.
  * Returns: Nothing.
  * Throws: None.
@@ -102,16 +104,17 @@ void bindToolbarSignals(
     ToggleButton filterFileType,
     ToggleButton filterArchive,
     ToggleButton filterTorrent,
+    ToggleButton filterCaseSensitive,
     ToolbarBindingsCallbacks callbacks
 )
 {
     bindToolbarButtons(btnReload, btnRelayout, btnCancelLoad, btnApplyFilter, btnClearFilter, callbacks);
     bindFilterSignals(filterEntry, filterVideo, filterAudio, filterImage, filterText,
-        filterMediaNot, filterFileType, filterArchive, filterTorrent,
+        filterMediaNot, filterFileType, filterArchive, filterTorrent, filterCaseSensitive,
         callbacks.applyFilterFromEntry);
 }
 
-@("per-tab media and presence toggles are copied before applying filters")
+@("per-tab filter toggles apply case-sensitive text and presence filters")
 unittest
 {
     import gtk.CheckButton;
@@ -131,27 +134,32 @@ unittest
     document.filterImageWidget = new CheckButton();
     document.filterTextWidget = new CheckButton();
     document.filterMediaNotWidget = new CheckButton();
+    document.filterCaseSensitiveWidget = new CheckButton();
     document.filterFileTypeWidget = new CheckButton();
     document.filterArchiveWidget = new CheckButton();
     document.filterTorrentWidget = new CheckButton();
 
-    bool applied;
+    size_t applyCount;
     bindFilterSignals(document.filterEntry, document.filterVideoWidget,
         document.filterAudioWidget, document.filterImageWidget,
         document.filterTextWidget, document.filterMediaNotWidget,
         document.filterFileTypeWidget, document.filterArchiveWidget,
-        document.filterTorrentWidget, () {
+        document.filterTorrentWidget, document.filterCaseSensitiveWidget, () {
             captureDocumentFilterState(document);
-            applied = true;
+            ++applyCount;
         });
     document.filterVideoWidget.setActive(true);
+    document.filterCaseSensitiveWidget.setActive(true);
     document.filterAudioWidget.setActive(true);
     document.filterTextWidget.setActive(true);
     document.filterMediaNotWidget.setActive(true);
     document.filterFileTypeWidget.setActive(true);
     document.filterTorrentWidget.setActive(true);
 
-    assert(applied);
+    assert(applyCount == 7);
+    auto applyCountBeforeCaseToggle = applyCount;
+    document.filterCaseSensitiveWidget.setActive(false);
+    assert(applyCount == applyCountBeforeCaseToggle + 1);
     assert(document.filterQuery == "sample-query");
     assert(document.filterVideo && document.filterAudio && document.filterText);
     assert(!document.filterImage);

@@ -35,7 +35,7 @@ import gstreamer.Stream;
 import gstreamer.StreamCollection;
 import gstreamer.Structure;
 import gstreamer.TagList;
-import gstreamer.c.types : GstBusSyncReply, GstFormat, GstMessageType, GstSeekFlags, GstState, GstStreamType;
+import gstreamer.c.types : GstFormat, GstMessageType, GstSeekFlags, GstState, GstStreamType;
 import gstinterfaces.VideoOverlay;
 import pango.c.types : PangoEllipsizeMode;
 
@@ -49,6 +49,7 @@ import std.string : join, replace, split, startsWith, strip, toLower;
 import std.exception : enforce;
 import std.uri : encode;
 import std.utf : validate;
+import ui.mainsources : scheduleUiIdle;
 
 enum size_t PREVIEW_HEX_DUMP_BYTES = 512;
 enum size_t PREVIEW_TEXT_BYTES = 8192;
@@ -976,6 +977,8 @@ void stopVideoPreview(DocumentTab document)
     document.detailPreviewVideoSinkWidget = null;
     document.previewVideoPlayerAudioOnly = false;
     document.previewVideoPendingWindowSync = false;
+    document.previewVideoPendingPlayback = false;
+    document.previewVideoPendingPlaybackOverride = false;
 }
 
 /** Resolve the GtkWidget exposed by gtksink. */
@@ -1070,6 +1073,8 @@ private void restoreOverlayVideoArea(DocumentTab document)
  *     renderWidth = Current render width, or a fallback when unavailable.
  *     renderHeight = Current render height, or a fallback when unavailable.
  * Returns: True when the video overlay could be attached, false otherwise.
+ * Notes: Call only from the GTK main thread. GStreamer streaming callbacks must
+ *     use a precomputed native window handle rather than access GTK widgets.
  * Throws: None.
  */
 bool syncVideoPreviewWindow(DocumentTab document, int renderWidth = -1, int renderHeight = -1)
@@ -1127,7 +1132,6 @@ private bool ensureVideoPreviewPlayer(DocumentTab document)
     }
 
     Element sink;
-    auto usesOverlay = false;
     if (audioOnly)
     {
         sink = ElementFactory.make("fakesink", "preview-audio-video-sink");
@@ -1150,35 +1154,10 @@ private bool ensureVideoPreviewPlayer(DocumentTab document)
             restoreOverlayVideoArea(document);
             document.previewVideoOverlay = new VideoOverlay(sink);
             document.previewVideoOverlay.handleEvents(false);
-            usesOverlay = true;
         }
     }
 
     player.setProperty("video-sink", new Value(sink));
-    if (usesOverlay)
-    {
-        auto bus = player.getBus();
-        bus.setSyncHandler((Message msg) {
-            if (msg.type() != GstMessageType.ELEMENT)
-            {
-                return GstBusSyncReply.PASS;
-            }
-
-            auto structure = msg.getStructure();
-            if (structure is null || !structure.hasName("prepare-window-handle"))
-            {
-                return GstBusSyncReply.PASS;
-            }
-
-            if (syncVideoPreviewWindow(document))
-            {
-                return GstBusSyncReply.DROP;
-            }
-
-            return GstBusSyncReply.PASS;
-        });
-    }
-
     auto bus = player.getBus();
     bus.addSignalWatch();
     bus.addOnMessage((Message msg, Bus _) {
@@ -1812,6 +1791,19 @@ void playVideoPreview(DocumentTab document)
         return;
     }
 
+    if (document.previewVideoOverlay !is null && !syncVideoPreviewWindow(document))
+    {
+        document.previewVideoPlayer.setState(GstState.READY);
+        document.previewVideoPendingWindowSync = true;
+        document.previewVideoPendingPlayback = true;
+        document.previewVideoPendingPlaybackOverride = true;
+        syncVideoPlaybackButton(document, false);
+        return;
+    }
+
+    document.previewVideoPendingWindowSync = false;
+    document.previewVideoPendingPlayback = false;
+    document.previewVideoPendingPlaybackOverride = false;
     document.previewVideoPlayer.setState(GstState.PLAYING);
     syncVideoPlaybackButton(document, true);
 }
@@ -1827,6 +1819,14 @@ void pauseVideoPreview(DocumentTab document)
 {
     if (document.previewVideoPlayer is null)
     {
+        return;
+    }
+
+    if (document.previewVideoPendingWindowSync)
+    {
+        document.previewVideoPendingPlayback = false;
+        document.previewVideoPendingPlaybackOverride = true;
+        syncVideoPlaybackButton(document, false);
         return;
     }
 
@@ -1933,6 +1933,8 @@ private void updatePreviewVideo(DocumentTab document)
     document.detailPreviewVideoFrame.setVisible(true);
     document.detailPreviewVideoFrame.queueResize();
     document.detailPreviewVideoArea.queueResize();
+    document.previewVideoPendingPlayback = false;
+    document.previewVideoPendingPlaybackOverride = false;
     document.previewVideoPlayer.setState(GstState.NULL);
     setVideoPreviewVolume(document, document.previewVideoVolume);
     document.previewVideoPlayer.setProperty("uri", new Value(uri));
@@ -1948,7 +1950,11 @@ private void updatePreviewVideo(DocumentTab document)
     }
     document.previewVideoPendingWindowSync = false;
 
-    if (document.previewVideoAutostart)
+    auto shouldPlay = document.previewVideoPendingPlaybackOverride
+        ? document.previewVideoPendingPlayback : document.previewVideoAutostart;
+    document.previewVideoPendingPlayback = false;
+    document.previewVideoPendingPlaybackOverride = false;
+    if (shouldPlay)
     {
         document.previewVideoPlayer.setState(GstState.PLAYING);
         syncVideoPlaybackButton(document, true);
@@ -1977,7 +1983,11 @@ void resumePendingVideoPreview(DocumentTab document)
         return;
 
     document.previewVideoPendingWindowSync = false;
-    if (document.previewVideoAutostart)
+    auto shouldPlay = document.previewVideoPendingPlaybackOverride
+        ? document.previewVideoPendingPlayback : document.previewVideoAutostart;
+    document.previewVideoPendingPlayback = false;
+    document.previewVideoPendingPlaybackOverride = false;
+    if (shouldPlay)
     {
         document.previewVideoPlayer.setState(GstState.PLAYING);
         syncVideoPlaybackButton(document, true);
@@ -2424,7 +2434,7 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
         catch (Exception ex)
             error = ex.msg;
 
-        new Idle({
+        scheduleUiIdle({
             if (requestId != document.previewPathRequestId
                 || previewPath != document.selectedPreviewPath)
                 return false;

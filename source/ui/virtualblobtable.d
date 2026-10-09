@@ -2,7 +2,6 @@
 module ui.virtualblobtable;
 
 import core.thread : Thread;
-import glib.Idle;
 import gobject.Value;
 import gtk.TreeIter;
 import gtk.TreeModel;
@@ -17,6 +16,7 @@ import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob;
 import dosierskanilo.repository.types : RepositoryBlobFlags;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
 import model.datasource : SourceQuery, SourcePage, loadDocumentCursorPage;
+import ui.mainsources : scheduleUiIdle;
 import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT,
     COL_FILE_TYPE, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_INDEX, COL_INDEX_SORT,
     COL_MEDIA_INFO, COL_SOURCE_ID, COL_HAS_FILE_TYPE_FLAG, COL_HAS_MEDIA_FLAG,
@@ -273,7 +273,7 @@ private:
                 page = loadDocumentCursorPage(path, afterBlobId, size, queryCopy);
             catch (Exception ex)
                 error = ex.msg;
-            new Idle({
+            scheduleUiIdle({
                 requestActive = false;
                 if (error.length > 0)
                 {

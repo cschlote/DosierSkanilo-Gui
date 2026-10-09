@@ -121,6 +121,7 @@ class DocumentTab
     Box pageRoot;
     Box filterSlot;
     Entry filterEntry;
+    CheckButton filterCaseSensitiveWidget;
     CheckButton filterVideoWidget;
     CheckButton filterAudioWidget;
     CheckButton filterImageWidget;
@@ -272,6 +273,8 @@ class DocumentTab
     bool previewVideoAutostart;
     double previewVideoVolume = 0.5;
     bool previewVideoPositionSyncing;
+    bool previewVideoPendingPlayback;
+    bool previewVideoPendingPlaybackOverride;
     bool previewVideoTrackSyncing;
     bool previewVideoPendingWindowSync;
     int previewVideoTrackCount = -1;

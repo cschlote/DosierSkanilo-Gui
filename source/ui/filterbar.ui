@@ -22,6 +22,13 @@
       </object>
     </child>
     <child>
+      <object class="GtkCheckButton" id="filterCaseSensitive">
+        <property name="label">Aa</property>
+        <property name="can-focus">False</property>
+        <property name="tooltip-text">Match text filters with case sensitivity</property>
+      </object>
+    </child>
+    <child>
       <object class="GtkCheckButton" id="filterVideo">
         <property name="label">V</property>
         <property name="can-focus">False</property>

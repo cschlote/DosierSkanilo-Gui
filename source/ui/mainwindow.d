@@ -10,8 +10,6 @@ module ui.mainwindow;
 
 import gdk.c.types : GdkEventConfigure;
 import gdk.Display;
-import glib.Idle;
-import glib.Timeout;
 import gobject.Value;
 import gobject.Type : GType;
 import gobject.ObjectG : ObjectG;
@@ -138,6 +136,8 @@ import ui.startupworkflow : scheduleSelfTestQuit, startStartupWorkflow;
 import ui.treeselectionlogic : TreeSelectionFollowup, tableIndexMatchesVisibleRow,
     jsonFilterNeedsRebuild, treeSelectionFollowup;
 import ui.previewprogress : PreviewProgressCallbacks, startPreviewProgressTimer;
+import ui.mainsources : UiMainSource, scheduleUiIdle, scheduleUiTimeout,
+    stopAllUiSources;
 import ui.virtualblobtable : VirtualBlobTableModel;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : filterRowsByText;
@@ -1207,7 +1207,7 @@ private void refreshExpandedJsonDirectories(DocumentTab document, FileFilter fil
         }
         catch (Exception ex)
             error = ex.msg;
-        new Idle({
+        scheduleUiIdle({
             if (document.filePath != sourcePath
                 || requestId != document.directoryTreeRefreshRequestId
                 || document.directorySourceFiltered
@@ -1655,6 +1655,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     auto btnCancelLoad = builderObject!Button(mainBuilder, "main", "btnCancelLoad");
     auto loadSpinner = builderObject!Spinner(mainBuilder, "main", "loadSpinner");
     Entry filterEntry;
+    CheckButton filterCaseSensitive;
     CheckButton filterMediaNot;
     CheckButton filterVideo;
     CheckButton filterAudio;
@@ -1695,14 +1696,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
     PreviewScaleMode previewScaleMode = clampPreviewScaleMode(loadedState.previewScaleMode);
     int lastKnownWindowWidth = loadedState.windowWidth;
     int lastKnownWindowHeight = loadedState.windowHeight;
-    Timeout windowSizePersistTimer;
+    UiMainSource windowSizePersistTimer;
     bool isLoading;
     bool isArchiveScanning;
     void delegate(DocumentTab, string) scanSelectedArchiveAction;
     DocumentTab busyDocument;
-    Timeout progressPulseTimer;
-    Timeout previewVideoProgressTimer;
-    Timeout selfTestQuitTimer;
+    UiMainSource progressPulseTimer;
+    UiMainSource previewVideoProgressTimer;
+    UiMainSource selfTestQuitTimer;
 
     if (cli.disableAutoFilter)
     {
@@ -1893,7 +1894,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
             catch (Exception ex)
                 error = ex.msg;
-            new Idle({
+            scheduleUiIdle({
                 if (findDocumentByPath(sourcePath) is document)
                     document.status.setText(error.length > 0
                         ? "Export failed: " ~ error
@@ -1924,6 +1925,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         if (hasCurrentDocument)
         {
             filterEntry.setSensitive(!isLoading);
+            filterCaseSensitive.setSensitive(!isLoading);
             filterVideo.setSensitive(!isLoading);
             filterAudio.setSensitive(!isLoading);
             filterImage.setSensitive(!isLoading);
@@ -1943,10 +1945,24 @@ int runMainWindow(string[] args, ref CliOptions cli)
         helpAboutMenuItem.setSensitive(true);
     }
 
+    /** Keep the per-document case toggles aligned with the global preference. */
+    void syncCaseSensitiveFilterWidgets()
+    {
+        auto previousSyncState = isSyncingToolbarState;
+        isSyncingToolbarState = true;
+        foreach (document; documents)
+        {
+            if (document.filterCaseSensitiveWidget !is null)
+                document.filterCaseSensitiveWidget.setActive(prefCaseSensitiveFilter);
+        }
+        isSyncingToolbarState = previousSyncState;
+    }
+
     /** Mirror the active tab's path and filter settings back into the shared toolbar. */
     void syncToolbarFromCurrentDocument()
     {
         isSyncingToolbarState = true;
+        syncCaseSensitiveFilterWidgets();
         auto document = currentDocument();
         if (document is null)
         {
@@ -1955,6 +1971,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             return;
         }
         filterEntry = document.filterEntry;
+        filterCaseSensitive = document.filterCaseSensitiveWidget;
         filterVideo = document.filterVideoWidget;
         filterAudio = document.filterAudioWidget;
         filterImage = document.filterImageWidget;
@@ -1966,6 +1983,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
         // pathEntry entfernt
         filterEntry.setText(document.filterQuery is null ? "" : document.filterQuery);
+        filterCaseSensitive.setActive(prefCaseSensitiveFilter);
         filterVideo.setActive(document.filterVideo);
         filterAudio.setActive(document.filterAudio);
         filterImage.setActive(document.filterImage);
@@ -2048,7 +2066,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             () { return busyDocument; },
             (DocumentTab value) { busyDocument = value; },
             () { return progressPulseTimer; },
-            (Timeout value) { progressPulseTimer = value; },
+            (UiMainSource value) { progressPulseTimer = value; },
             () { syncToolbarSensitivity(); },
             (DocumentTab target, bool resizable) { setTableColumnsResizable(target, resizable); }
         );
@@ -2169,10 +2187,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 return;
             }
 
-            new Timeout(60, { fitLater(); return false; });
+            scheduleUiTimeout(60, { fitLater(); return false; });
         };
 
-        new Idle({ fitLater(); return false; });
+        scheduleUiIdle({ fitLater(); return false; });
     }
 
     /** Apply the shared details-pane orientation and divider position to one tab. */
@@ -2212,7 +2230,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             if (allocatedExtent <= 0 && realizationAttempt < 10)
             {
                 ++realizationAttempt;
-                new Timeout(50, { applyRealizedPosition(); return false; });
+                scheduleUiTimeout(50, { applyRealizedPosition(); return false; });
                 return;
             }
             if (allocatedExtent <= 0)
@@ -2234,7 +2252,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 splitPositionHorizontal = realizedClamped;
             }
         };
-        new Idle({ applyRealizedPosition(); return false; });
+        scheduleUiIdle({ applyRealizedPosition(); return false; });
     }
 
     /** Apply the shared details-pane preference to all open document tabs. */
@@ -2565,7 +2583,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 {
                     path = [];
                 }
-                new Idle({
+                scheduleUiIdle({
                     if (target.filePath == sourcePath)
                         applyReveal(path);
                     return false;
@@ -2613,7 +2631,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 {
                     result.error = ex.msg;
                 }
-                new Idle({
+                scheduleUiIdle({
                     if (result.filePath != document.filePath || document.directorySource is null)
                         return false;
                     if (!sameTreeFilter(result.filter,
@@ -2621,7 +2639,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         || result.sortOrder != document.treeSortOrder)
                     {
                         if (loadExpandedTreePlaceholders !is null)
-                            new Idle({ loadExpandedTreePlaceholders(); return false; });
+                            scheduleUiIdle({ loadExpandedTreePlaceholders(); return false; });
                         return false;
                     }
                     TreeModelIF model = document.directoryTreeView.getModel();
@@ -2633,7 +2651,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                                 result.directoryId, parent, rowToRemove))
                         {
                             if (loadExpandedTreePlaceholders !is null)
-                                new Idle({ loadExpandedTreePlaceholders(); return false; });
+                                scheduleUiIdle({ loadExpandedTreePlaceholders(); return false; });
                             return false;
                         }
                     }
@@ -2669,7 +2687,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                             document.expandedDirectoryIds);
                         selectPendingTreeFile(document);
                         if (loadExpandedTreePlaceholders !is null)
-                            new Idle({ loadExpandedTreePlaceholders(); return false; });
+                            scheduleUiIdle({ loadExpandedTreePlaceholders(); return false; });
                     }
                     return false;
                 });
@@ -2923,7 +2941,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         details = loadDocumentDetails(sourcePath, sourceId);
                     catch (Exception ex)
                         error = ex.msg;
-                    new Idle({
+                    scheduleUiIdle({
                         if (requestId != document.detailRequestId)
                             return false;
                         if (error.length > 0)
@@ -2963,7 +2981,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
 
             document.pendingColumnMeasurement = false;
-            new Idle({
+            scheduleUiIdle({
                 finalizeTableColumnMeasurement(
                 document,
                 (DocumentTab measuredDocument) {
@@ -3030,7 +3048,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 }
                 catch (Exception ex)
                     error = ex.msg;
-                new Idle({
+                scheduleUiIdle({
                     if (document.filePath != sourcePath)
                         return false;
                     if (error.length > 0)
@@ -3099,9 +3117,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.filterAudioWidget, document.filterImageWidget,
             document.filterTextWidget, document.filterMediaNotWidget,
             document.filterFileTypeWidget, document.filterArchiveWidget,
-            document.filterTorrentWidget, () {
+            document.filterTorrentWidget, document.filterCaseSensitiveWidget, () {
                 if (isSyncingToolbarState)
                     return;
+                prefCaseSensitiveFilter = document.filterCaseSensitiveWidget.getActive();
+                syncCaseSensitiveFilterWidgets();
                 captureDocumentFilterState(document);
                 if (applyFilterForDocument !is null)
                     applyFilterForDocument(document);
@@ -3151,7 +3171,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 }
                 catch (Exception ex)
                     result.error = ex.msg;
-                new Idle({
+                scheduleUiIdle({
                     if (result.filePath != document.filePath)
                         return false;
                     auto model = treeView.getModel();
@@ -3275,7 +3295,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     treeFilterForDocument(document, prefCaseSensitiveFilter), document.treeSortOrder);
                 selectPendingTreeFile(document);
                 if (document.reconcileDirectoryLoads !is null)
-                    new Idle({ document.reconcileDirectoryLoads(); return false; });
+                    scheduleUiIdle({ document.reconcileDirectoryLoads(); return false; });
             }
         });
 
@@ -3761,7 +3781,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     document.expandedDirectoryIds,
                     treeFilterForDocument(document, prefCaseSensitiveFilter), document.treeSortOrder);
                 if (document.reconcileDirectoryLoads !is null)
-                    new Idle({ document.reconcileDirectoryLoads(); return false; });
+                    scheduleUiIdle({ document.reconcileDirectoryLoads(); return false; });
             }
             if (completedFilterRequestId != 0)
                 document.filterRequest.complete(completedFilterRequestId);
@@ -3784,17 +3804,17 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     document.drainPageRequest = true;
                     document.status.setText(format("Loading rows: %s/%s ...",
                         document.repositoryRowsLoaded, document.pageTotal));
-                    new Idle({ loadDocument(document, false); return false; });
+                    scheduleUiIdle({ loadDocument(document, false); return false; });
                 }
             }
             if (!isLoading && pendingStartupPaths.length > 0 && advanceStartupQueue !is null)
-                new Idle({ advanceStartupQueue(); return false; });
+                scheduleUiIdle({ advanceStartupQueue(); return false; });
             document.status.setText(baseStatus);
 
             return false;
         };
 
-        new Idle(renderStep);
+        scheduleUiIdle(renderStep);
     }
 
     /** Update one document tab's detail pane from the selected row. */
@@ -3944,7 +3964,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 catch (Exception ex)
                     error = ex.msg;
 
-                new Idle({
+                scheduleUiIdle({
                     if (requestId != document.detailRequestId)
                         return false;
                     if (error.length > 0)
@@ -4032,7 +4052,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         setMediaPreview(document, row);
         if (document.selectedPreviewIsVideo)
         {
-            new Timeout(60, {
+            scheduleUiTimeout(60, {
                 if (document.selectedPreviewIsVideo)
                 {
                     refreshMediaPreview(document);
@@ -4206,6 +4226,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         {
             document = createDocumentTab(normalizedPath);
             documents ~= document;
+            syncCaseSensitiveFilterWidgets();
             auto pageIndex = notebook.appendPage(document.pageRoot,
                 createDocumentTabLabel(normalizedPath));
             notebook.setTabReorderable(document.pageRoot, true);
@@ -4419,7 +4440,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
             result.elapsedMs = cast(long)(MonoTime.currTime - started).total!"msecs";
 
-            new Idle({
+            scheduleUiIdle({
                 if (!document.filterRequest.isCurrent(requestId))
                 {
                     return false;
@@ -4810,7 +4831,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
             result.elapsedMs = cast(long)(MonoTime.currTime - started).total!"msecs";
 
-            new Idle({
+            scheduleUiIdle({
                 if (requestId != document.loadRequestId)
                 {
                     return false;
@@ -4829,7 +4850,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     .error));
                     if (pendingStartupPaths.length > 0)
                     {
-                        new Idle({ loadNextPendingStartupPath(); return false; });
+                        scheduleUiIdle({ loadNextPendingStartupPath(); return false; });
                     }
                     return false;
                 }
@@ -4931,7 +4952,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         selectPendingTreeFile(document);
                     }
                     else if (document.reconcileDirectoryLoads !is null)
-                        new Idle({ document.reconcileDirectoryLoads(); return false; });
+                        scheduleUiIdle({ document.reconcileDirectoryLoads(); return false; });
                     if (document.pendingTreeRevealFileId.length > 0 && revealTreeFile !is null)
                         revealTreeFile(document, document.pendingTreeRevealFileId);
                     selectPendingTreeFile(document);
@@ -5031,13 +5052,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 persistCurrentState(clearSavedWindowGeometryOnExit);
                 if (pendingStartupPaths.length > 0 && !isLoading)
                 {
-                    new Idle({ loadNextPendingStartupPath(); return false; });
+                    scheduleUiIdle({ loadNextPendingStartupPath(); return false; });
                 }
                 else if (cli.selfTestMode && pendingStartupPaths.length == 0 && !selfTestQuitScheduled)
                 {
                     selfTestQuitScheduled = true;
                     logLine("[self-test] scheduling quit in ", cli.selfTestDelayMs, " ms");
-                    selfTestQuitTimer = new Timeout(cli.selfTestDelayMs, {
+                    selfTestQuitTimer = scheduleUiTimeout(cast(uint) cli.selfTestDelayMs, {
                         logLine("[self-test] quitting after startup delay");
                         Main.quit();
                         return false;
@@ -5058,7 +5079,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             synchronized (promptMutex)
             {
                 auto request = new ArchivePasswordRequestState();
-                new Idle({
+                scheduleUiIdle({
                     bool accepted;
                     string suppliedPassword;
                     try
@@ -5114,7 +5135,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     : scanDocumentArchives(sourcePath, passwordCallback);
             catch (Exception ex)
                 error = ex.msg;
-            new Idle({
+            scheduleUiIdle({
                 if (findDocumentByPath(sourcePath) !is document)
                     return false;
                 isArchiveScanning = false;
@@ -5165,7 +5186,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         setDocumentArchivePassword(sourcePath, fileName, password);
                     catch (Exception ex)
                         error = ex.msg;
-                    new Idle({
+                    scheduleUiIdle({
                         if (findDocumentByPath(sourcePath) !is document)
                             return false;
                         auto message = error.length > 0
@@ -5277,6 +5298,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     fileQuitMenuItem.addOnActivate((MenuItem _) {
         persistCurrentState(clearSavedWindowGeometryOnExit);
+        stopAllUiSources();
         Main.quit();
     });
 
@@ -5287,6 +5309,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     });
 
     editPreferencesMenuItem.addOnActivate((MenuItem _) {
+        auto previousCaseSensitiveFilter = prefCaseSensitiveFilter;
         showPreferencesDialog(
             window,
             prefAutoApplyFilter,
@@ -5303,6 +5326,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 () { clearRecentFiles(); }
             )
         );
+        syncToolbarFromCurrentDocument();
+        if (prefCaseSensitiveFilter != previousCaseSensitiveFilter)
+        {
+            auto document = currentDocument();
+            if (document !is null && applyFilterForDocument !is null)
+                applyFilterForDocument(document);
+        }
     });
 
     editResetMetricsMenuItem.addOnActivate((MenuItem _) {
@@ -5377,7 +5407,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             () { return allowRuntimeStatePersistence; },
             (bool value) { allowRuntimeStatePersistence = value; },
             () { return windowSizePersistTimer; },
-            (Timeout value) { windowSizePersistTimer = value; }
+            (UiMainSource value) { windowSizePersistTimer = value; },
+            () { stopAllUiSources(); }
         )
     );
 
@@ -5398,7 +5429,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
 
         // Initial apply right after widgets are visible.
-        new Idle({
+        scheduleUiIdle({
             window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
@@ -5407,7 +5438,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         });
 
         // XFCE can apply its own first configure cycle after map; enforce once more.
-        new Timeout(120, {
+        scheduleUiTimeout(120, {
             window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
@@ -5416,7 +5447,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         });
 
         // Second delayed pass to win late WM adjustments.
-        new Timeout(320, {
+        scheduleUiTimeout(320, {
             window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
@@ -5425,7 +5456,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         });
 
         // Some WMs settle size after initial composition; enforce a final pass.
-        new Timeout(700, {
+        scheduleUiTimeout(700, {
             window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
@@ -5434,7 +5465,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         });
 
         // Final late pass to override very late WM/session adjustments.
-        new Timeout(1500, {
+        scheduleUiTimeout(1500, {
             window.setDefaultSize(restoredWidth, restoredHeight);
             window.resize(restoredWidth, restoredHeight);
             lastKnownWindowWidth = restoredWidth;
@@ -5476,6 +5507,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     );
 
     Main.run();
+    stopAllUiSources();
     return 0;
 }
 

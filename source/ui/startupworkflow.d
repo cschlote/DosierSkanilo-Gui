@@ -1,9 +1,8 @@
 /** UI helpers for startup restoration and self-test shutdown scheduling. */
 module ui.startupworkflow;
 
-import glib.Timeout;
-
 import cli.logging;
+import ui.mainsources : UiMainSource, scheduleUiTimeout;
 
 /** Schedule the self-test shutdown timer once startup work is complete.
  *
@@ -22,7 +21,7 @@ void scheduleSelfTestQuit(
     bool selfTestMode,
     ref bool selfTestQuitScheduled,
     int selfTestDelayMs,
-    ref Timeout selfTestQuitTimer,
+    ref UiMainSource selfTestQuitTimer,
     void delegate() quitApplication
 )
 {
@@ -33,7 +32,7 @@ void scheduleSelfTestQuit(
 
     selfTestQuitScheduled = true;
     logLine("[self-test] scheduling quit in ", selfTestDelayMs, " ms");
-    selfTestQuitTimer = new Timeout(selfTestDelayMs, {
+    selfTestQuitTimer = scheduleUiTimeout(cast(uint) selfTestDelayMs, {
         logLine("[self-test] quitting after startup delay");
         quitApplication();
         return false;
@@ -71,7 +70,7 @@ void startStartupWorkflow(
     bool selfTestMode,
     ref bool selfTestQuitScheduled,
     int selfTestDelayMs,
-    ref Timeout selfTestQuitTimer,
+    ref UiMainSource selfTestQuitTimer,
     void delegate() loadNextPendingStartupPath,
     void delegate() quitApplication
 )
@@ -108,7 +107,7 @@ unittest
     int loadCalls;
     int selectedIndex = -1;
     bool scheduled;
-    Timeout timer;
+    UiMainSource timer;
 
     startStartupWorkflow(pending, selectedIndex, false,
         ["one.json", "two.json"], [], 1, false, scheduled, 1, timer,

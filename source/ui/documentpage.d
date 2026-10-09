@@ -36,6 +36,7 @@ DocumentPageUi loadDocumentPageUi(DocumentTab document)
     document.filterSlot = builderObject!Box(pageBuilder, "page", "filterSlot");
     auto filterUi = loadFilterBarUi(document.filterSlot);
     document.filterEntry = filterUi.filterEntry;
+    document.filterCaseSensitiveWidget = filterUi.filterCaseSensitive;
     document.filterVideoWidget = filterUi.filterVideo;
     document.filterAudioWidget = filterUi.filterAudio;
     document.filterImageWidget = filterUi.filterImage;

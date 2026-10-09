@@ -7,7 +7,7 @@ import gtk.Widget;
 import gtk.Main;
 import gtk.Window;
 import gtk.c.types : GtkAllocation;
-import glib.Timeout;
+import ui.mainsources : UiMainSource, scheduleUiTimeout, stopUiSource;
 
 /** Callbacks required by the lifecycle signal bindings. */
 struct WindowLifecycleCallbacks
@@ -17,8 +17,9 @@ struct WindowLifecycleCallbacks
     void delegate(int, int) setLastKnownWindowSize;
     bool delegate() allowRuntimeStatePersistence;
     void delegate(bool) setAllowRuntimeStatePersistence;
-    Timeout delegate() windowSizePersistTimer;
-    void delegate(Timeout) setWindowSizePersistTimer;
+    UiMainSource delegate() windowSizePersistTimer;
+    void delegate(UiMainSource) setWindowSizePersistTimer;
+    void delegate() stopAllUiSources;
 }
 
 /** Bind notebook and window lifecycle handlers.
@@ -42,6 +43,7 @@ void bindWindowLifecycleSignals(
 
     window.addOnDestroy((Widget _) {
         callbacks.persistCurrentState(callbacks.clearSavedWindowGeometryOnExit());
+        callbacks.stopAllUiSources();
         Main.quit();
     });
 
@@ -66,10 +68,10 @@ void bindWindowLifecycleSignals(
             if (callbacks.windowSizePersistTimer() !is null)
             {
                 auto timer = callbacks.windowSizePersistTimer();
-                timer.stop();
+                stopUiSource(timer);
                 callbacks.setWindowSizePersistTimer(null);
             }
-            callbacks.setWindowSizePersistTimer(new Timeout(350, {
+            callbacks.setWindowSizePersistTimer(scheduleUiTimeout(350, {
                 callbacks.persistCurrentState(callbacks.clearSavedWindowGeometryOnExit());
                 callbacks.setWindowSizePersistTimer(null);
                 return false;

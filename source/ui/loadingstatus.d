@@ -1,12 +1,12 @@
 /** UI helpers for loading-state feedback and progress phases. */
 module ui.loadingstatus;
 
-import glib.Timeout;
 import gtk.ProgressBar;
 import gtk.Spinner;
 import gtk.Widget;
 
 import ui.documenttab : DocumentTab;
+import ui.mainsources : UiMainSource, scheduleUiIdle, scheduleUiTimeout, stopUiSource;
 
 /** Callbacks and widget hooks required to publish loading feedback. */
 struct LoadingStatusCallbacks
@@ -15,8 +15,8 @@ struct LoadingStatusCallbacks
     void delegate(bool) setIsLoading;
     DocumentTab delegate() busyDocument;
     void delegate(DocumentTab) setBusyDocument;
-    Timeout delegate() progressPulseTimer;
-    void delegate(Timeout) setProgressPulseTimer;
+    UiMainSource delegate() progressPulseTimer;
+    void delegate(UiMainSource) setProgressPulseTimer;
     void delegate() syncToolbarSensitivity;
     void delegate(DocumentTab, bool) setTableColumnsResizable;
 }
@@ -59,7 +59,7 @@ void setLoadingState(
         progressBar.pulse();
         if (callbacks.progressPulseTimer() is null)
         {
-            callbacks.setProgressPulseTimer(new Timeout(120, {
+            callbacks.setProgressPulseTimer(scheduleUiTimeout(120, {
                 if (!callbacks.isLoading())
                 {
                     return false;
@@ -83,7 +83,7 @@ void setLoadingState(
     if (callbacks.progressPulseTimer() !is null)
     {
         auto timer = callbacks.progressPulseTimer();
-        timer.stop();
+        stopUiSource(timer);
         callbacks.setProgressPulseTimer(null);
     }
     progressBar.setVisible(false);
@@ -122,7 +122,7 @@ void setLoadingPhase(
     string phaseText
 )
 {
-    new Timeout(0, {
+    scheduleUiIdle({
         if (!callbacks.isLoading() || callbacks.busyDocument() !is document || expectedRequestId != document.loadRequestId)
         {
             return false;

@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Video overlay setup now stays on the GTK main thread instead of using a
+  GStreamer streaming-thread callback.
+- GLib timeout and idle callbacks are retained until their sources are removed,
+  preventing garbage-collection cleanup from racing UI work.
+- Added a case-sensitive text-filter toggle to the filter bar; changing it
+  immediately reapplies the current document's filters.
 - Added a filename-based archive password manager for JSON catalogs and SQLite
   repositories, plus an asynchronous archive scan action that prompts on the GTK
   thread and saves accepted passwords with the source catalog. JSON updates use
