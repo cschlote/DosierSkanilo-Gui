@@ -1,7 +1,7 @@
 # DosierSkanilo Datenfile-Dokumentation (extrahiert)
 
 Quelle: [DosierSkanilo](https://github.com/cschlote/DosierSkanilo)
-Stand: 2026-09-28
+Stand: 2026-10-10
 
 ## 1. Zweck des Datenfiles
 
@@ -14,7 +14,7 @@ Relevante Stellen:
 
 - `docs/README.md`
 - `docs/ARCHITECTURE.md`
-- `source/dosierskanilo/namedbinaryblob.d`
+- `source/dosierskanilo/model/namedbinaryblob.d`
 
 ## 2. Aktuelles Speicherformat
 
@@ -37,7 +37,8 @@ Wichtig:
 Code-Referenzen:
 
 - `source/dosierskanilo/model/namedbinaryblob.d`
-  (`deserializeDataClassJsonString`, `serializeDataClassArrayFile`)
+  (`deserializeDataClassJsonString`, `deserializeDataClassJsonWrapperFile`,
+  `serializeDataClassWrapperFile`)
 
 ## 3. NamedBinaryBlob-Felder (semantisch)
 
@@ -51,8 +52,16 @@ Optional:
 
 - `fileType: string`
 - `mediaInfoSig`: image, video, audio, and text stream arrays
-- `archiveSpecs[]` (Archiveinhalte inkl. Checksummen)
+- `archiveSpecs[]` (eingebettete Archiv-Entry-Metadaten inkl. Checksummen)
+- `archivePassword: string` (optional, per archive blob; stored in clear text,
+  so catalogs containing it are sensitive)
 - `torrentInfo` (Name, Info-Hash, Magnet URI, Dateien, ...)
+
+`NamedBinaryBlob` kombiniert heute Payload-Metadaten mit physischen
+`FileSpec[]`-Referenzen. `archiveSpecs[]` und `torrentInfo.files[]` sind
+verschachtelte Beschreibungen, keine normalen Katalog-Blobs. Deshalb nehmen
+Archiv-/Torrent-Mitglieder noch nicht vollständig an derselben
+Deduplizierungs-, Such- und Referenz-API wie Dateisystemdateien teil.
 
 Legacy-Felder (werden beim Einlesen/Schreiben gefixt):
 
@@ -80,6 +89,7 @@ Beispieldateien:
 - `test/json_file_v1.json` (wrapper mit `dataVersion: 1`)
 - `test/json_file_v2.json` (historischer Fixture-Dateiname; enthält Wrapper
   `dataVersion: 3`)
+- `test/json_file_wrapper_v2.json` (echter Wrapper mit `dataVersion: 2`)
 - `test/json_file_v1_wrongversion.json` (ungültige Version, muss abgewiesen werden)
 - `test/json_file_v2_archive.json` und `test/json_file_v2_torrent.json`
   (historische Fixture-Dateinamen; enthalten `dataVersion: 3` sowie Archiv- und
@@ -87,21 +97,30 @@ Beispieldateien:
 
 Es gibt derzeit keine eingecheckte `json_file_v3.json`-Fixture. Der Serializer
 schreibt Version 3; die vorhandenen Fixtures `json_file_v2*.json` dienen als
-erwartete Ausgabe für die Serializer-Tests. Eine separate Fixture mit
-`dataVersion: 2` gibt es derzeit nicht.
+erwartete Ausgabe für die Serializer-Tests. Die Migration eines echten
+`dataVersion: 2`-Wrappers ist mit `json_file_wrapper_v2.json` abgedeckt.
 
-## 5. Wichtige GUI-Implikationen
+## 5. Aktuelles GUI-Modell
 
-Fuer eine robuste GtkD-GUI sollte der Loader:
+Der Loader akzeptiert und normalisiert:
 
 - sowohl Wrapper als auch Legacy-Array akzeptieren
 - immer auf ein internes, vereinheitlichtes Modell normalisieren
 - fehlende optionale Felder als `null`/leer behandeln
-- bei Multi-File-Blobs mehrere Dateipfade anzeigen koennen
+- mehrere Dateipfade pro Blob
 
-## 6. Vorschlag internes GUI-Modell
+## 6. GUI-Projektionen
 
-Minimal fuer erste Version:
+`BlobRow` wird für die alternative Blob-Tabelle verwendet. Der primäre
+Verzeichnisbaum nutzt die GTK-unabhängigen `DirectoryNode`/`FileNode`-
+Projektionen in `source/model/treeprojection.d`; `DirectorySource` adaptiert
+JSON- und Repository-Abfragen. Diese Typen sind Anzeigeprojektionen, nicht der
+persistente Datenmodell-Owner.
+
+Archivmitglieder erscheinen derzeit in verschachtelten Vorschau-Bäumen aus den
+gespeicherten `archiveSpecs`/Repository-Archiveinträgen. Ihre Adresse ist noch
+kein typisierter Content-Locator. Der Zielentwurf dafür steht in der Backend-
+Architektur und im WP-13-Plan.
 
 - `BlobRow`
   - `id` (lokal)
@@ -119,7 +138,9 @@ Minimal fuer erste Version:
   - `archiveSpecs[]`
   - `torrentInfo`
 
-Damit sind Tabelle + Detailansicht + Dubletten-Gruppierung direkt umsetzbar.
+Scan-, Metadaten- und Analyseaktionen der GUI bauen die gemeinsamen Backend-
+Operationsrequests; Details und Verzeichnisdaten kommen weiterhin über die
+GUI-seitigen Source-Adapter.
 
 ## 7. Verifizierte Quellen (ausgelesen)
 

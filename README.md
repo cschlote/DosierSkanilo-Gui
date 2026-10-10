@@ -1,18 +1,17 @@
 # DosierSkanilo GUI
 
 `DosierSkanilo-Gui` is a classic GTK desktop frontend for browsing and filtering
-precomputed DosierSkanilo JSON index files and `.dosierskanilo` repositories.
+DosierSkanilo JSON catalogs and `.dosierskanilo` repositories.
 
-It is a read-only frontend to the DosierSkanilo scanner/library stack. The GUI
-and CLI use the same backend library; scanning, checksum generation,
-archive/torrent inspection, duplicate analysis, and JSON writing are currently
-started through the CLI.
+The GUI and CLI use the same backend library for scan, metadata, and analysis
+operations. The GUI's `Tools` menu runs those operations in background workers
+and reports backend progress, cancellation, and safe pause/resume state.
 
-The planned direction is operation parity: both clients will invoke the same
-backend scan, metadata, and analysis operations. WP-09.1 defines their shared
-request, progress, and cancellation contract, but backend execution and the GUI
-task runner are not implemented yet. Pause/resume is a planned WP-09.1b contract
-extension. See WP-09 in the backend plan at
+Repository documents support scan, metadata, and analysis. JSON documents
+support scan and analysis, including selected metadata extraction as part of
+those operations. Targets remain explicit: JSON scan asks for a filesystem root,
+while repository operations use the active repository root. See WP-09 in the
+backend plan at
 `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md`.
 
 The GUI currently supports:
@@ -46,19 +45,21 @@ The GUI currently supports:
   model, preserving node identity and expanded state across filter changes
 - Previous/Next page navigation for SQLite repository documents
 - CSV and JSON export of the active tab's filtered row subset
+- shared backend scan, metadata, and analysis actions with per-operation options
+- background task progress and terminal results in the owning document tab
+- cooperative cancellation and state-aware pause/resume at backend checkpoints
+- repository/catalog write serialization through backend target leases
 
-The GUI does not yet expose the scanner-side workflow from the overhauled
-DosierSkanilo backend. Use the CLI for scan, analyze, and write-back jobs.
-The planned direction is for CLI and GUI to start the same library operations;
-backend execution, GUI task management, and the planned pause/resume extension
-are tracked as WP-09 in the backend plan at
-`https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md`.
+Archive entries are currently searchable/renderable as nested metadata details,
+not as ordinary deduplicated content blobs. The target virtual-content model and
+storage-neutral catalog API are planned in WP-13 of the backend plan.
+
 For the filtered TreeView model and GC-friendly GUI algorithm design, see
 [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md).
 
 The GUI focuses on a traditional desktop workflow:
 
-- menu bar (`File`, `Edit`, `Help`)
+- menu bar (`File`, `Edit`, `Tools`, `Help`)
 - keyboard shortcuts
 - preferences dialog
 - sortable table view

@@ -1,8 +1,9 @@
 # GUI Data Model and Tree View Plan
 
-This document describes the planned replacement for the current
-`NamedBinaryBlob`-oriented table UI. The GUI is still experimental and does not
-need to preserve the current widget layout or interaction model.
+This document records the current source-neutral directory/tree projection and
+its remaining design work. The Blob table remains available as an alternative
+view; the directory tree is the primary navigation surface. Widget layout may
+continue to evolve independently of the catalog API.
 
 ## Direction
 
@@ -102,18 +103,23 @@ Known limitations:
   token before applying a page reply and verifies that the stale reply is rejected.
 - The blob table remains an alternative, transitional view; the directory tree
   is still the primary navigation surface.
+- Archive entries currently render from nested `ArchiveSpec`/repository entry
+  metadata. They are not yet ordinary content blobs with source-neutral virtual
+  locators, so archive members do not participate fully in blob search,
+  duplicate merging, and filtered catalog subsets. Their domain/storage/API
+  roadmap is WP-13 in the backend plan.
 - Several window splitters and video-preview layout behaviors remain on the
   open-issues list in `TODO.md`.
-- General scan, metadata scraping beyond archive entries, and analysis actions
-  are not yet available in GTK; their shared CLI/GUI execution plan is described
-  in the backend plan at
+- General scan, metadata, and analysis are available from the Tools menu through
+  shared backend requests. The remaining CLI/GUI parity matrix and process-level
+  lifecycle verification are tracked in the backend plan at
   `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09`.
 
 ## Verification Baseline
 
 The current working tree passes:
 
-- `dub test --compiler=ldc2` — 54 tests.
+- `dub test --compiler=ldc2` — 61 tests.
 - `dub build --compiler=ldc2`.
 - `git diff --check`.
 

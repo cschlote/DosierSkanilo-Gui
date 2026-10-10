@@ -15,6 +15,9 @@ import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob,
     DATA_CLASS_VERSION3, NamedBinaryBlobCatalog, deserializeDataClassJsonFile,
     updateArchives;
 import dosierskanilo.service.storageio : writeStorageJsonFile;
+import dosierskanilo.operationlease : TargetCatalogReplacementLease,
+    TargetReadLease, TargetWriteLease;
+import dosierskanilo.operations : OperationTarget;
 import ui.contextpaths : resolveDocumentSourcePath;
 import model.treeprojection : DirectoryNode, DirectorySource, FileCursor, FileFilter, FileInput, FileNode,
     FilePage, FileSortOrder, NestedFileNode, DirectoryTree, ProjectedDirectorySource,
@@ -368,7 +371,7 @@ NestedFileNode[] loadRepositoryTorrentFiles(string path, long blobId,
 NamedBinaryBlob[] loadDocumentSource(string path)
 {
     if (!isRepositorySource(path))
-        return deserializeDataClassJsonFile(path);
+        return readJsonCatalog(path);
 
     auto repository = Repository.open(path);
     scope (exit)
@@ -391,6 +394,10 @@ void setDocumentArchivePassword(string sourcePath, string fileName, string passw
         return;
     }
 
+    auto targetLease = TargetWriteLease.acquire(
+        OperationTarget.jsonTarget(sourcePath));
+    scope (exit)
+        targetLease.release();
     auto blobs = deserializeDataClassJsonFile(sourcePath);
     auto requestedPath = resolveDocumentSourcePath(sourcePath, fileName);
     size_t[] exactMatches;
@@ -421,7 +428,7 @@ void setDocumentArchivePassword(string sourcePath, string fileName, string passw
     if (matches.length > 1)
         throw new Exception("Filename is ambiguous in this catalog: " ~ fileName);
     blobs[matches[0]].archivePassword = password;
-    writeJsonCatalog(sourcePath, blobs);
+    writeJsonCatalog(sourcePath, blobs, targetLease);
 }
 
 /** Scan archive entries in a JSON catalog or SQLite repository. */
@@ -441,6 +448,10 @@ MetadataSummary scanDocumentArchives(string sourcePath,
         return repository.updateMetadata(options);
     }
 
+    auto targetLease = TargetWriteLease.acquire(
+        OperationTarget.jsonTarget(sourcePath));
+    scope (exit)
+        targetLease.release();
     auto blobs = deserializeDataClassJsonFile(sourcePath);
     MetadataSummary summary;
     summary.blobsVisited = blobs.length;
@@ -480,7 +491,7 @@ MetadataSummary scanDocumentArchives(string sourcePath,
             ++summary.failed;
         }
     }
-    writeJsonCatalog(sourcePath, blobs);
+    writeJsonCatalog(sourcePath, blobs, targetLease);
     return summary;
 }
 
@@ -505,6 +516,10 @@ MetadataSummary scanDocumentArchive(string sourcePath, string filePath,
         return summary;
     }
 
+    auto targetLease = TargetWriteLease.acquire(
+        OperationTarget.jsonTarget(sourcePath));
+    scope (exit)
+        targetLease.release();
     auto blobs = deserializeDataClassJsonFile(sourcePath);
     auto requestedPath = resolveDocumentSourcePath(sourcePath, filePath);
     size_t[] matches;
@@ -559,13 +574,28 @@ MetadataSummary scanDocumentArchive(string sourcePath, string filePath,
         catch (Exception)
             ++summary.failed;
     }
-    writeJsonCatalog(sourcePath, blobs);
+    writeJsonCatalog(sourcePath, blobs, targetLease);
     return summary;
 }
 
-private void writeJsonCatalog(string sourcePath, NamedBinaryBlob[] blobs)
+private NamedBinaryBlob[] readJsonCatalog(string sourcePath)
 {
+    auto readLease = TargetReadLease.acquireJsonCatalog(sourcePath);
+    scope (exit)
+        readLease.release();
+    return deserializeDataClassJsonFile(sourcePath);
+}
+
+private void writeJsonCatalog(string sourcePath, NamedBinaryBlob[] blobs,
+    TargetWriteLease targetLease)
+{
+    enforce(targetLease.owns(OperationTarget.jsonTarget(sourcePath)),
+        "JSON write lease does not match catalog path.");
     auto wrapper = NamedBinaryBlobCatalog(DATA_CLASS_VERSION3, blobs);
+    auto replacementLease = TargetCatalogReplacementLease.acquireJsonCatalog(
+        sourcePath);
+    scope (exit)
+        replacementLease.release();
     enforce(writeStorageJsonFile(sourcePath, wrapper, ".json",
         Clock.currTime.toISOExtString, dirName(sourcePath)),
         "Failed to safely save JSON archive metadata to " ~ sourcePath);
@@ -590,7 +620,7 @@ SourcePage loadDocumentPage(string path, size_t offset, size_t limit,
 {
     if (!isRepositorySource(path))
     {
-        auto allBlobs = deserializeDataClassJsonFile(path);
+        auto allBlobs = readJsonCatalog(path);
         auto end = offset + limit;
         if (end > allBlobs.length)
             end = allBlobs.length;

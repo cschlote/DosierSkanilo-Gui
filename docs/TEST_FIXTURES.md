@@ -54,8 +54,9 @@ The backend's JSON compatibility and metadata fixtures live under
   `json_file_v1.json` covers a version-1 wrapper.
 - `json_file_v2.json`, `json_file_v2_archive.json`, and
   `json_file_v2_torrent.json` are historical fixture filenames containing
-  version-3 output; they are used as serializer expectations. There is no
-  checked-in fixture whose wrapper actually declares `dataVersion: 2`.
+  version-3 output; they are used as serializer expectations.
+- `json_file_wrapper_v2.json` is the actual version-2 wrapper used to verify
+  migration to the current version-3 representation.
 - `json_file_v1_wrongversion.json` covers rejection of an unsupported wrapper
   version.
 - `json_file_v2_archive.json` and `json_file_v2_torrent.json` cover archive and

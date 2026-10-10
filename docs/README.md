@@ -40,5 +40,5 @@ Launch the GUI with positional JSON files to open them on startup, for example:
 ./build/bin/dosierskanilo-gui ./scan-a.json ./scan-b.json -v
 ```
 
-The startup parser also accepts filter state and verbose logging, but the GUI
-still remains a read-only browser for precomputed scanner output.
+The startup parser also accepts filter state and verbose logging. The GUI can
+run shared backend scan, metadata, and analysis operations from the Tools menu.
