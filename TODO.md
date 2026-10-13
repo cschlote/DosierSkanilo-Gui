@@ -63,20 +63,24 @@ boundaries. Backend API/SQL scope and dependency are defined in WP-10.1.
 
 ## P1 — Complete shared CLI/GTK operations
 
-Use backend work packages WP-09.1/WP-09.1b through WP-09.5 as the source of
-truth. The GUI-specific deliverable is WP-09.4: explicit Tools actions for supported scan,
-metadata, and analysis operations, an options/target flow that preserves the
-explicit JSON-versus-repository distinction, background execution, main-loop
-progress updates, cooperative cancellation, pause/resume at backend-acknowledged
-safe checkpoints, per-target write serialization, and view refresh after
-successful mutations. Do not implement scanner or analysis logic in GTK.
+The initial WP-09.4 GUI task manager is implemented: Tools actions construct the
+shared requests, run them on workers, marshal progress to GTK, expose safe
+pause/resume/cancel controls, and reload the affected tab after success. Backend
+WP-09.5 remains the source of truth for cross-frontend parity; its current matrix
+and remaining process/display checks are in the backend's `docs/OPERATION-PARITY.md`.
 
-Before GTK operation implementation begins, WP-09.1 and its planned WP-09.1b
-pause/resume extension, plus the relevant WP-09.2 backend slices, must provide
-the shared request/control API and real cancellation and safe pause/resume.
-Implement and verify each CLI operation adapter (WP-09.3) as its backend slice
-lands; then use the CLI behavior as the reference for GTK WP-09.4. WP-09.5
-verifies parity across both frontends.
+- [x] Add target-aware Tools actions for repository/JSON scan and analysis and
+  repository metadata extraction.
+- [x] Run requests on background workers, display backend progress, and marshal
+  all widget updates to the GTK main loop.
+- [x] Connect Cancel/Pause/Resume to backend operation control and retain the
+  operation's target lease until completion.
+- [x] Refresh the affected document after successful mutations and prevent tab
+  closure while its operation is draining.
+- [ ] Add GTK-independent task-manager lifecycle tests and opt-in display-backed
+  tests for Tools wiring, progress, pause/resume, cancellation, and refresh.
+- [ ] Complete WP-09.5 CLI/GUI result, progress, cancellation, error, refresh, and
+  explicit storage-mode parity coverage.
 
 ## P1 — Reuse directory TreeView nodes across filter changes
 
@@ -159,11 +163,9 @@ specific visual or compatibility outcome to verify.
 
 ## P4 — Deferred product and delivery work
 
-- [ ] Decide whether archive password prompting/remembering is in scope. If
-  accepted, implement prompt/retry/forget flows and opt-in persistence keyed by
-  source plus archive identity; never persist a failed attempt or a password the
-  user did not ask to remember. The proposed behavior is documented in
-  `docs/GUI-REDESIGN.md`.
+- [x] Add archive password prompting and filename-based persistence for JSON
+  catalogs and repositories, including the archive scan retry flow (Release
+  0.8.0).
 - [ ] Define and implement a release packaging/tagging workflow for supported
   distributions, including version source, build artifacts, and installation
   smoke checks.

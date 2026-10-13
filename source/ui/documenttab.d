@@ -34,9 +34,12 @@ import gtk.Widget;
 import gdkpixbuf.Pixbuf;
 import gstreamer.Element;
 import gstinterfaces.VideoOverlay;
+import core.thread : Thread;
+import dosierskanilo.operations : OperationControl, OperationKind, OperationState;
 import model.blobrow : BlobRow;
 import model.treeprojection : DirectorySource, DirectoryTree, FileCursor;
 import ui.filterrequeststate : FilterRequestState;
+import ui.operationtaskstate : OperationTaskState;
 
 /** Column index for the row number in the main table model. */
 enum int COL_INDEX = 0;
@@ -321,6 +324,15 @@ class DocumentTab
     ulong loadRequestId;
     ulong renderRequestId;
     ulong detailRequestId;
+    OperationControl operationControl;
+    Thread operationThread;
+    ulong activeOperationId;
+    OperationKind activeOperationKind;
+    OperationState operationState;
+    bool operationRunning;
+    bool operationPauseAvailable;
+    bool operationPaused;
+    OperationTaskState operationTaskState;
     long lastLoadElapsedMs = -1;
     long lastFilterElapsedMs = -1;
     long lastRenderElapsedMs = -1;

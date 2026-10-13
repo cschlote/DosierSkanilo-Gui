@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Added Tools actions for shared backend scan, metadata, and analysis requests,
+  with source-aware JSON/repository targets and operation-specific options.
+- Backend operations now run on worker threads and display progress and terminal
+  results in the owning tab; Cancel reaches backend work, and Pause/Resume follow
+  backend-acknowledged safe checkpoints.
+- Successful operations reload the affected source; backend target leases
+  serialize conflicting repository/catalog writes.
+
 ## Release 0.8.0 - 2026-10-09
 
 - Video overlay setup now stays on the GTK main thread instead of using a

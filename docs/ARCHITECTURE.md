@@ -7,27 +7,25 @@ documented in [GUI-REDESIGN.md](GUI-REDESIGN.md). `NamedBinaryBlob` remains the
 JSON/Jsonizer representation; it is not intended to be the long-term GUI view
 model.
 
-The GUI is a read-only browser for precomputed DosierSkanilo JSON output and
-initialized `.dosierskanilo` SQLite repositories. It does not run the scanner,
-compute metadata, or write repository data back to disk.
+The GUI browses DosierSkanilo JSON catalogs and initialized `.dosierskanilo`
+SQLite repositories. Its Tools actions invoke the shared backend scan, metadata,
+and analysis operations; scanner and repository mutation logic remains outside
+GTK.
 
-The planned operation model is that CLI and GTK invoke the same backend scan,
-metadata, and analysis operations. WP-09.1 has defined their shared request,
-progress, and cooperative-cancellation contract, but backend executors and the
-GUI operation task manager are not implemented; the GUI remains read-only.
-Pause/resume is a planned WP-09.1b contract extension, not a current API feature.
-Implementation phases are tracked in the backend plan:
+WP-09.1 and WP-09.1b define the shared request, progress, cancellation, and
+pause/resume contract. Controlled backend executors, target leases, CLI adapters,
+and initial GUI Tools actions are implemented. Remaining parity and process-level
+verification is tracked in the backend plan:
 `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md`
 (WP-09).
 
-The target GUI workflow runs these operations on background workers, reports
-phase/progress/results through the active document status UI, supports
-cooperative cancellation and pause/resume at backend-acknowledged safe
-checkpoints, and refreshes the affected source when a mutation completes. A
-paused operation must not hold an active SQLite transaction; it retains the
-per-target write lease until it resumes or is cancelled. Repository writes must
-not share a connection with background tree readers; conflicting writes to the
-same repository are serialized.
+The Tools workflow runs backend operations on background workers, reports
+phase/progress/results through the owning document tab, supports cooperative
+cancellation and pause/resume at backend-acknowledged safe checkpoints, and
+refreshes the affected source when a mutation commits. A paused operation holds
+no active SQLite transaction; it retains the per-target write lease until it
+resumes or is cancelled. Repository writes do not share a connection with
+background tree readers; conflicting writes to the same target are serialized.
 
 ```text
 CLI / GTK action -> typed operation request -> shared DosierSkanilo service
@@ -35,8 +33,9 @@ CLI / GTK action -> typed operation request -> shared DosierSkanilo service
 ```
 
 SQLite repository and explicit JSON modes remain distinct targets. The GUI
-operation chooser should select the same mode and operation semantics as the
-CLI rather than implement a second scanner or metadata pipeline.
+operation dialogs build the same typed requests as the CLI; they do not implement
+a second scanner or metadata pipeline. Standalone metadata is repository-only;
+JSON supports scan/analyze with optional metadata phases.
 
 ## 1. High-Level Flow
 
@@ -58,6 +57,9 @@ CLI rather than implement a second scanner or metadata pipeline.
 - `source/cli/commandline.d`: startup parser
 - `source/ui/mainwindow.d`: GTK shell, loading, filtering, rendering, and menu actions
 - `source/ui/documenttab.d`: per-tab state and table column constants
+- `source/ui/operationdialogs.d`: source-aware operation option dialogs
+- `source/ui/operationrequests.d`: pure request mapping from GUI options/targets
+- `source/ui/operationtaskstate.d`: GTK-independent progress/lifecycle reduction
 - `source/ui/detailswidgets.d`: detail widget helpers
 - `source/ui/tablecolumns.d`: table column setup
 - `source/ui/appstate.d`: persisted preferences and window state
@@ -80,11 +82,12 @@ Supported startup controls include:
 - case sensitivity
 - auto-filter toggle
 
-The GUI still opens JSON data files through the file chooser during normal use.
-Repository roots are currently opened through positional startup arguments.
-The adapter also exposes bounded page reads; visible page controls and SQL-backed
-filtering now use the page controls and backend query filters for repository
-documents. JSON documents retain the full-load compatibility path.
+The GUI opens JSON files and repository directories through the File menu, and
+also accepts them as positional startup arguments. Tools operation requests use
+explicit targets and are constructed by `operationrequests.d`; the task worker
+calls the public `dosierskanilo.operationrunner` API. Repository queries use
+bounded backend DTOs/pages; JSON retains a full-load compatibility source with
+shared catalog read leases around file parsing.
 Nested repository details are fetched asynchronously when a row is selected.
 Directory expansion and additional file pages use the same background-query
 pattern. Known file references can be navigated independently of the blob row.

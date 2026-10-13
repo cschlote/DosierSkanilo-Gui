@@ -172,6 +172,58 @@
                   </object>
                 </child>
                 <child>
+                  <object class="GtkMenuItem" id="toolsMenuItem">
+                    <property name="can-focus">False</property>
+                    <property name="label">_Tools</property>
+                    <property name="use-underline">True</property>
+                    <child type="submenu">
+                      <object class="GtkMenu" id="toolsMenu">
+                        <property name="can-focus">False</property>
+                        <child>
+                          <object class="GtkMenuItem" id="toolsScanMenuItem">
+                            <property name="can-focus">False</property>
+                            <property name="label">_Scan...</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="toolsMetadataMenuItem">
+                            <property name="can-focus">False</property>
+                            <property name="label">_Extract Metadata...</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="toolsAnalyzeMenuItem">
+                            <property name="can-focus">False</property>
+                            <property name="label">_Analyze...</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkSeparatorMenuItem" id="toolsOperationSeparator">
+                            <property name="can-focus">False</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="toolsPauseMenuItem">
+                            <property name="can-focus">False</property>
+                            <property name="label">_Pause</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkMenuItem" id="toolsResumeMenuItem">
+                            <property name="can-focus">False</property>
+                            <property name="label">_Resume</property>
+                            <property name="use-underline">True</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
                   <object class="GtkMenuItem" id="helpMenuItem">
                     <property name="can-focus">False</property>
                     <property name="label">_Help</property>

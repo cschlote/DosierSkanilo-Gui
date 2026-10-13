@@ -146,6 +146,15 @@ import dosierarkivo.factory : fileArchive;
 import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, NamedBinaryBlob;
 import dosierskanilo.repository.types : MetadataSummary, RepositoryBlobFlags;
 import dosierskanilo.repository.repository : Repository;
+import dosierskanilo.operations : AnalysisOperationRequest, MetadataOperationRequest,
+    OperationControl, OperationKind, OperationProgress, OperationResult,
+    OperationState, OperationTarget, ScanOperationRequest;
+import dosierskanilo.operationrunner : runOperation;
+import ui.operationdialogs : OperationDialogKind, OperationDialogOptions,
+    showOperationOptions;
+import ui.operationrequests : buildAnalysisOperationRequest,
+    buildMetadataOperationRequest, buildScanOperationRequest;
+import ui.operationtaskstate : operationResultMayHaveChangedSource;
 import cli.logging;
 
 enum int TREE_COL_NODE_ID = treeNodeIdColumn;
@@ -339,18 +348,6 @@ private void setBlobTableVirtualMode(TreeView treeView, bool virtualMode)
         treeView.setFixedHeightMode(true);
 }
 
-private DirectoryNode[] sortedDirectories(DirectorySource source, string parentId,
-    TreeSortOrder order, FileFilter filter = FileFilter())
-{
-    auto result = source.listDirectories(parentId, filter);
-    sort!((a, b) {
-        if (order == TreeSortOrder.nameDescending)
-            return a.name > b.name;
-        return a.name < b.name;
-    })(result);
-    return result;
-}
-
 private FileFilter treeFilterForDocument(DocumentTab document, bool caseSensitive)
 {
     FileFilter filter;
@@ -459,16 +456,13 @@ private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
 {
     auto visibilityValue = new Value();
     visibilityValue.init(GType.BOOLEAN);
-    if (includeDirectories)
-    {
-        foreach (child; sortedDirectories(source, directoryId, order, filter))
-            appendDirectoryTreeNode(store, source, child, parent, filter, order,
-                visibilityValue);
-    }
+    auto childDirectories = includeDirectories
+        ? source.listDirectories(directoryId, filter) : [];
     auto page = source.listFilteredFilesPage(directoryId, cursor, 251, filter,
         sourceFileSortOrder(order));
-    populateDirectoryTreeRows(store, parent, [], page.files, false, order,
-        page.hasMore, page.nextCursor, visibilityValue);
+    populateDirectoryTreeRows(store, parent, childDirectories, page.files,
+        includeDirectories, order, page.hasMore, page.nextCursor,
+        visibilityValue);
 }
 
 private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
@@ -484,6 +478,32 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
     }
     auto directoryId = store.getValueString(parent, 3);
     removeTreeChildById(store, parent, "Placeholder:" ~ directoryId);
+    // Reconcile a whole sibling batch with one pass over existing GTK rows.
+    // Searching from the first child for each input row becomes quadratic for
+    // directories with many immediate children.
+    TreeIter[string] childItersById;
+    TreeIter existingChild;
+    if (store.iterChildren(existingChild, parent))
+    {
+        do
+        {
+            const auto existingId = store.getValueString(existingChild,
+                TREE_COL_NODE_ID);
+            if (existingId.length > 0 && existingId !in childItersById)
+                childItersById[existingId] = existingChild.copy(existingChild);
+        }
+        while (store.iterNext(existingChild));
+    }
+    TreeIter childIterForId(string nodeId)
+    {
+        if (auto existing = nodeId in childItersById)
+            return *existing;
+        auto created = store.createIter(parent);
+        if (nodeId.length > 0)
+            childItersById[nodeId] = created;
+        return created;
+    }
+
     auto sortedDirectoryRows = directories.dup;
     auto sortedFileRows = files.dup;
     sort!((a, b) {
@@ -507,9 +527,7 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
     if (includeDirectories)
     foreach (directory; sortedDirectoryRows)
     {
-        TreeIter directoryIter;
-        if (!findTreeChildById(store, parent, directory.id, directoryIter))
-            directoryIter = store.createIter(parent);
+        auto directoryIter = childIterForId(directory.id);
         store.setValue(directoryIter, 0, directory.name);
         store.setValue(directoryIter, 1, "Directory");
         store.setValue(directoryIter, 2, format("%s files | %s bytes",
@@ -547,9 +565,7 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
     foreach (file; sortedFileRows[0 .. fileLimit])
     {
         auto nodeId = file.cursorId.length > 0 ? file.cursorId : file.id;
-        TreeIter fileIter;
-        if (!findTreeChildById(store, parent, nodeId, fileIter))
-            fileIter = store.createIter(parent);
+        auto fileIter = childIterForId(nodeId);
         store.setValue(fileIter, 0, file.name);
         store.setValue(fileIter, 1, "File");
         store.setValue(fileIter, 2, format("%s bytes", file.size));
@@ -581,9 +597,7 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
     auto pageNodeId = "Page:" ~ directoryId;
     if (hasMore)
     {
-        TreeIter moreIter;
-        if (!findTreeChildById(store, parent, pageNodeId, moreIter))
-            moreIter = store.createIter(parent);
+        auto moreIter = childIterForId(pageNodeId);
         store.setValue(moreIter, 0, "More files available...");
         store.setValue(moreIter, 1, "Page");
         store.setValue(moreIter, 2, "");
@@ -1629,6 +1643,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     auto root = builderObject!Box(mainBuilder, "main", "root");
     auto fileMenu = builderObject!Menu(mainBuilder, "main", "fileMenu");
     auto editMenu = builderObject!Menu(mainBuilder, "main", "editMenu");
+    auto toolsMenu = builderObject!Menu(mainBuilder, "main", "toolsMenu");
     auto helpMenu = builderObject!Menu(mainBuilder, "main", "helpMenu");
     auto recentFilesMenuItem = builderObject!MenuItem(mainBuilder, "main", "recentFilesMenuItem");
     auto content = builderObject!Box(mainBuilder, "main", "content");
@@ -1648,6 +1663,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
     auto editClearFilterMenuItem = builderObject!MenuItem(mainBuilder, "main", "editClearFilterMenuItem");
     auto editResetMetricsMenuItem = builderObject!MenuItem(mainBuilder, "main", "editResetMetricsMenuItem");
     auto editPreferencesMenuItem = builderObject!MenuItem(mainBuilder, "main", "editPreferencesMenuItem");
+    auto toolsScanMenuItem = builderObject!MenuItem(mainBuilder, "main", "toolsScanMenuItem");
+    auto toolsMetadataMenuItem = builderObject!MenuItem(mainBuilder, "main", "toolsMetadataMenuItem");
+    auto toolsAnalyzeMenuItem = builderObject!MenuItem(mainBuilder, "main", "toolsAnalyzeMenuItem");
+    auto toolsPauseMenuItem = builderObject!MenuItem(mainBuilder, "main", "toolsPauseMenuItem");
+    auto toolsResumeMenuItem = builderObject!MenuItem(mainBuilder, "main", "toolsResumeMenuItem");
     auto helpShortcutsMenuItem = builderObject!MenuItem(mainBuilder, "main", "helpShortcutsMenuItem");
     auto helpAboutMenuItem = builderObject!MenuItem(mainBuilder, "main", "helpAboutMenuItem");
     auto btnReload = builderObject!Button(mainBuilder, "main", "btnReload");
@@ -1699,6 +1719,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
     UiMainSource windowSizePersistTimer;
     bool isLoading;
     bool isArchiveScanning;
+    bool quitWhenOperationsFinish;
+    ulong nextOperationId;
+    void delegate() cancelPendingLoad;
+    void delegate(DocumentTab) refreshDocumentAfterOperation;
     void delegate(DocumentTab, string) scanSelectedArchiveAction;
     DocumentTab busyDocument;
     UiMainSource progressPulseTimer;
@@ -1907,21 +1931,31 @@ int runMainWindow(string[] args, ref CliOptions cli)
     /** Refresh toolbar sensitivity from the global busy state and active tab presence. */
     void syncToolbarSensitivity()
     {
-        auto hasCurrentDocument = currentDocument() !is null;
+        auto activeDocument = currentDocument();
+        auto hasCurrentDocument = activeDocument !is null;
+        auto operationRunning = hasCurrentDocument && activeDocument.operationRunning;
+        auto operationIdle = !isLoading && !isArchiveScanning && !operationRunning;
         // pathEntry und btnLoad entfernt
-        btnReload.setSensitive(!isLoading && hasCurrentDocument);
-        fileReloadMenuItem.setSensitive(!isLoading && hasCurrentDocument);
+        btnReload.setSensitive(!isLoading && hasCurrentDocument && !operationRunning);
+        fileReloadMenuItem.setSensitive(!isLoading && hasCurrentDocument && !operationRunning);
         fileExportCsvMenuItem.setSensitive(!isLoading && hasCurrentDocument);
         fileExportJsonMenuItem.setSensitive(!isLoading && hasCurrentDocument);
-        fileArchivePasswordsMenuItem.setSensitive(!isLoading && hasCurrentDocument);
-        fileScanArchivesMenuItem.setSensitive(!isLoading && hasCurrentDocument);
-        btnCancelLoad.setSensitive(isLoading && !isArchiveScanning);
-        fileCancelOperationMenuItem.setSensitive(isLoading && !isArchiveScanning);
-        fileCloseMenuItem.setSensitive(!isLoading && hasCurrentDocument);
+        fileArchivePasswordsMenuItem.setSensitive(!isLoading && !operationRunning && hasCurrentDocument);
+        fileScanArchivesMenuItem.setSensitive(operationIdle && hasCurrentDocument);
+        btnCancelLoad.setSensitive((isLoading && !isArchiveScanning) || operationRunning);
+        fileCancelOperationMenuItem.setSensitive((isLoading && !isArchiveScanning) || operationRunning);
+        fileCloseMenuItem.setSensitive(!isLoading && !operationRunning && hasCurrentDocument);
         fileOpenMenuItem.setSensitive(!isLoading);
         fileOpenRepositoryMenuItem.setSensitive(!isLoading);
         fileQuitMenuItem.setSensitive(true);
         recentFilesMenuItem.setSensitive(!isLoading && recentFilePaths.length > 0);
+        toolsScanMenuItem.setSensitive(operationIdle && hasCurrentDocument);
+        toolsMetadataMenuItem.setSensitive(operationIdle && hasCurrentDocument
+            && activeDocument.directorySourceRemote);
+        toolsAnalyzeMenuItem.setSensitive(operationIdle && hasCurrentDocument);
+        toolsPauseMenuItem.setSensitive(operationRunning
+            && activeDocument.operationPauseAvailable && !activeDocument.operationPaused);
+        toolsResumeMenuItem.setSensitive(operationRunning && activeDocument.operationPaused);
         if (hasCurrentDocument)
         {
             filterEntry.setSensitive(!isLoading);
@@ -1943,6 +1977,21 @@ int runMainWindow(string[] args, ref CliOptions cli)
         editResetMetricsMenuItem.setSensitive(hasCurrentDocument);
         helpShortcutsMenuItem.setSensitive(true);
         helpAboutMenuItem.setSensitive(true);
+        if (operationRunning)
+        {
+            loadSpinner.setVisible(true);
+            loadSpinner.start();
+            progressBar.setVisible(true);
+            progressBar.setText(activeDocument.status.getText());
+        }
+        else if (!isLoading)
+        {
+            loadSpinner.stop();
+            loadSpinner.setVisible(false);
+            progressBar.setVisible(false);
+            progressBar.setFraction(0.0);
+            progressBar.setText("Idle");
+        }
     }
 
     /** Keep the per-document case toggles aligned with the global preference. */
@@ -4183,6 +4232,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
     advanceStartupQueue = () { loadNextPendingStartupPath(); };
 
     closeDocumentTab = (DocumentTab document) {
+        if (document.operationRunning)
+        {
+            if (document.operationControl !is null)
+                document.operationControl.requestCancellation();
+            document.status.setText(
+                "Cancelling the backend operation before closing this tab.");
+            return;
+        }
         if (isLoading && busyDocument is document)
         {
             document.status.setText(
@@ -5107,6 +5164,308 @@ int runMainWindow(string[] args, ref CliOptions cli)
         };
     }
 
+    /** Start one backend operation off the GTK thread and marshal value events back. */
+    void startDocumentOperation(DocumentTab document, OperationKind kind,
+        OperationResult delegate(OperationControl, ulong) execute)
+    {
+        if (document is null || document.operationRunning || isLoading
+            || isArchiveScanning || quitWhenOperationsFinish)
+            return;
+        nextOperationId++;
+        if (nextOperationId == 0)
+            nextOperationId++;
+        auto operationId = nextOperationId;
+        document.operationRunning = true;
+        document.operationPaused = false;
+        document.operationPauseAvailable = false;
+        document.activeOperationId = operationId;
+        document.activeOperationKind = kind;
+        document.operationState = OperationState.queued;
+        document.operationTaskState.begin(operationId, kind);
+        auto control = new OperationControl((OperationProgress event) {
+            auto progress = event;
+            scheduleUiIdle({
+                if (document.activeOperationId != operationId
+                    || indexOfDocument(document) < 0)
+                    return false;
+                if (!document.operationTaskState.apply(progress))
+                    return false;
+                document.operationState = progress.state;
+                document.operationPauseAvailable = progress.pauseAvailable;
+                document.operationPaused = progress.state == OperationState.paused;
+                auto prefix = progress.state == OperationState.pausing ? "Pausing: "
+                    : progress.state == OperationState.paused ? "Paused: "
+                    : progress.state == OperationState.cancelling ? "Cancelling: " : "";
+                if (progress.message.length > 0)
+                    document.status.setText(prefix ~ progress.message);
+                if (currentDocument() is document)
+                {
+                    progressBar.setVisible(true);
+                    progressBar.setText(prefix ~ progress.message);
+                    if (progress.totalKnown && progress.total > 0)
+                    {
+                        auto fraction = cast(double) progress.completed
+                            / cast(double) progress.total;
+                        progressBar.setFraction(fraction > 1.0 ? 1.0 : fraction);
+                    }
+                    else
+                        progressBar.pulse();
+                }
+                syncToolbarSensitivity();
+                return false;
+            });
+        });
+        document.operationControl = control;
+        document.status.setText("Starting backend operation...");
+        syncToolbarSensitivity();
+
+        auto worker = new Thread({
+            OperationResult result;
+            try
+                result = execute(control, operationId);
+            catch (Exception ex)
+            {
+                result.operationId = operationId;
+                result.operation = kind;
+                result.state = OperationState.failed;
+                result.error = ex.msg;
+            }
+            auto completedResult = result;
+            scheduleUiIdle({
+                if (document.activeOperationId != operationId)
+                    return false;
+                document.operationTaskState.complete(completedResult);
+                document.operationRunning = false;
+                document.operationPaused = false;
+                document.operationPauseAvailable = false;
+                document.operationControl = null;
+                document.operationThread = null;
+                bool refreshDocument = operationResultMayHaveChangedSource(
+                    completedResult);
+                if (indexOfDocument(document) >= 0)
+                {
+                    if (completedResult.state == OperationState.completed)
+                    {
+                        final switch (kind)
+                        {
+                        case OperationKind.scan:
+                            document.status.setText(format(
+                                "Scan complete: %s files, %s added, %s changed.",
+                                completedResult.scanSummary.filesFound,
+                                completedResult.scanSummary.filesAdded,
+                                completedResult.scanSummary.filesChanged));
+                            break;
+                        case OperationKind.metadata:
+                            document.status.setText(format(
+                                "Metadata complete: %s blobs, %s updated, %s failed.",
+                                completedResult.metadataSummary.blobsVisited,
+                                completedResult.metadataSummary.checksumsUpdated
+                                    + completedResult.metadataSummary.fileTypesUpdated
+                                    + completedResult.metadataSummary.mediaInfoUpdated
+                                    + completedResult.metadataSummary.archivesUpdated
+                                    + completedResult.metadataSummary.torrentsUpdated,
+                                completedResult.metadataSummary.failed));
+                            break;
+                        case OperationKind.analyze:
+                            document.status.setText(format(
+                                "Analysis complete: %s duplicate groups, %s merged blobs.",
+                                completedResult.analysisSummary.duplicateGroups,
+                                completedResult.analysisSummary.mergedBlobs));
+                            break;
+                        }
+                        if (isLoading)
+                            document.status.setText(
+                                "Operation complete. Reload queued after the active load.");
+                    }
+                    else if (completedResult.state == OperationState.cancelled)
+                    {
+                        document.status.setText("Operation cancelled.");
+                    }
+                    else
+                    {
+                        document.status.setText("Operation failed: "
+                            ~ completedResult.error);
+                    }
+                    if (refreshDocument && !quitWhenOperationsFinish)
+                        refreshDocumentAfterOperation(document);
+                }
+                if (currentDocument() is document)
+                    progressBar.setFraction(0.0);
+                syncToolbarSensitivity();
+                bool operationsRemain;
+                foreach (activeDocument; documents)
+                    operationsRemain = operationsRemain || activeDocument.operationRunning;
+                if (quitWhenOperationsFinish && !operationsRemain)
+                {
+                    persistCurrentState(clearSavedWindowGeometryOnExit);
+                    stopAllUiSources();
+                    Main.quit();
+                }
+                return false;
+            });
+        });
+        document.operationThread = worker;
+        worker.start();
+    }
+
+    refreshDocumentAfterOperation = (DocumentTab document) {
+        if (document is null || indexOfDocument(document) < 0
+            || quitWhenOperationsFinish)
+            return;
+        if (!isLoading)
+        {
+            loadDocument(document, false);
+            return;
+        }
+        scheduleUiTimeout(100, {
+            if (document is null || indexOfDocument(document) < 0
+                || quitWhenOperationsFinish)
+                return false;
+            if (isLoading)
+                return true;
+            loadDocument(document, false);
+            return false;
+        });
+    };
+
+    void cancelCurrentOperation()
+    {
+        auto document = currentDocument();
+        if (document !is null && document.operationRunning
+            && document.operationControl !is null)
+        {
+            document.operationControl.requestCancellation();
+            document.status.setText("Cancellation requested...");
+            return;
+        }
+        cancelPendingLoad();
+    }
+
+    void cancelAndJoinDocumentOperations()
+    {
+        foreach (document; documents)
+            if (document.operationControl !is null)
+                document.operationControl.requestCancellation();
+        foreach (document; documents)
+        {
+            if (document.operationThread !is null)
+            {
+                document.operationThread.join();
+                document.operationThread = null;
+                document.operationControl = null;
+                document.operationRunning = false;
+            }
+        }
+    }
+
+    string chooseJsonScanRoot()
+    {
+        auto chooser = new FileChooserDialog("Choose filesystem root to scan",
+            window, FileChooserAction.SELECT_FOLDER,
+            ["_Cancel", "_Select"], [ResponseType.CANCEL, ResponseType.ACCEPT]);
+        string rootPath;
+        if (chooser.run() == cast(int) ResponseType.ACCEPT)
+            rootPath = chooser.getFilename();
+        chooser.destroy();
+        return rootPath;
+    }
+
+    void startScanForCurrentDocument()
+    {
+        auto document = currentDocument();
+        if (document is null)
+            return;
+        auto repositorySource = document.directorySourceRemote;
+        auto sourceDescription = repositorySource
+            ? Repository.findRoot(document.filePath) : document.filePath;
+        auto filesystemRoot = repositorySource ? sourceDescription : chooseJsonScanRoot();
+        if (filesystemRoot.length == 0)
+            return;
+        auto options = showOperationOptions(window, "Scan options",
+            sourceDescription, repositorySource, OperationDialogKind.scan);
+        if (!options.accepted)
+            return;
+        startDocumentOperation(document, OperationKind.scan,
+            (OperationControl control, ulong operationId) {
+                auto request = buildScanOperationRequest(operationId,
+                    repositorySource ? sourceDescription : document.filePath,
+                    repositorySource, filesystemRoot, options.scanOptions,
+                    options.metadataOptions);
+                return runOperation(request, control);
+            });
+    }
+
+    void startMetadataForCurrentDocument()
+    {
+        auto document = currentDocument();
+        if (document is null || !document.directorySourceRemote)
+            return;
+        auto root = Repository.findRoot(document.filePath);
+        auto options = showOperationOptions(window, "Metadata options", root,
+            true, OperationDialogKind.metadata);
+        if (!options.accepted)
+            return;
+        auto metadata = options.metadataOptions;
+        if (!(metadata.calculateChecksums || metadata.detectFileTypes
+            || metadata.extractMediaInfo || metadata.scanArchives
+            || metadata.scanTorrents))
+        {
+            document.status.setText("Select at least one metadata extractor.");
+            return;
+        }
+        if (metadata.scanArchives)
+            metadata.archivePasswordCallback = archivePasswordPromptCallback();
+        startDocumentOperation(document, OperationKind.metadata,
+            (OperationControl control, ulong operationId) {
+                auto request = buildMetadataOperationRequest(operationId, root,
+                    metadata);
+                return runOperation(request, control);
+            });
+    }
+
+    void startAnalysisForCurrentDocument()
+    {
+        auto document = currentDocument();
+        if (document is null)
+            return;
+        auto repositorySource = document.directorySourceRemote;
+        auto sourceDescription = repositorySource
+            ? Repository.findRoot(document.filePath) : document.filePath;
+        auto options = showOperationOptions(window, "Analysis options",
+            sourceDescription, repositorySource, OperationDialogKind.analyze);
+        if (!options.accepted)
+            return;
+        auto metadata = options.metadataOptions;
+        if (metadata.scanArchives)
+            metadata.archivePasswordCallback = archivePasswordPromptCallback();
+        startDocumentOperation(document, OperationKind.analyze,
+            (OperationControl control, ulong operationId) {
+                auto request = buildAnalysisOperationRequest(operationId,
+                    repositorySource ? sourceDescription : document.filePath,
+                    repositorySource, options.analysisOptions, metadata);
+                return runOperation(request, control);
+            });
+    }
+
+    void pauseCurrentOperation()
+    {
+        auto document = currentDocument();
+        if (document is null || document.operationControl is null
+            || !document.operationPauseAvailable)
+            return;
+        if (!document.operationControl.requestPause())
+            document.status.setText("No safe pause point is currently available.");
+    }
+
+    void resumeCurrentOperation()
+    {
+        auto document = currentDocument();
+        if (document is null || document.operationControl is null)
+            return;
+        if (!document.operationControl.requestResume())
+            document.status.setText("The operation is not paused.");
+    }
+
     /** Scan all archives or one selected archive, prompting for passwords as needed. */
     void scanArchiveForDocument(DocumentTab document, string archivePath = "")
     {
@@ -5203,8 +5562,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     }
 
     /** Cancel the currently active background request. */
-    void cancelPendingLoad()
-    {
+    cancelPendingLoad = () {
         if (!isLoading || busyDocument is null)
         {
             auto document = currentDocument();
@@ -5223,7 +5581,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             "Operation cancelled. Background result will be discarded.");
         if (restoreRowsAfterFilterCancel)
             clearFilterForDocument(cancelledDocument);
-    }
+    };
 
     fileOpenMenuItem.addOnActivate((MenuItem _) {
         chooseAndLoadPath(
@@ -5261,6 +5619,21 @@ int runMainWindow(string[] args, ref CliOptions cli)
     fileScanArchivesMenuItem.addOnActivate((MenuItem _) {
         scanArchivesForCurrentDocument();
     });
+    toolsScanMenuItem.addOnActivate((MenuItem _) {
+        startScanForCurrentDocument();
+    });
+    toolsMetadataMenuItem.addOnActivate((MenuItem _) {
+        startMetadataForCurrentDocument();
+    });
+    toolsAnalyzeMenuItem.addOnActivate((MenuItem _) {
+        startAnalysisForCurrentDocument();
+    });
+    toolsPauseMenuItem.addOnActivate((MenuItem _) {
+        pauseCurrentOperation();
+    });
+    toolsResumeMenuItem.addOnActivate((MenuItem _) {
+        resumeCurrentOperation();
+    });
 
     fileReloadMenuItem.addOnActivate((MenuItem _) {
         reloadCurrentDocument(DocumentActionCallbacks(
@@ -5271,7 +5644,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
             (int pageIndex) { notebook.removePage(pageIndex); },
             () { syncToolbarFromCurrentDocument(); },
             (bool clearGeometry) { persistCurrentState(clearGeometry); },
-            () { return isLoading; },
+            () {
+                auto document = currentDocument();
+                return isLoading || (document !is null && document.operationRunning);
+            },
             () { return busyDocument; },
             () { return clearSavedWindowGeometryOnExit; },
             (DocumentTab document, bool fitHorizontalSplitAfterLoad) { loadDocument(document, fitHorizontalSplitAfterLoad); }
@@ -5287,16 +5663,34 @@ int runMainWindow(string[] args, ref CliOptions cli)
             (int pageIndex) { if (documents[pageIndex].directorySource !is null) documents[pageIndex].directorySource.close(); notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
             () { syncToolbarFromCurrentDocument(); },
             (bool clearGeometry) { persistCurrentState(clearGeometry); },
-            () { return isLoading; },
+            () {
+                auto document = currentDocument();
+                return isLoading || (document !is null && document.operationRunning);
+            },
             () { return busyDocument; },
             () { return clearSavedWindowGeometryOnExit; },
             (DocumentTab document, bool fitHorizontalSplitAfterLoad) { loadDocument(document, fitHorizontalSplitAfterLoad); }
         ));
     });
 
-    fileCancelOperationMenuItem.addOnActivate((MenuItem _) { cancelPendingLoad(); });
+    fileCancelOperationMenuItem.addOnActivate((MenuItem _) { cancelCurrentOperation(); });
 
     fileQuitMenuItem.addOnActivate((MenuItem _) {
+        bool activeOperation;
+        foreach (document; documents)
+            activeOperation = activeOperation || document.operationRunning;
+        if (activeOperation)
+        {
+            quitWhenOperationsFinish = true;
+            foreach (document; documents)
+                if (document.operationControl !is null)
+                    document.operationControl.requestCancellation();
+            auto document = currentDocument();
+            if (document !is null)
+                document.status.setText(
+                    "Cancelling backend operations before quitting...");
+            return;
+        }
         persistCurrentState(clearSavedWindowGeometryOnExit);
         stopAllUiSources();
         Main.quit();
@@ -5385,7 +5779,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 ));
             },
             () { relayoutCurrentDocument(); },
-            () { cancelPendingLoad(); },
+            () { cancelCurrentOperation(); },
             () { applyFilterFromEntry(); },
             () { clearCurrentFilter(); }
         )
@@ -5408,7 +5802,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
             (bool value) { allowRuntimeStatePersistence = value; },
             () { return windowSizePersistTimer; },
             (UiMainSource value) { windowSizePersistTimer = value; },
-            () { stopAllUiSources(); }
+            () {
+                cancelAndJoinDocumentOperations();
+                stopAllUiSources();
+            }
         )
     );
 
@@ -5507,6 +5904,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     );
 
     Main.run();
+    cancelAndJoinDocumentOperations();
     stopAllUiSources();
     return 0;
 }
@@ -5563,4 +5961,33 @@ unittest
 
     populateDirectoryTreeRows(store, directory, [], [file], false);
     assert(store.iterNChildren(directory) == 1);
+
+    DirectoryNode[] manyDirectories;
+    foreach (index; 0 .. 1_000)
+    {
+        DirectoryNode childDirectory;
+        childDirectory.id = "directory:music:" ~ index.to!string;
+        childDirectory.parentId = "directory:music";
+        childDirectory.name = "folder-" ~ index.to!string;
+        childDirectory.relativePath = "music/" ~ childDirectory.name;
+        childDirectory.sourceIndex = index + 2;
+        manyDirectories ~= childDirectory;
+    }
+    FileNode[] manyFiles;
+    foreach (index; 0 .. 250)
+    {
+        FileNode childFile;
+        childFile.id = "bulk-blob-" ~ index.to!string;
+        childFile.cursorId = "bulk-file-ref-" ~ index.to!string;
+        childFile.directoryId = "directory:music";
+        childFile.name = "track-" ~ index.to!string;
+        childFile.relativePath = "music/" ~ childFile.name;
+        manyFiles ~= childFile;
+    }
+    populateDirectoryTreeRows(store, directory, manyDirectories, manyFiles);
+    const auto populatedChildCount = store.iterNChildren(directory);
+    assert(populatedChildCount == 1 + manyDirectories.length + manyFiles.length,
+        populatedChildCount.to!string);
+    populateDirectoryTreeRows(store, directory, manyDirectories, manyFiles);
+    assert(store.iterNChildren(directory) == populatedChildCount);
 }
