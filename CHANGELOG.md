@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## Release 0.9.0 - 2026-10-13
+
 - Added Tools actions for shared backend scan, metadata, and analysis requests,
   with source-aware JSON/repository targets and operation-specific options.
 - Backend operations now run on worker threads and display progress and terminal
@@ -11,6 +13,8 @@ All notable changes to this project are documented in this file.
   backend-acknowledged safe checkpoints.
 - Successful operations reload the affected source; backend target leases
   serialize conflicting repository/catalog writes.
+- Large TreeStore sibling batches now reuse a one-pass ID index instead of
+  repeatedly scanning existing rows, avoiding quadratic directory population.
 
 ## Release 0.8.0 - 2026-10-09
 
