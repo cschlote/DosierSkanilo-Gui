@@ -348,18 +348,6 @@ private void setBlobTableVirtualMode(TreeView treeView, bool virtualMode)
         treeView.setFixedHeightMode(true);
 }
 
-private DirectoryNode[] sortedDirectories(DirectorySource source, string parentId,
-    TreeSortOrder order, FileFilter filter = FileFilter())
-{
-    auto result = source.listDirectories(parentId, filter);
-    sort!((a, b) {
-        if (order == TreeSortOrder.nameDescending)
-            return a.name > b.name;
-        return a.name < b.name;
-    })(result);
-    return result;
-}
-
 private FileFilter treeFilterForDocument(DocumentTab document, bool caseSensitive)
 {
     FileFilter filter;
@@ -468,16 +456,13 @@ private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
 {
     auto visibilityValue = new Value();
     visibilityValue.init(GType.BOOLEAN);
-    if (includeDirectories)
-    {
-        foreach (child; sortedDirectories(source, directoryId, order, filter))
-            appendDirectoryTreeNode(store, source, child, parent, filter, order,
-                visibilityValue);
-    }
+    auto childDirectories = includeDirectories
+        ? source.listDirectories(directoryId, filter) : [];
     auto page = source.listFilteredFilesPage(directoryId, cursor, 251, filter,
         sourceFileSortOrder(order));
-    populateDirectoryTreeRows(store, parent, [], page.files, false, order,
-        page.hasMore, page.nextCursor, visibilityValue);
+    populateDirectoryTreeRows(store, parent, childDirectories, page.files,
+        includeDirectories, order, page.hasMore, page.nextCursor,
+        visibilityValue);
 }
 
 private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
@@ -493,6 +478,32 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
     }
     auto directoryId = store.getValueString(parent, 3);
     removeTreeChildById(store, parent, "Placeholder:" ~ directoryId);
+    // Reconcile a whole sibling batch with one pass over existing GTK rows.
+    // Searching from the first child for each input row becomes quadratic for
+    // directories with many immediate children.
+    TreeIter[string] childItersById;
+    TreeIter existingChild;
+    if (store.iterChildren(existingChild, parent))
+    {
+        do
+        {
+            const auto existingId = store.getValueString(existingChild,
+                TREE_COL_NODE_ID);
+            if (existingId.length > 0 && existingId !in childItersById)
+                childItersById[existingId] = existingChild.copy(existingChild);
+        }
+        while (store.iterNext(existingChild));
+    }
+    TreeIter childIterForId(string nodeId)
+    {
+        if (auto existing = nodeId in childItersById)
+            return *existing;
+        auto created = store.createIter(parent);
+        if (nodeId.length > 0)
+            childItersById[nodeId] = created;
+        return created;
+    }
+
     auto sortedDirectoryRows = directories.dup;
     auto sortedFileRows = files.dup;
     sort!((a, b) {
@@ -516,9 +527,7 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
     if (includeDirectories)
     foreach (directory; sortedDirectoryRows)
     {
-        TreeIter directoryIter;
-        if (!findTreeChildById(store, parent, directory.id, directoryIter))
-            directoryIter = store.createIter(parent);
+        auto directoryIter = childIterForId(directory.id);
         store.setValue(directoryIter, 0, directory.name);
         store.setValue(directoryIter, 1, "Directory");
         store.setValue(directoryIter, 2, format("%s files | %s bytes",
@@ -556,9 +565,7 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
     foreach (file; sortedFileRows[0 .. fileLimit])
     {
         auto nodeId = file.cursorId.length > 0 ? file.cursorId : file.id;
-        TreeIter fileIter;
-        if (!findTreeChildById(store, parent, nodeId, fileIter))
-            fileIter = store.createIter(parent);
+        auto fileIter = childIterForId(nodeId);
         store.setValue(fileIter, 0, file.name);
         store.setValue(fileIter, 1, "File");
         store.setValue(fileIter, 2, format("%s bytes", file.size));
@@ -590,9 +597,7 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
     auto pageNodeId = "Page:" ~ directoryId;
     if (hasMore)
     {
-        TreeIter moreIter;
-        if (!findTreeChildById(store, parent, pageNodeId, moreIter))
-            moreIter = store.createIter(parent);
+        auto moreIter = childIterForId(pageNodeId);
         store.setValue(moreIter, 0, "More files available...");
         store.setValue(moreIter, 1, "Page");
         store.setValue(moreIter, 2, "");
@@ -5956,4 +5961,33 @@ unittest
 
     populateDirectoryTreeRows(store, directory, [], [file], false);
     assert(store.iterNChildren(directory) == 1);
+
+    DirectoryNode[] manyDirectories;
+    foreach (index; 0 .. 1_000)
+    {
+        DirectoryNode childDirectory;
+        childDirectory.id = "directory:music:" ~ index.to!string;
+        childDirectory.parentId = "directory:music";
+        childDirectory.name = "folder-" ~ index.to!string;
+        childDirectory.relativePath = "music/" ~ childDirectory.name;
+        childDirectory.sourceIndex = index + 2;
+        manyDirectories ~= childDirectory;
+    }
+    FileNode[] manyFiles;
+    foreach (index; 0 .. 250)
+    {
+        FileNode childFile;
+        childFile.id = "bulk-blob-" ~ index.to!string;
+        childFile.cursorId = "bulk-file-ref-" ~ index.to!string;
+        childFile.directoryId = "directory:music";
+        childFile.name = "track-" ~ index.to!string;
+        childFile.relativePath = "music/" ~ childFile.name;
+        manyFiles ~= childFile;
+    }
+    populateDirectoryTreeRows(store, directory, manyDirectories, manyFiles);
+    const auto populatedChildCount = store.iterNChildren(directory);
+    assert(populatedChildCount == 1 + manyDirectories.length + manyFiles.length,
+        populatedChildCount.to!string);
+    populateDirectoryTreeRows(store, directory, manyDirectories, manyFiles);
+    assert(store.iterNChildren(directory) == populatedChildCount);
 }
