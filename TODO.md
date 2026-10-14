@@ -111,6 +111,41 @@ recreating existing source nodes; matching descendants keep their ancestor paths
 visible; repeated filtering is GC-friendly and preserves existing behavior. Unit
 tests and the display-backed startup/filter smoke test pass.
 
+## P1 — Archive member TreeView and shared extraction cache (WP-13.5)
+
+Status: **planned; backend JSON v5 and SQLite schema-v4 work is tracked in the
+DosierSkanilo WP-13.5 plan.** The archive file remains the expandable file row;
+the GUI must not create a second sibling folder or persist cache paths.
+
+- [ ] Give `hasArchive` file rows an async TreeView expander. Expanding lists safe
+  entries lazily; selecting a member extracts it for preview. Nested archives
+  use the same flow, and visible names hide the duplicate-occurrence path suffix.
+- [ ] Carry the structured container/entry locator through JSON and SQLite
+  directory/file sources. Use the virtual path only as a reversible reference
+  spelling (`!/`, `!!`, `!~N`), not as an OS path or the primary identity.
+- [ ] Add one shared extraction-cache service for preview, checksums, File Type,
+  MediaInfo, archive scans, and optional prefetch. Coalesce in-flight requests,
+  pin active previews, bound size/workers, and never persist cache paths as
+  `FileSpec` references.
+- [ ] Add cache preferences: JSON defaults below OS temp; SQLite uses a
+  configurable local cache base and a per-session subdirectory. Remove the
+  session cache on normal exit and sweep only application-owned stale sessions
+  at startup. Stop media previews and join/cancel workers before cleanup. A RAM
+  disk can be selected as the cache base.
+- [ ] Keep same-directory sibling prefetch disabled by default. When enabled,
+  make it cancellable, bounded, and use the same cache leases as foreground
+  preview/extraction.
+- [ ] During explicit deep scans, process every safely selectable non-directory
+  member using one cache lease for checksums and the selected metadata extractors;
+  persist metadata against the member content blob, not the temporary path.
+- [ ] Test nested archives, `!` escaping, duplicate occurrence IDs, unsafe paths,
+  encrypted containers, extraction cancellation, prefetch cancellation, cache
+  eviction/pinning, and shutdown/stale-session cleanup for both storage modes.
+
+**Acceptance:** selecting an archive member displays it in the normal Previewer;
+scraped metadata survives cache eviction, no cache paths enter JSON/SQLite source
+references, and shutdown removes the current session's extracted files.
+
 ## P2 — Stabilize GTK layout and video preview
 
 The following are separate user-visible issues. Reproduce and log each before

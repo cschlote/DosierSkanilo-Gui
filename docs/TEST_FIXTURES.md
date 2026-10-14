@@ -41,6 +41,16 @@ use an in-memory nested-entry model with a page boundary at offset 250. They
 check continuation offsets, later-page path copying, and stale-selection reply
 rejection. The GTK signal test is opt-in and requires a display.
 
+### Planned archive-member TreeView and extraction cache
+
+WP-13.5 GUI coverage will add ZIP fixtures with nested archives, duplicate member
+names, literal `!` characters, unsafe traversal names, and encrypted members. The
+cache tests will cover concurrent request coalescing, cancellation, sibling
+prefetch disabled/enabled, maximum-byte eviction, active-preview pinning, normal
+shutdown cleanup, and stale-session cleanup after a simulated crash. Both JSON
+v5 and migrated SQLite schema-v4 sources will verify virtual path references and
+that cache paths never enter catalog data.
+
 GTK opt-in checks and their commands are listed in
 [`GUI-REDESIGN.md`](GUI-REDESIGN.md#verification-baseline). Tests create and
 remove their temporary repositories themselves.

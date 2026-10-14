@@ -103,11 +103,11 @@ Known limitations:
   token before applying a page reply and verifies that the stale reply is rejected.
 - The blob table remains an alternative, transitional view; the directory tree
   is still the primary navigation surface.
-- Archive entries currently render from nested `ArchiveSpec`/repository entry
-  metadata. They are not yet ordinary content blobs with source-neutral virtual
-  locators, so archive members do not participate fully in blob search,
-  duplicate merging, and filtered catalog subsets. Their domain/storage/API
-  roadmap is WP-13 in the backend plan.
+- The backend now exposes archive members as content/reference projections, but
+  the GUI Directory Tree does not yet expand the archive file row. The Previewer
+  lists indexed entries; selecting a member does not yet extract it into a shared
+  cache for ordinary file preview or metadata extraction. The storage/path
+  transition is planned in backend WP-13.5.
 - Several window splitters and video-preview layout behaviors remain on the
   open-issues list in `TODO.md`.
 - General scan, metadata, and analysis are available from the Tools menu through
@@ -347,11 +347,12 @@ selection actions.
 
 ## Analysis Operations
 
-Status: **Planned; no scanner or analysis actions are currently exposed by the
-GUI.** The target is shared operation logic: CLI and GTK pass the same typed
-request/options to the DosierSkanilo library. GTK must not reimplement scanning
-or metadata extraction. See backend WP-09 for the operation contract and staged
-implementation plan at `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09`.
+Shared Tools actions now expose scan, metadata, and analysis requests through the
+DosierSkanilo operation API. The GUI runs them on workers, shows progress, and
+supports backend-acknowledged pause/resume/cancel. Archive-member extraction and
+member metadata use are the remaining archive-specific integration. See backend
+WP-09 and WP-13 in the operation plan at
+`https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md`.
 
 Opening a source should not implicitly run duplicate detection or other costly
 analysis. Operations should be explicit and available from a `Tools` menu:
@@ -363,16 +364,11 @@ analysis. Operations should be explicit and available from a `Tools` menu:
 - scan torrent metadata
 - export the current selection
 
-Operations use the shared progress/cancellation contract defined in backend
-WP-09.1; backend execution and the GUI task manager are still planned. Pause and
-resume are not in that frozen contract yet and must be added through WP-09.1b.
-The task manager will marshal progress to the GTK main loop, provide state-aware
-Pause/Resume/Cancel controls at backend-acknowledged safe checkpoints, serialize
-conflicting writes per repository, and refresh the active view after successful
-mutations. A paused task must not hold an active SQLite transaction and keeps its
-target lease until resume or cancellation. CLI output/exit-code behavior should
-be an adapter over the same operation results. JSON and SQLite remain explicit
-storage modes. See the backend plan at `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09`.
+Operations use the shared progress/cancellation contract and keep JSON and
+SQLite targets explicit. CLI output/exit behavior remains an adapter over the
+same operation results. Archive-member scraping will reuse the extraction cache
+and persist results on the member's normal content blob, never on the temporary
+cache path.
 
 ## Archive Passwords
 
@@ -386,6 +382,54 @@ that request to GTK, prompts the user, and the scan persists an accepted passwor
 with its catalog or repository. Blank password input in the manager removes the
 mapping. The current implementation stores passwords as plain text, as agreed
 for this feature.
+
+## Archive Member Tree, Extraction, and Cache (Planned)
+
+The archive file remains the TreeView file row and is expandable when
+`hasArchive` is true. Expansion lists safe member rows lazily; it does not unpack
+the whole archive. Selecting a member extracts it through the shared cache and
+passes the cached path to the existing preview pipeline. Nested archives use the
+same flow recursively.
+
+Virtual reference paths use `!/` between archive layers, `!!` for a literal
+exclamation mark, and `!~N` for zero-based duplicate-name occurrences. Tree
+labels show the original name; content/reference identity uses the structured
+locator and occurrence. JSON v5 stores scraped members as ordinary content
+records with virtual `FileSpec` paths. SQLite schema v4 migrates existing archive
+rows to virtual `file_refs` and removes `archive_entries`/`archive_indexes`
+without adding archive-specific tables.
+
+One session extraction cache is shared by archive scraping, checksums, file-type
+and MediaInfo extraction, preview, and optional prefetch. JSON defaults to an OS
+temporary cache root; SQLite uses a configurable local cache base. Each run owns
+a session subdirectory that is removed at normal exit, and stale owned sessions
+are cleaned at startup. A maximum cache size and pinned active previews bound
+retention. Same-directory sibling prefetch is a preference, disabled by default
+until cancellation and resource-bound tests pass; a RAM-backed cache can be
+selected by choosing a RAM-disk path.
+
+### GUI work packages
+
+- **Archive-tree expansion:** add loading rows to archive file nodes, page safe
+  members into the same TreeStore, preserve duplicate occurrences, and make
+  nested archive members expandable. Keep entry listing separate from extraction.
+- **Selected-member extraction/preview:** resolve the structured locator chain,
+  extract to the shared cache off the GTK thread, and feed the cached file to the
+  existing image/audio/video/text/fallback previewers. The logical selected path
+  remains virtual; external preview paths are cache paths only.
+- **Cache preferences/lifecycle:** configure the cache base and maximum size,
+  default prefetch off, coalesce repeated requests, pin files used by previews,
+  stop previews and cancel/join workers before shutdown cleanup, and sweep only
+  stale session folders carrying the application's ownership marker.
+- **Archive scraping:** explicit deep scans process every safely selectable
+  member, reuse one cache lease per member for the enabled metadata extractors,
+  and persist results on the content blob. Do not create durable filesystem
+  references to session-cache files.
+
+**Acceptance:** expand/select/preview works for JSON and SQLite, including nested
+archives, duplicate names, passwords, cancellation, and cache eviction. After a
+normal exit no extracted session files remain; reopening and selecting a member
+re-extracts it without losing persisted metadata.
 
 ## Migration Sequence
 
@@ -412,14 +456,12 @@ a compatibility layer around the current table UI:
 
 ## Current Work Plan
 
-The older immediate-plan checklist is complete except for scanner/analysis
-operations and the explicitly deferred GTK layout issues. Current actionable GUI
-work is tracked in [`TODO.md`](../TODO.md): asynchronous JSON filtering and
-case-sensitive Blob-table parity and stable TreeView-node reuse across filter
-changes have been verified. Measure large-catalog filter latency, GC allocation
-churn, and peak memory; the GTK operations client follows the backend and CLI
-reference slices. Splitter/video behavior and UI maintenance remain lower-priority
-GUI work.
+The older immediate-plan checklist is complete except for the archive-member
+TreeView/extraction workflow, remaining CLI/GUI operation parity checks, and the
+explicitly deferred GTK layout issues. Current GUI work is tracked in
+[`TODO.md`](../TODO.md). Archive-member work depends on backend WP-13.5 virtual
+references and the shared cache contract. Large-catalog latency, GC allocation,
+and peak-memory measurements remain follow-up verification.
 
 The shared CLI/GTK operation work is tracked as WP-09 in the backend's
 [`SQLITE-IMPLEMENTATION-PLAN.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09).
