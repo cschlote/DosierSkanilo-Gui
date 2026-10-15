@@ -403,13 +403,14 @@ NestedFileNode[] loadRepositoryArchiveEntries(string path, long blobId,
 
 /** Load a bounded page of repository archive members for a container blob. */
 ArchiveMemberTreePage loadRepositoryArchiveMemberTreePage(string path,
-    long containerBlobId, size_t offset = 0, size_t limit = 250)
+    long containerBlobId, size_t offset = 0, size_t limit = 250,
+    string containerVirtualPath = "")
 {
     auto repository = Repository.open(path);
     scope (exit)
         repository.close();
     return repositoryArchiveMemberTreePage(repository, containerBlobId,
-        offset, limit);
+        containerVirtualPath, false, offset, limit);
 }
 
 /** Load a bounded page of members from a nested repository archive reference. */
@@ -423,11 +424,12 @@ ArchiveMemberTreePage loadNestedRepositoryArchiveMemberTreePage(string path,
     enforce(container.id > 0 && container.archiveMember,
         "The selected repository reference is not an archive member.");
     return repositoryArchiveMemberTreePage(repository, container.blobId,
-        offset, limit);
+        container.relativePath, true, offset, limit);
 }
 
 private ArchiveMemberTreePage repositoryArchiveMemberTreePage(
-    Repository repository, long containerBlobId, size_t offset, size_t limit)
+    Repository repository, long containerBlobId, string containerVirtualPath,
+    bool containerIsVirtual, size_t offset, size_t limit)
 {
     enforce(limit > 0, "Archive-member page size must be greater than zero.");
     RepositoryArchiveQuery query;
@@ -435,20 +437,19 @@ private ArchiveMemberTreePage repositoryArchiveMemberTreePage(
     query.offset = offset;
     query.limit = limit + 1;
     ArchiveMemberTreePage page;
+    const auto encodedContainerPath = containerIsVirtual
+        ? containerVirtualPath : escapeArchiveVirtualPath(containerVirtualPath);
     foreach (entry; repository.listArchiveEntries(query))
     {
-        auto file = repository.fileReference(entry.id);
-        if (file.id <= 0)
-            continue;
         ArchiveMemberTreeEntry node;
-        node.referenceId = file.id.to!string;
-        node.contentId = file.blobId.to!string;
+        node.referenceId = entry.id.to!string;
+        node.contentId = entry.contentBlobId.to!string;
         node.name = entry.name;
-        node.relativePath = entry.relativePath;
-        node.virtualPath = file.relativePath;
-        node.size = file.size;
-        node.hasArchive = repository.hasArchiveIndex(file.blobId)
-            || isArchivePathCandidate(file.name);
+        node.relativePath = entry.name;
+        node.virtualPath = appendArchiveVirtualPath(encodedContainerPath,
+            entry.relativePath, entry.occurrence);
+        node.size = entry.size;
+        node.hasArchive = isArchivePathCandidate(entry.name);
         page.entries ~= node;
     }
     if (page.entries.length > limit)

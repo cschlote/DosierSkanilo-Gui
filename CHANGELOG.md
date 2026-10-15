@@ -11,6 +11,10 @@ All notable changes to this project are documented in this file.
 - The main Directory Tree now keeps virtual member paths out of physical
   directories and lazily expands archive files into paged member rows, including
   nested archives. Selecting an expanded member uses the same cached preview.
+- Archive expansion now keeps member rows under their owning archive, retains
+  an informative row when no safe indexed members are available, and avoids
+  scanning the whole JSON catalog on the GTK thread. `-v` logs request, result,
+  parent-row, and elapsed-time milestones for archive listing and preview.
 
 ## Release 0.9.0 - 2026-10-13
 

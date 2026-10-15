@@ -594,7 +594,8 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
         setTreeNodeVisible(store, fileIter, true, visibilityValue);
         if (file.hasArchive && store.iterNChildren(fileIter) == 0)
         {
-            auto archivePlaceholder = store.createIter(fileIter);
+            TreeIter archivePlaceholder;
+            store.append(archivePlaceholder, fileIter);
             store.setValue(archivePlaceholder, 0, "Load archive members...");
             store.setValue(archivePlaceholder, 1, "ArchivePlaceholder");
             store.setValue(archivePlaceholder, 2, "");
@@ -1647,23 +1648,28 @@ private void previewArchiveTreeMember(DocumentTab document, string memberPath,
     document.previewPathCheckPending = false;
     const auto sourcePath = document.filePath;
     const auto containerPath = document.archivePreviewContainerPath;
+    const auto catalogRows = document.loadedRows;
     string archivePassword;
     if (!isRepository && document.directSelectedRow.sourceBlob !is null)
         archivePassword = document.directSelectedRow.sourceBlob.archivePassword;
-    if (!isRepository && virtualPath.length > 0)
-    {
-        const auto storedPassword = jsonArchivePasswordForMemberContainer(
-            document.loadedRows, virtualPath);
-        if (storedPassword.length > 0)
-            archivePassword = storedPassword;
-    }
     document.detailPreviewTitle.setText("Extracting archive member...");
     document.detailPreviewSummary.setText(memberPath);
+    logLineVerbose("[archive-preview] request source=", sourcePath,
+        " repository=", isRepository, " member=", memberPath,
+        " reference=", memberIdentity, " virtual=", virtualPath);
     new Thread({
         AcquiredArchiveMemberPreview preview;
         string error;
+        auto started = MonoTime.currTime;
         try
         {
+            if (!isRepository && virtualPath.length > 0)
+            {
+                const auto storedPassword = jsonArchivePasswordForMemberContainer(
+                    catalogRows, virtualPath);
+                if (storedPassword.length > 0)
+                    archivePassword = storedPassword;
+            }
             if (isRepository)
                 preview = acquireRepositoryArchiveMemberPreview(sourcePath,
                     to!long(memberIdentity));
@@ -1684,6 +1690,10 @@ private void previewArchiveTreeMember(DocumentTab document, string memberPath,
         }
         catch (Exception ex)
             error = ex.msg;
+
+        logLineVerbose("[archive-preview] materialized member=", memberPath,
+            " error=", error, " elapsedMs=",
+            cast(long) (MonoTime.currTime - started).total!"msecs");
 
         scheduleUiIdle({
             if (requestId != document.archiveMemberPreviewRequestId
@@ -2919,10 +2929,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.directoryTreeStore.setValue(storeMarker, TREE_COL_NODE_ID,
                 markerNodeId);
 
-            auto catalogRows = document.loadedRows.dup;
+            logLineVerbose("[archive-tree] request source=", sourcePath,
+                " parentKind=", parentKind, " parent=", parentNodeId,
+                " path=", containerVirtualPath, " offset=", offset,
+                " repository=", repositorySource);
+            auto catalogRows = document.loadedRows;
             new Thread({
                 ArchiveMemberTreePage page;
                 string error;
+                auto started = MonoTime.currTime;
                 try
                 {
                     if (repositorySource)
@@ -2932,7 +2947,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                                 sourcePath, to!long(containerReferenceId), offset, 250);
                         else
                             page = loadRepositoryArchiveMemberTreePage(sourcePath,
-                                to!long(containerId), offset, 250);
+                                to!long(containerId), offset, 250,
+                                containerVirtualPath);
                     }
                     else
                         page = loadJsonArchiveMemberTreePage(containerVirtualPath,
@@ -2942,6 +2958,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 catch (Exception ex)
                     error = ex.msg;
 
+                logLineVerbose("[archive-tree] loaded parent=", parentNodeId,
+                    " offset=", offset, " entries=", page.entries.length,
+                    " hasMore=", page.hasMore, " error=", error,
+                    " elapsedMs=",
+                    cast(long) (MonoTime.currTime - started).total!"msecs");
+
                 scheduleUiIdle({
                     if (sourcePath != document.filePath)
                         return false;
@@ -2949,19 +2971,33 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     auto currentParent = new TreeIter();
                     if (!findTreeIterByValue(currentModel, new TreeIter(), false,
                             TREE_COL_NODE_ID, parentNodeId, currentParent))
+                    {
+                        logLineVerbose("[archive-tree] discard reply: parent not found node=",
+                            parentNodeId);
                         return false;
+                    }
                     auto currentParentStore = currentParent;
                     TreeIter currentMarkerStore;
                     if (!findTreeChildById(document.directoryTreeStore,
                             currentParentStore, markerNodeId, currentMarkerStore))
+                    {
+                        logLineVerbose("[archive-tree] discard reply: loading marker not found node=",
+                            markerNodeId, " parent=", parentNodeId);
                         return false;
+                    }
                     if (document.directoryTreeStore.getValueString(
                             currentMarkerStore, 1) != loadingKind)
                         return false;
+                    logLineVerbose("[archive-tree] applying parent=", parentNodeId,
+                        " label=", document.directoryTreeStore.getValueString(
+                            currentParentStore, 0), " childrenBefore=",
+                        document.directoryTreeStore.iterNChildren(currentParentStore),
+                        " entries=", page.entries.length);
                     document.directoryTreeStore.remove(currentMarkerStore);
                     if (error.length > 0)
                     {
-                        auto errorRow = document.directoryTreeStore.createIter(
+                        TreeIter errorRow;
+                        document.directoryTreeStore.append(errorRow,
                             currentParentStore);
                         document.directoryTreeStore.setValue(errorRow, 0,
                             "Failed to load archive members: " ~ error);
@@ -2979,7 +3015,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
                     foreach (entry; page.entries)
                     {
-                        auto member = document.directoryTreeStore.createIter(
+                        TreeIter member;
+                        document.directoryTreeStore.append(member,
                             currentParentStore);
                         auto memberNodeId = "ArchiveMember:" ~ entry.virtualPath;
                         document.directoryTreeStore.setValue(member, 0,
@@ -3011,8 +3048,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         setTreeNodeVisible(document.directoryTreeStore, member, true);
                         if (entry.hasArchive)
                         {
-                            auto childPlaceholder = document.directoryTreeStore.createIter(
-                                member);
+                            TreeIter childPlaceholder;
+                            document.directoryTreeStore.append(childPlaceholder, member);
                             document.directoryTreeStore.setValue(childPlaceholder, 0,
                                 "Load archive members...");
                             document.directoryTreeStore.setValue(childPlaceholder, 1,
@@ -3034,7 +3071,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     }
                     if (page.hasMore)
                     {
-                        auto more = document.directoryTreeStore.createIter(
+                        TreeIter more;
+                        document.directoryTreeStore.append(more,
                             currentParentStore);
                         const auto pageNodeId = "ArchivePage:" ~ parentNodeId
                             ~ ":" ~ page.nextOffset.to!string;
@@ -3058,6 +3096,31 @@ int runMainWindow(string[] args, ref CliOptions cli)
                             TREE_COL_SORT_SIZE, "");
                         setTreeNodeVisible(document.directoryTreeStore, more, true);
                     }
+                    else if (page.entries.length == 0 && offset == 0)
+                    {
+                        TreeIter emptyInfo;
+                        document.directoryTreeStore.append(emptyInfo,
+                            currentParentStore);
+                        document.directoryTreeStore.setValue(emptyInfo, 0,
+                            "No indexed safe members; scan this archive first.");
+                        document.directoryTreeStore.setValue(emptyInfo, 1,
+                            "ArchiveInfo");
+                        document.directoryTreeStore.setValue(emptyInfo, 3,
+                            parentNodeId);
+                        document.directoryTreeStore.setValue(emptyInfo,
+                            TREE_COL_NODE_ID, "ArchiveInfo:" ~ parentNodeId);
+                        document.directoryTreeStore.setValue(emptyInfo,
+                            TREE_COL_PROJECTION_INDEX,
+                            document.directoryTreeStore.getValueString(
+                                currentParentStore, TREE_COL_PROJECTION_INDEX));
+                        document.directoryTreeStore.setValue(emptyInfo,
+                            TREE_COL_SORT_SIZE, "");
+                        setTreeNodeVisible(document.directoryTreeStore, emptyInfo,
+                            true);
+                    }
+                    logLineVerbose("[archive-tree] applied parent=", parentNodeId,
+                        " childrenAfter=",
+                        document.directoryTreeStore.iterNChildren(currentParentStore));
                     return false;
                 });
             }).start();
