@@ -84,14 +84,17 @@ import gstreamer.c.types : GstState, GstStateChangeReturn;
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
 import model.datasource : SourceQuery, isRepositorySource, loadDocumentDetails,
-    AcquiredArchiveMemberPreview, acquireJsonArchiveMemberPreview,
+    AcquiredArchiveMemberPreview, ArchiveMemberTreeEntry, ArchiveMemberTreePage,
+    acquireJsonArchiveMemberPreview, acquireJsonVirtualArchiveMemberPreview,
     acquireRepositoryArchiveMemberPreview,
+    loadJsonArchiveMemberTreePage, loadNestedRepositoryArchiveMemberTreePage,
+    loadRepositoryArchiveMemberTreePage,
     loadDocumentCursorPage, loadDocumentPage, loadDocumentSource, loadRepositoryArchiveEntries,
     loadRepositoryTorrentFiles, openRepositoryDirectorySource,
     scanDocumentArchive, scanDocumentArchives, setDocumentArchivePassword;
 import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, FileCursor,
     FileFilter, FileNode, FilePage, FileSortOrder, NestedFileNode,
-    ProjectedDirectorySource, jsonFileNodeId;
+    ProjectedDirectorySource, isArchivePathCandidate, jsonFileNodeId;
 import ui.appstate : AppState, DocumentFilterState, TableSortState, TreeCursorState, loadAppState,
     saveAppState;
 import ui.builderutils : builderObject;
@@ -143,7 +146,8 @@ import ui.mainsources : UiMainSource, scheduleUiIdle, scheduleUiTimeout,
 import ui.virtualblobtable : VirtualBlobTableModel;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : filterRowsByText;
-import dosierarkivo.archive : ArchivePasswordCallback;
+import dosierarkivo.archive : ArchivePasswordCallback, appendArchiveVirtualPath,
+    escapeArchiveVirtualPath, ParsedArchiveVirtualPath, parseArchiveVirtualPath;
 import dosierarkivo.factory : fileArchive;
 import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, NamedBinaryBlob;
 import dosierskanilo.repository.types : MetadataSummary, RepositoryBlobFlags;
@@ -588,6 +592,23 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
             file.sourceIndex.to!string);
         store.setValue(fileIter, TREE_COL_SORT_SIZE, format("%020d", file.size));
         setTreeNodeVisible(store, fileIter, true, visibilityValue);
+        if (file.hasArchive && store.iterNChildren(fileIter) == 0)
+        {
+            auto archivePlaceholder = store.createIter(fileIter);
+            store.setValue(archivePlaceholder, 0, "Load archive members...");
+            store.setValue(archivePlaceholder, 1, "ArchivePlaceholder");
+            store.setValue(archivePlaceholder, 2, "");
+            store.setValue(archivePlaceholder, 3, file.id);
+            store.setValue(archivePlaceholder, 4, file.cursorId);
+            store.setValue(archivePlaceholder, 5, file.relativePath);
+            store.setValue(archivePlaceholder, 6, "0");
+            store.setValue(archivePlaceholder, TREE_COL_NODE_ID,
+                "ArchivePlaceholder:" ~ nodeId);
+            store.setValue(archivePlaceholder, TREE_COL_PROJECTION_INDEX,
+                file.sourceIndex.to!string);
+            store.setValue(archivePlaceholder, TREE_COL_SORT_SIZE, "");
+            setTreeNodeVisible(store, archivePlaceholder, true, visibilityValue);
+        }
     }
     if (sortedFileRows.length > fileLimit)
     {
@@ -1613,6 +1634,120 @@ string digestBase64ToHex(string digest)
     {
         return "<invalid base64>";
     }
+}
+
+/** Extract one selected archive member off the GTK thread and preview its lease. */
+private void previewArchiveTreeMember(DocumentTab document, string memberPath,
+    string memberIdentity, bool isRepository, string virtualPath = "")
+{
+    if (memberPath.length == 0)
+        return;
+    const auto requestId = ++document.archiveMemberPreviewRequestId;
+    ++document.previewPathRequestId;
+    document.previewPathCheckPending = false;
+    const auto sourcePath = document.filePath;
+    const auto containerPath = document.archivePreviewContainerPath;
+    string archivePassword;
+    if (!isRepository && document.directSelectedRow.sourceBlob !is null)
+        archivePassword = document.directSelectedRow.sourceBlob.archivePassword;
+    if (!isRepository && virtualPath.length > 0)
+    {
+        const auto storedPassword = jsonArchivePasswordForMemberContainer(
+            document.loadedRows, virtualPath);
+        if (storedPassword.length > 0)
+            archivePassword = storedPassword;
+    }
+    document.detailPreviewTitle.setText("Extracting archive member...");
+    document.detailPreviewSummary.setText(memberPath);
+    new Thread({
+        AcquiredArchiveMemberPreview preview;
+        string error;
+        try
+        {
+            if (isRepository)
+                preview = acquireRepositoryArchiveMemberPreview(sourcePath,
+                    to!long(memberIdentity));
+            else if (virtualPath.length > 0)
+                preview = acquireJsonVirtualArchiveMemberPreview(sourcePath,
+                    virtualPath, archivePassword);
+            else
+            {
+                size_t occurrence;
+                try
+                    occurrence = to!size_t(memberIdentity);
+                catch (Exception)
+                    occurrence = 0;
+                preview = acquireJsonArchiveMemberPreview(sourcePath,
+                    containerPath, memberPath,
+                    occurrence, archivePassword);
+            }
+        }
+        catch (Exception ex)
+            error = ex.msg;
+
+        scheduleUiIdle({
+            if (requestId != document.archiveMemberPreviewRequestId
+                || sourcePath != document.filePath)
+            {
+                if (preview.lease !is null)
+                    preview.lease.release();
+                return false;
+            }
+            if (error.length > 0 || preview.lease is null)
+            {
+                document.detailPreviewTitle.setText("Archive member unavailable");
+                document.detailPreviewSummary.setText(error.length > 0
+                    ? error : "The archive member could not be extracted.");
+                return false;
+            }
+
+            auto memberSize = preview.size;
+            if (memberSize == 0)
+            {
+                import std.file : getSize;
+                try
+                    memberSize = getSize(preview.lease.path);
+                catch (Exception)
+                {
+                }
+            }
+            auto previewBlob = new NamedBinaryBlob();
+            previewBlob.fileSize = cast(long) memberSize;
+            BlobRow previewRow;
+            previewRow.sourceBlob = previewBlob;
+            previewRow.primaryFileName = baseName(memberPath);
+            previewRow.fileSize = memberSize;
+            setMediaPreview(document, previewRow, preview.lease.path,
+                preview.lease, preview.virtualPath);
+            return false;
+        });
+    }).start();
+}
+
+private string jsonArchivePasswordForMemberContainer(const(BlobRow)[] rows,
+    string memberVirtualPath)
+{
+    ParsedArchiveVirtualPath parsed;
+    try
+        parsed = parseArchiveVirtualPath(memberVirtualPath);
+    catch (Exception)
+        return "";
+    if (!parsed.isVirtual)
+        return "";
+    auto containerPath = escapeArchiveVirtualPath(parsed.physicalPath);
+    foreach (layer; parsed.entries[0 .. $ - 1])
+        containerPath = appendArchiveVirtualPath(containerPath,
+            layer.relativePath,
+            layer.hasOccurrence ? layer.occurrence : size_t.max);
+    foreach (row; rows)
+    {
+        if (row.sourceBlob is null)
+            continue;
+        foreach (spec; row.sourceBlob.fileSpecs)
+            if (spec !is null && spec.fileName == containerPath)
+                return row.sourceBlob.archivePassword;
+    }
+    return "";
 }
 
 /** Program entry point.
@@ -2745,6 +2880,188 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 });
             }).start();
         };
+        void delegate(TreePath, size_t, TreePath) loadArchiveTreePage;
+        loadArchiveTreePage = (TreePath parentPath, size_t offset,
+                TreePath markerPath) {
+            auto model = document.directoryTreeView.getModel();
+            auto parent = new TreeIter();
+            auto marker = new TreeIter();
+            if (!model.getIter(parent, parentPath)
+                || !model.getIter(marker, markerPath))
+                return;
+            const auto parentKind = model.getValueString(parent, 1);
+            if (parentKind != "File" && parentKind != "ArchiveMember")
+                return;
+            const auto markerKind = model.getValueString(marker, 1);
+            if (offset == 0
+                ? markerKind != "ArchivePlaceholder" && markerKind != "ArchiveLoading"
+                : markerKind != "ArchivePage" && markerKind != "ArchiveLoadingPage")
+                return;
+
+            const auto parentNodeId = model.getValueString(parent,
+                TREE_COL_NODE_ID);
+            const auto containerId = model.getValueString(parent, 3);
+            const auto containerReferenceId = parentKind == "ArchiveMember"
+                ? model.getValueString(parent, 4)
+                : model.getValueString(parent, 6);
+            const auto containerVirtualPath = model.getValueString(parent, 5);
+            const auto repositorySource = document.directorySourceRemote;
+            const auto sourcePath = document.filePath;
+            const auto loadingKind = offset == 0
+                ? "ArchiveLoading" : "ArchiveLoadingPage";
+            const auto markerNodeId = "ArchiveLoading:" ~ (++document.nestedEntryRequestId)
+                .to!string;
+            auto storeParent = treeStoreIter(document, parent);
+            auto storeMarker = treeStoreIter(document, marker);
+            document.directoryTreeStore.setValue(storeMarker, 0, "Loading archive members...");
+            document.directoryTreeStore.setValue(storeMarker, 1, loadingKind);
+            document.directoryTreeStore.setValue(storeMarker, 3, parentNodeId);
+            document.directoryTreeStore.setValue(storeMarker, TREE_COL_NODE_ID,
+                markerNodeId);
+
+            auto catalogRows = document.loadedRows.dup;
+            new Thread({
+                ArchiveMemberTreePage page;
+                string error;
+                try
+                {
+                    if (repositorySource)
+                    {
+                        if (parentKind == "ArchiveMember")
+                            page = loadNestedRepositoryArchiveMemberTreePage(
+                                sourcePath, to!long(containerReferenceId), offset, 250);
+                        else
+                            page = loadRepositoryArchiveMemberTreePage(sourcePath,
+                                to!long(containerId), offset, 250);
+                    }
+                    else
+                        page = loadJsonArchiveMemberTreePage(containerVirtualPath,
+                            catalogRows, offset, 250,
+                            parentKind == "ArchiveMember");
+                }
+                catch (Exception ex)
+                    error = ex.msg;
+
+                scheduleUiIdle({
+                    if (sourcePath != document.filePath)
+                        return false;
+                    TreeModelIF currentModel = document.directoryTreeStore;
+                    auto currentParent = new TreeIter();
+                    if (!findTreeIterByValue(currentModel, new TreeIter(), false,
+                            TREE_COL_NODE_ID, parentNodeId, currentParent))
+                        return false;
+                    auto currentParentStore = currentParent;
+                    TreeIter currentMarkerStore;
+                    if (!findTreeChildById(document.directoryTreeStore,
+                            currentParentStore, markerNodeId, currentMarkerStore))
+                        return false;
+                    if (document.directoryTreeStore.getValueString(
+                            currentMarkerStore, 1) != loadingKind)
+                        return false;
+                    document.directoryTreeStore.remove(currentMarkerStore);
+                    if (error.length > 0)
+                    {
+                        auto errorRow = document.directoryTreeStore.createIter(
+                            currentParentStore);
+                        document.directoryTreeStore.setValue(errorRow, 0,
+                            "Failed to load archive members: " ~ error);
+                        document.directoryTreeStore.setValue(errorRow, 1, "Error");
+                        document.directoryTreeStore.setValue(errorRow, 3, parentNodeId);
+                        document.directoryTreeStore.setValue(errorRow,
+                            TREE_COL_NODE_ID, "ArchiveError:" ~ markerNodeId);
+                        document.directoryTreeStore.setValue(errorRow,
+                            TREE_COL_PROJECTION_INDEX,
+                            document.directoryTreeStore.getValueString(
+                                currentParentStore, TREE_COL_PROJECTION_INDEX));
+                        setTreeNodeVisible(document.directoryTreeStore, errorRow, true);
+                        return false;
+                    }
+
+                    foreach (entry; page.entries)
+                    {
+                        auto member = document.directoryTreeStore.createIter(
+                            currentParentStore);
+                        auto memberNodeId = "ArchiveMember:" ~ entry.virtualPath;
+                        document.directoryTreeStore.setValue(member, 0,
+                            entry.relativePath);
+                        document.directoryTreeStore.setValue(member, 1,
+                            "ArchiveMember");
+                        document.directoryTreeStore.setValue(member, 2,
+                            format("%s bytes", entry.size));
+                        document.directoryTreeStore.setValue(member, 3,
+                            entry.contentId);
+                        document.directoryTreeStore.setValue(member, 4,
+                            entry.referenceId);
+                        document.directoryTreeStore.setValue(member, 5,
+                            entry.virtualPath);
+                        document.directoryTreeStore.setValue(member, 6,
+                            entry.referenceId);
+                        document.directoryTreeStore.setValue(member, 7,
+                            entry.size.to!string);
+                        document.directoryTreeStore.setValue(member, 14,
+                            entry.hasArchive ? "1" : "0");
+                        document.directoryTreeStore.setValue(member,
+                            TREE_COL_NODE_ID, memberNodeId);
+                        document.directoryTreeStore.setValue(member,
+                            TREE_COL_PROJECTION_INDEX,
+                            document.directoryTreeStore.getValueString(
+                                currentParentStore, TREE_COL_PROJECTION_INDEX));
+                        document.directoryTreeStore.setValue(member,
+                            TREE_COL_SORT_SIZE, format("%020d", entry.size));
+                        setTreeNodeVisible(document.directoryTreeStore, member, true);
+                        if (entry.hasArchive)
+                        {
+                            auto childPlaceholder = document.directoryTreeStore.createIter(
+                                member);
+                            document.directoryTreeStore.setValue(childPlaceholder, 0,
+                                "Load archive members...");
+                            document.directoryTreeStore.setValue(childPlaceholder, 1,
+                                "ArchivePlaceholder");
+                            document.directoryTreeStore.setValue(childPlaceholder, 3,
+                                memberNodeId);
+                            document.directoryTreeStore.setValue(childPlaceholder,
+                                TREE_COL_NODE_ID,
+                                "ArchivePlaceholder:" ~ memberNodeId);
+                            document.directoryTreeStore.setValue(childPlaceholder,
+                                TREE_COL_PROJECTION_INDEX,
+                                document.directoryTreeStore.getValueString(member,
+                                    TREE_COL_PROJECTION_INDEX));
+                            document.directoryTreeStore.setValue(childPlaceholder,
+                                TREE_COL_SORT_SIZE, "");
+                            setTreeNodeVisible(document.directoryTreeStore,
+                                childPlaceholder, true);
+                        }
+                    }
+                    if (page.hasMore)
+                    {
+                        auto more = document.directoryTreeStore.createIter(
+                            currentParentStore);
+                        const auto pageNodeId = "ArchivePage:" ~ parentNodeId
+                            ~ ":" ~ page.nextOffset.to!string;
+                        document.directoryTreeStore.setValue(more, 0,
+                            "More archive members available...");
+                        document.directoryTreeStore.setValue(more, 1, "ArchivePage");
+                        document.directoryTreeStore.setValue(more, 3, parentNodeId);
+                        document.directoryTreeStore.setValue(more, 4,
+                            containerReferenceId);
+                        document.directoryTreeStore.setValue(more, 5,
+                            containerVirtualPath);
+                        document.directoryTreeStore.setValue(more, 6,
+                            page.nextOffset.to!string);
+                        document.directoryTreeStore.setValue(more,
+                            TREE_COL_NODE_ID, pageNodeId);
+                        document.directoryTreeStore.setValue(more,
+                            TREE_COL_PROJECTION_INDEX,
+                            document.directoryTreeStore.getValueString(
+                                currentParentStore, TREE_COL_PROJECTION_INDEX));
+                        document.directoryTreeStore.setValue(more,
+                            TREE_COL_SORT_SIZE, "");
+                        setTreeNodeVisible(document.directoryTreeStore, more, true);
+                    }
+                    return false;
+                });
+            }).start();
+        };
         loadExpandedTreePlaceholders = () {
             if (!document.directorySourceRemote)
                 return;
@@ -2761,6 +3078,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
             if (!model.iterChildren(child, iter))
                 return;
             auto childKind = model.getValueString(child, 1);
+            if (childKind == "ArchivePlaceholder")
+            {
+                loadArchiveTreePage(model.getPath(iter), 0, model.getPath(child));
+                return;
+            }
             if (childKind != "Placeholder" && childKind != "Loading")
                 return;
 
@@ -2812,6 +3134,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             if (!model.getIter(pageIter, path))
                 return;
             auto kind = model.getValueString(pageIter, 1);
+            if (kind == "ArchiveMember")
+                return;
             if (kind == "File")
             {
                 openKnownFileExternally(document, model.getValueString(pageIter, 5));
@@ -2820,6 +3144,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
             if (kind == "Directory")
             {
                 toggleDirectoryExpansion(treeView, path);
+                return;
+            }
+            if (kind == "ArchivePage")
+            {
+                TreeIter parentIter;
+                if (!model.iterParent(parentIter, pageIter))
+                    return;
+                size_t offset;
+                try
+                    offset = to!size_t(model.getValueString(pageIter, 6));
+                catch (Exception)
+                    return;
+                loadArchiveTreePage(model.getPath(parentIter), offset, path);
                 return;
             }
             if (kind != "Page")
@@ -2863,9 +3200,20 @@ int runMainWindow(string[] args, ref CliOptions cli)
             TreeIter treeIter;
             if (!document.directoryTreeView.getSelection().getSelected(model, treeIter))
                 return;
-            if (model.getValueString(treeIter, 1) != "File")
-                return;
             if (document.syncingTreeSelection)
+                return;
+            const auto kind = model.getValueString(treeIter, 1);
+            if (kind == "ArchiveMember")
+            {
+                auto memberPath = model.getValueString(treeIter, 0);
+                auto memberIdentity = model.getValueString(treeIter, 4);
+                auto virtualPath = model.getValueString(treeIter, 5);
+                previewArchiveTreeMember(document, memberPath, memberIdentity,
+                    document.directorySourceRemote,
+                    document.directorySourceRemote ? "" : virtualPath);
+                return;
+            }
+            if (kind != "File")
                 return;
 
             auto selectedId = model.getValueString(treeIter, 3);
@@ -2893,8 +3241,23 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         == selectedSourcePath;
                 foreach (spec; candidate.sourceBlob.fileSpecs)
                 {
-                    if (spec !is null && spec.fileName.length > 0
-                        && resolveKnownFilePath(document, spec.fileName) == selectedSourcePath)
+                    if (spec is null || spec.fileName.length == 0)
+                        continue;
+                    string referencePath = spec.fileName;
+                    if (candidate.sourceBlob.fileSpecsUseArchiveVirtualGrammar)
+                    {
+                        try
+                        {
+                            auto parsed = parseArchiveVirtualPath(referencePath);
+                            if (parsed.isVirtual)
+                                continue;
+                            referencePath = parsed.physicalPath;
+                        }
+                        catch (Exception)
+                            continue;
+                    }
+                    if (resolveKnownFilePath(document, referencePath)
+                        == selectedSourcePath)
                         return true;
                 }
                 return candidate.sourceBlob.fileSpecs.length == 0
@@ -3365,83 +3728,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             (string title, string text, DocumentTab doc) { copyTextToClipboard(title, text, doc); },
             (DocumentTab doc) { updateSelectedRowDetails(doc); },
             (DocumentTab doc, string memberPath, string memberIdentity) {
-                if (doc.archivePreviewContainerPath.length == 0)
-                    return;
-                const auto requestId = ++doc.archiveMemberPreviewRequestId;
-                ++doc.previewPathRequestId;
-                doc.previewPathCheckPending = false;
-                const auto sourcePath = doc.filePath;
-                const auto containerPath = doc.archivePreviewContainerPath;
-                const auto isRepository = doc.directorySourceRemote;
-                string archivePassword;
-                if (!isRepository && doc.directSelectedRow.sourceBlob !is null)
-                    archivePassword = doc.directSelectedRow.sourceBlob.archivePassword;
-                doc.detailPreviewTitle.setText("Extracting archive member...");
-                doc.detailPreviewSummary.setText(memberPath);
-                new Thread({
-                    AcquiredArchiveMemberPreview preview;
-                    string error;
-                    try
-                    {
-                        if (isRepository)
-                        {
-                            const auto fileReferenceId = to!long(memberIdentity);
-                            preview = acquireRepositoryArchiveMemberPreview(sourcePath,
-                                fileReferenceId);
-                        }
-                        else
-                        {
-                            size_t occurrence;
-                            try
-                                occurrence = to!size_t(memberIdentity);
-                            catch (Exception)
-                                occurrence = 0;
-                            preview = acquireJsonArchiveMemberPreview(sourcePath,
-                                containerPath, memberPath, occurrence,
-                                archivePassword);
-                        }
-                    }
-                    catch (Exception ex)
-                        error = ex.msg;
-
-                    scheduleUiIdle({
-                        if (requestId != doc.archiveMemberPreviewRequestId
-                            || sourcePath != doc.filePath
-                            || containerPath != doc.archivePreviewContainerPath)
-                        {
-                            if (preview.lease !is null)
-                                preview.lease.release();
-                            return false;
-                        }
-                        if (error.length > 0 || preview.lease is null)
-                        {
-                            doc.detailPreviewTitle.setText("Archive member unavailable");
-                            doc.detailPreviewSummary.setText(error.length > 0
-                                ? error : "The archive member could not be extracted.");
-                            return false;
-                        }
-
-                        auto memberSize = preview.size;
-                        if (memberSize == 0)
-                        {
-                            import std.file : getSize;
-                            try
-                                memberSize = getSize(preview.lease.path);
-                            catch (Exception)
-                            {
-                            }
-                        }
-                        auto previewBlob = new NamedBinaryBlob();
-                        previewBlob.fileSize = cast(long) memberSize;
-                        BlobRow previewRow;
-                        previewRow.sourceBlob = previewBlob;
-                        previewRow.primaryFileName = baseName(memberPath);
-                        previewRow.fileSize = memberSize;
-                        setMediaPreview(doc, previewRow, preview.lease.path,
-                            preview.lease, preview.virtualPath);
-                        return false;
-                    });
-                }).start();
+                previewArchiveTreeMember(doc, memberPath, memberIdentity,
+                    doc.directorySourceRemote);
             }
         ));
 

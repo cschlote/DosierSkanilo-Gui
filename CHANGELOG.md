@@ -8,6 +8,9 @@ All notable changes to this project are documented in this file.
   backend's shared leased cache and sends it to the normal image, audio, video,
   text, or fallback previewer. Duplicate occurrence identity is preserved;
   preview cache files are released when the preview changes or its tab closes.
+- The main Directory Tree now keeps virtual member paths out of physical
+  directories and lazily expands archive files into paged member rows, including
+  nested archives. Selecting an expanded member uses the same cached preview.
 
 ## Release 0.9.0 - 2026-10-13
 

@@ -676,7 +676,20 @@ private string resolvePreviewPath(DocumentTab document, const(BlobRow) row)
         {
             if (spec is null || spec.fileName.length == 0)
                 continue;
-            if (resolveDocumentSourcePath(document.filePath, spec.fileName,
+            string referencePath = spec.fileName;
+            if (row.sourceBlob.fileSpecsUseArchiveVirtualGrammar)
+            {
+                try
+                {
+                    auto parsed = parseArchiveVirtualPath(referencePath);
+                    if (parsed.isVirtual)
+                        continue;
+                    referencePath = parsed.physicalPath;
+                }
+                catch (Exception)
+                    continue;
+            }
+            if (resolveDocumentSourcePath(document.filePath, referencePath,
                     repositoryRoot) == resolvedSelection)
                 return resolvedSelection;
         }
@@ -689,8 +702,21 @@ private string resolvePreviewPath(DocumentTab document, const(BlobRow) row)
             continue;
         }
 
+        string referencePath = spec.fileName;
+        if (row.sourceBlob.fileSpecsUseArchiveVirtualGrammar)
+        {
+            try
+            {
+                auto parsed = parseArchiveVirtualPath(referencePath);
+                if (parsed.isVirtual)
+                    continue;
+                referencePath = parsed.physicalPath;
+            }
+            catch (Exception)
+                continue;
+        }
         auto candidatePath = resolveDocumentSourcePath(document.filePath,
-            spec.fileName, repositoryRoot);
+            referencePath, repositoryRoot);
         return candidatePath;
     }
 

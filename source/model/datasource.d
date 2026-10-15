@@ -11,6 +11,8 @@ import std.string : empty;
 
 import dosierarkivo.archive : ArchiveEntryDescriptor, ArchivePasswordCallback,
     ArchivePasswordCancelledException, appendArchiveVirtualPath,
+    escapeArchiveVirtualPath, normalizeArchiveEntryPath,
+    ParsedArchiveVirtualPath,
     parseArchiveVirtualPath;
 import dosierarkivo.factory : fileArchive;
 import dosierskanilo;
@@ -20,6 +22,7 @@ import dosierskanilo.membercontentcache : MemberContentLease,
 import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob,
     DATA_CLASS_VERSION3, NamedBinaryBlobCatalog, deserializeDataClassJsonFile,
     updateArchives;
+import model.blobrow : BlobRow;
 import dosierskanilo.service.storageio : writeStorageJsonFile;
 import dosierskanilo.operationlease : TargetCatalogReplacementLease,
     TargetReadLease, TargetWriteLease;
@@ -27,7 +30,7 @@ import dosierskanilo.operations : OperationTarget;
 import ui.contextpaths : resolveDocumentSourcePath;
 import model.treeprojection : DirectoryNode, DirectorySource, FileCursor, FileFilter, FileInput, FileNode,
     FilePage, FileSortOrder, NestedFileNode, DirectoryTree, ProjectedDirectorySource,
-    buildDirectoryTree;
+    buildDirectoryTree, isArchivePathCandidate;
 
 /** One bounded source result page. */
 struct SourcePage
@@ -38,6 +41,26 @@ struct SourcePage
     size_t offset;
     size_t total;
     long nextBlobId;
+    bool hasMore;
+}
+
+/** One lazy archive member projected into the main Directory Tree. */
+struct ArchiveMemberTreeEntry
+{
+    string referenceId;
+    string contentId;
+    string name;
+    string relativePath;
+    string virtualPath;
+    ulong size;
+    bool hasArchive;
+}
+
+/** Bounded archive-member page and continuation position. */
+struct ArchiveMemberTreePage
+{
+    ArchiveMemberTreeEntry[] entries;
+    size_t nextOffset;
     bool hasMore;
 }
 
@@ -82,7 +105,22 @@ DirectoryTree loadDocumentTree(string path)
         foreach (spec; blob.fileSpecs)
         {
             if (spec !is null && spec.fileName.length > 0)
-                inputs ~= FileInput(spec.fileName, cast(ulong) blob.fileSize);
+            {
+                auto physicalPath = spec.fileName;
+                if (blob.fileSpecsUseArchiveVirtualGrammar)
+                {
+                    auto parsed = parseArchiveVirtualPath(physicalPath);
+                    if (parsed.isVirtual)
+                        continue;
+                    physicalPath = parsed.physicalPath;
+                }
+                FileInput input;
+                input.path = physicalPath;
+                input.size = cast(ulong) blob.fileSize;
+                input.hasArchive = blob.archiveSpecs.length > 0
+                    || isArchivePathCandidate(physicalPath);
+                inputs ~= input;
+            }
         }
         if (blob.fileSpecs.length == 0 && blob.getFirstFileName.length > 0)
             inputs ~= FileInput(blob.getFirstFileName, cast(ulong) blob.fileSize);
@@ -174,7 +212,7 @@ final class RepositoryDirectorySource : DirectorySource
             node.hasAudio = file.hasAudio;
             node.hasImage = file.hasImage;
             node.hasText = file.hasText;
-            node.hasArchive = file.hasArchive;
+            node.hasArchive = file.hasArchive || isArchivePathCandidate(file.name);
             node.hasTorrent = file.hasTorrent;
             result ~= node;
         }
@@ -211,7 +249,7 @@ final class RepositoryDirectorySource : DirectorySource
             node.hasAudio = file.hasAudio;
             node.hasImage = file.hasImage;
             node.hasText = file.hasText;
-            node.hasArchive = file.hasArchive;
+            node.hasArchive = file.hasArchive || isArchivePathCandidate(file.name);
             node.hasTorrent = file.hasTorrent;
             result.files ~= node;
         }
@@ -263,7 +301,7 @@ final class RepositoryDirectorySource : DirectorySource
             node.hasAudio = file.hasAudio;
             node.hasImage = file.hasImage;
             node.hasText = file.hasText;
-            node.hasArchive = file.hasArchive;
+            node.hasArchive = file.hasArchive || isArchivePathCandidate(file.name);
             node.hasTorrent = file.hasTorrent;
             result.files ~= node;
         }
@@ -314,7 +352,7 @@ final class RepositoryDirectorySource : DirectorySource
             node.hasAudio = file.hasAudio;
             node.hasImage = file.hasImage;
             node.hasText = file.hasText;
-            node.hasArchive = file.hasArchive;
+            node.hasArchive = file.hasArchive || isArchivePathCandidate(file.name);
             node.hasTorrent = file.hasTorrent;
             result.files ~= node;
         }
@@ -363,6 +401,194 @@ NestedFileNode[] loadRepositoryArchiveEntries(string path, long blobId,
     return result;
 }
 
+/** Load a bounded page of repository archive members for a container blob. */
+ArchiveMemberTreePage loadRepositoryArchiveMemberTreePage(string path,
+    long containerBlobId, size_t offset = 0, size_t limit = 250)
+{
+    auto repository = Repository.open(path);
+    scope (exit)
+        repository.close();
+    return repositoryArchiveMemberTreePage(repository, containerBlobId,
+        offset, limit);
+}
+
+/** Load a bounded page of members from a nested repository archive reference. */
+ArchiveMemberTreePage loadNestedRepositoryArchiveMemberTreePage(string path,
+    long containerReferenceId, size_t offset = 0, size_t limit = 250)
+{
+    auto repository = Repository.open(path);
+    scope (exit)
+        repository.close();
+    auto container = repository.fileReference(containerReferenceId);
+    enforce(container.id > 0 && container.archiveMember,
+        "The selected repository reference is not an archive member.");
+    return repositoryArchiveMemberTreePage(repository, container.blobId,
+        offset, limit);
+}
+
+private ArchiveMemberTreePage repositoryArchiveMemberTreePage(
+    Repository repository, long containerBlobId, size_t offset, size_t limit)
+{
+    enforce(limit > 0, "Archive-member page size must be greater than zero.");
+    RepositoryArchiveQuery query;
+    query.blobId = containerBlobId;
+    query.offset = offset;
+    query.limit = limit + 1;
+    ArchiveMemberTreePage page;
+    foreach (entry; repository.listArchiveEntries(query))
+    {
+        auto file = repository.fileReference(entry.id);
+        if (file.id <= 0)
+            continue;
+        ArchiveMemberTreeEntry node;
+        node.referenceId = file.id.to!string;
+        node.contentId = file.blobId.to!string;
+        node.name = entry.name;
+        node.relativePath = entry.relativePath;
+        node.virtualPath = file.relativePath;
+        node.size = file.size;
+        node.hasArchive = repository.hasArchiveIndex(file.blobId)
+            || isArchivePathCandidate(file.name);
+        page.entries ~= node;
+    }
+    if (page.entries.length > limit)
+    {
+        page.entries = page.entries[0 .. limit];
+        page.hasMore = true;
+    }
+    page.nextOffset = offset + page.entries.length;
+    return page;
+}
+
+/** Load a bounded page of JSON-v5 virtual members for one archive reference. */
+ArchiveMemberTreePage loadJsonArchiveMemberTreePage(string containerVirtualPath,
+    const(BlobRow)[] catalogRows, size_t offset = 0, size_t limit = 250,
+    bool containerIsVirtual = false)
+{
+    enforce(limit > 0, "Archive-member page size must be greater than zero.");
+    ParsedArchiveVirtualPath container;
+    if (containerIsVirtual)
+        container = parseArchiveVirtualPath(containerVirtualPath);
+    else
+        container.physicalPath = containerVirtualPath;
+    ArchiveMemberTreeEntry[] allEntries;
+    ArchiveMemberTreePage page;
+    bool[string] seenPaths;
+    foreach (row; catalogRows)
+    {
+        if (row.sourceBlob is null)
+            continue;
+        foreach (spec; row.sourceBlob.fileSpecs)
+        {
+            if (spec is null || spec.fileName.length == 0)
+                continue;
+            ParsedArchiveVirtualPath parsed;
+            try
+                parsed = parseArchiveVirtualPath(spec.fileName);
+            catch (Exception)
+                continue;
+            if (!isDirectArchiveChild(container, parsed))
+                continue;
+            if (spec.fileName in seenPaths)
+                continue;
+            seenPaths[spec.fileName] = true;
+            const auto layer = parsed.entries[$ - 1];
+            ArchiveMemberTreeEntry member;
+            member.referenceId = spec.fileName;
+            member.contentId = row.sourceId >= 0 ? row.sourceId.to!string : "";
+            member.name = layer.relativePath;
+            member.relativePath = layer.relativePath;
+            member.virtualPath = spec.fileName;
+            member.size = row.fileSize;
+            member.hasArchive = row.hasArchive
+                || isArchivePathCandidate(layer.relativePath);
+            allEntries ~= member;
+        }
+    }
+
+    if (allEntries.length == 0 && !container.isVirtual)
+    {
+        foreach (row; catalogRows)
+        {
+            if (row.sourceBlob is null)
+                continue;
+            bool ownsContainer;
+            foreach (spec; row.sourceBlob.fileSpecs)
+            {
+                if (spec is null || spec.fileName.length == 0)
+                    continue;
+                try
+                {
+                    auto parsedSpec = parseArchiveVirtualPath(spec.fileName);
+                    if (!parsedSpec.isVirtual
+                        && parsedSpec.physicalPath == container.physicalPath)
+                    {
+                        ownsContainer = true;
+                        break;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+            if (!ownsContainer)
+                continue;
+            foreach (entry; row.sourceBlob.archiveSpecs)
+            {
+                if (entry is null || entry.fileName.length == 0)
+                    continue;
+                bool safe;
+                bool isDirectory;
+                const auto normalized = normalizeArchiveEntryPath(entry.fileName,
+                    safe, isDirectory);
+                if (!safe || isDirectory || normalized != entry.fileName)
+                    continue;
+                ArchiveMemberTreeEntry member;
+                member.referenceId = entry.occurrence.to!string;
+                member.name = entry.fileName;
+                member.relativePath = entry.fileName;
+                const auto encodedContainerPath = containerIsVirtual
+                    ? containerVirtualPath
+                    : escapeArchiveVirtualPath(container.physicalPath);
+                member.virtualPath = appendArchiveVirtualPath(
+                    encodedContainerPath, entry.fileName, entry.occurrence);
+                member.size = entry.fileSize;
+                member.hasArchive = isArchivePathCandidate(entry.fileName);
+                allEntries ~= member;
+            }
+            break;
+        }
+    }
+
+    auto start = offset < allEntries.length ? offset : allEntries.length;
+    auto count = allEntries.length - start;
+    if (count > limit)
+    {
+        count = limit;
+        page.hasMore = true;
+    }
+    page.entries = allEntries[start .. start + count].dup;
+    page.nextOffset = offset + count;
+    return page;
+}
+
+private bool isDirectArchiveChild(ParsedArchiveVirtualPath container,
+    ParsedArchiveVirtualPath candidate)
+{
+    if (!candidate.isVirtual || candidate.physicalPath != container.physicalPath
+        || candidate.entries.length != container.entries.length + 1)
+        return false;
+    foreach (index, layer; container.entries)
+    {
+        const auto candidateLayer = candidate.entries[index];
+        if (candidateLayer.relativePath != layer.relativePath
+            || candidateLayer.occurrence != layer.occurrence
+            || candidateLayer.hasOccurrence != layer.hasOccurrence)
+            return false;
+    }
+    return true;
+}
+
 /** Acquire one repository archive member into the shared preview cache. */
 AcquiredArchiveMemberPreview acquireRepositoryArchiveMemberPreview(string path,
     long fileReferenceId)
@@ -404,12 +630,31 @@ AcquiredArchiveMemberPreview acquireJsonArchiveMemberPreview(string documentPath
     auto physicalContainer = isAbsolute(containerPath)
         ? absolutePath(containerPath)
         : resolveDocumentSourcePath(documentPath, containerPath);
-    auto virtualPath = appendArchiveVirtualPath(physicalContainer, memberPath,
-        occurrence);
+    auto virtualPath = appendArchiveVirtualPath(
+        escapeArchiveVirtualPath(physicalContainer), memberPath, occurrence);
+    return acquireJsonVirtualArchiveMemberPreview(documentPath, virtualPath,
+        password);
+}
+
+/** Acquire a JSON-v5 archive member by its complete virtual path. */
+AcquiredArchiveMemberPreview acquireJsonVirtualArchiveMemberPreview(
+    string documentPath, string virtualPath, string password = "")
+{
+    auto logicalVirtualPath = virtualPath;
+    auto parsed = parseArchiveVirtualPath(virtualPath);
+    if (!isAbsolute(parsed.physicalPath))
+    {
+        virtualPath = escapeArchiveVirtualPath(resolveDocumentSourcePath(
+            documentPath, parsed.physicalPath));
+        foreach (layer; parsed.entries)
+            virtualPath = appendArchiveVirtualPath(virtualPath,
+                layer.relativePath,
+                layer.hasOccurrence ? layer.occurrence : size_t.max);
+    }
     AcquiredArchiveMemberPreview preview;
     preview.lease = acquireVirtualArchiveMember("", virtualPath,
         "json:" ~ absolutePath(documentPath), 0, password);
-    preview.virtualPath = virtualPath;
+    preview.virtualPath = logicalVirtualPath;
     import std.file : getSize;
     preview.size = getSize(preview.lease.path);
     return preview;
@@ -1130,6 +1375,11 @@ unittest
     assert(memberPreview.virtualPath.canFind("!/payload.txt"));
     assert(memberPreview.size == "archive payload\n".length);
     assert(readText(memberPreview.lease.path) == "archive payload\n");
+    auto memberTreePage = loadRepositoryArchiveMemberTreePage(root,
+        archiveFile.blobId);
+    assert(memberTreePage.entries.length == 1);
+    assert(memberTreePage.entries[0].referenceId == archiveMembers[0].id);
+    assert(memberTreePage.entries[0].virtualPath.canFind("!/payload.txt"));
 
     auto torrentDetails = loadDocumentDetails(root, torrentFile.blobId);
     assert(torrentDetails !is null && torrentDetails.torrentInfo !is null);
@@ -1310,7 +1560,7 @@ unittest
         if (exists(root))
             rmdirRecurse(root);
 
-    auto archivePath = buildPath(root, "bundle.zip");
+    auto archivePath = buildPath(root, "bundle!.zip");
     const auto createArchive = "import sys, zipfile; z=zipfile.ZipFile(sys.argv[1], 'w'); "
         ~ "z.writestr('preview.txt', 'first occurrence\\n'); "
         ~ "z.writestr('preview.txt', 'second occurrence\\n'); z.close()";
@@ -1330,12 +1580,59 @@ unittest
         if (secondPreview.lease !is null)
             secondPreview.lease.release();
 
-    assert(firstPreview.virtualPath == archivePath ~ "!/preview.txt!~0");
-    assert(secondPreview.virtualPath == archivePath ~ "!/preview.txt!~1");
+    const auto encodedArchivePath = escapeArchiveVirtualPath(archivePath);
+    assert(firstPreview.virtualPath == encodedArchivePath ~ "!/preview.txt!~0");
+    assert(secondPreview.virtualPath == encodedArchivePath ~ "!/preview.txt!~1");
     assert(firstPreview.size == "first occurrence\n".length);
     assert(secondPreview.size == "second occurrence\n".length);
     assert(readText(firstPreview.lease.path) == "first occurrence\n");
     assert(readText(secondPreview.lease.path) == "second occurrence\n");
     assert(firstPreview.lease.path != secondPreview.lease.path);
     assert(firstPreview.lease.path != archivePath);
+}
+
+@("JSON archive member tree pages preserve duplicate virtual identities")
+unittest
+{
+    import dosierarkivo.archive : appendArchiveVirtualPath;
+    import dosierskanilo.model.filespec : FileSpec;
+    import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob;
+
+    auto archiveBlob = new NamedBinaryBlob();
+    archiveBlob.fileSpecsUseArchiveVirtualGrammar = true;
+    archiveBlob.fileSpecs = [new FileSpec("archives/bundle!!.zip", "")];
+    BlobRow archiveRow;
+    archiveRow.sourceBlob = archiveBlob;
+
+    BlobRow first;
+    first.sourceBlob = new NamedBinaryBlob();
+    first.sourceBlob.fileSpecsUseArchiveVirtualGrammar = true;
+    first.sourceBlob.fileSpecs = [new FileSpec(appendArchiveVirtualPath(
+        "archives/bundle!!.zip", "same.txt", 0), "")];
+    first.fileSize = 5;
+    BlobRow second;
+    second.sourceBlob = new NamedBinaryBlob();
+    second.sourceBlob.fileSpecsUseArchiveVirtualGrammar = true;
+    second.sourceBlob.fileSpecs = [new FileSpec(appendArchiveVirtualPath(
+        "archives/bundle!!.zip", "same.txt", 1), "")];
+    second.fileSize = 6;
+    BlobRow nested;
+    nested.sourceBlob = new NamedBinaryBlob();
+    nested.sourceBlob.fileSpecsUseArchiveVirtualGrammar = true;
+    nested.sourceBlob.fileSpecs = [new FileSpec(
+        "archives/bundle!!.zip!/inner.zip!/deep.txt", "")];
+    nested.fileSize = 9;
+
+    auto firstPage = loadJsonArchiveMemberTreePage("archives/bundle!.zip",
+        [archiveRow, first, second, nested], 0, 1);
+    assert(firstPage.entries.length == 1);
+    assert(firstPage.hasMore);
+    assert(firstPage.entries[0].virtualPath
+        == "archives/bundle!!.zip!/same.txt!~0");
+    auto secondPage = loadJsonArchiveMemberTreePage("archives/bundle!.zip",
+        [archiveRow, first, second, nested], firstPage.nextOffset, 1);
+    assert(secondPage.entries.length == 1);
+    assert(!secondPage.hasMore);
+    assert(secondPage.entries[0].virtualPath
+        == "archives/bundle!!.zip!/same.txt!~1");
 }

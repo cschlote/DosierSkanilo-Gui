@@ -383,19 +383,21 @@ with its catalog or repository. Blank password input in the manager removes the
 mapping. The current implementation stores passwords as plain text, as agreed
 for this feature.
 
-## Archive Member Tree, Extraction, and Cache (Planned)
+## Archive Member Tree, Extraction, and Cache
 
 Archive Preview leaf selection now extracts through the shared leased cache and
 uses the regular media/text/fallback preview pipeline. The logical reference
 stays virtual, while the cache lease pins the temporary preview file for the
-active document. Main directory-tree expansion, recursive UI listing, cache
-preferences, and prefetch remain planned.
+active document. The main Directory Tree also expands physical archive rows
+lazily, pages member rows, and supports nested archive rows without projecting
+virtual member paths as ordinary directories. Cache preferences and prefetch
+remain planned.
 
-The archive file remains the TreeView file row and is expandable when
-`hasArchive` is true. Expansion lists safe member rows lazily; it does not unpack
-the whole archive. Selecting a member extracts it through the shared cache and
-passes the cached path to the existing preview pipeline. Nested archives use the
-same flow recursively.
+The archive file remains the TreeView file row and is expandable when it has an
+archive index or a recognized archive extension. Expansion lists safe member
+rows lazily; it does not unpack the whole archive. Selecting a member extracts it
+through the shared cache and passes the cached path to the existing preview
+pipeline. Nested archives use the same flow recursively.
 
 Virtual reference paths use `!/` between archive layers, `!!` for a literal
 exclamation mark, and `!~N` for zero-based duplicate-name occurrences. Tree
@@ -416,13 +418,14 @@ selected by choosing a RAM-disk path.
 
 ### GUI work packages
 
-- **Archive-tree expansion:** add loading rows to archive file nodes, page safe
-  members into the same TreeStore, preserve duplicate occurrences, and make
-  nested archive members expandable. Keep entry listing separate from extraction.
-- **Selected-member extraction/preview:** resolve the structured locator chain,
-  extract to the shared cache off the GTK thread, and feed the cached file to the
-  existing image/audio/video/text/fallback previewers. The logical selected path
-  remains virtual; external preview paths are cache paths only.
+- **Archive-tree expansion (implemented):** loading rows page safe members into
+  the same TreeStore, preserve duplicate occurrences, and allow nested archive
+  members to expand. Entry listing remains separate from extraction.
+- **Selected-member extraction/preview (implemented):** resolve the virtual
+  reference chain, extract to the shared cache off the GTK thread, and feed the
+  cached file to the existing image/audio/video/text/fallback previewers. The
+  logical selected path remains virtual; external preview paths are cache paths
+  only.
 - **Cache preferences/lifecycle:** configure the cache base and maximum size,
   default prefetch off, coalesce repeated requests, pin files used by previews,
   stop previews and cancel/join workers before shutdown cleanup, and sweep only

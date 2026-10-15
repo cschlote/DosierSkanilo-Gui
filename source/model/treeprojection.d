@@ -5,6 +5,7 @@ import std.algorithm : any, canFind, filter, sort;
 import std.array : appender, array;
 import std.conv : to;
 import std.path : baseName, dirName, buildNormalizedPath;
+import std.path : extension;
 import std.string : toLower;
 
 /** Read-only directory node exposed to the GUI. */
@@ -477,6 +478,28 @@ struct FileInput
     bool hasTorrent;
     /// Stable source-reference identity; falls back to the input ordinal.
     string id;
+}
+
+/** Whether a filename commonly denotes an archive supported by DosierArkivo. */
+bool isArchivePathCandidate(string path)
+{
+    switch (extension(path.toLower))
+    {
+    case ".zip", ".rar", ".7z", ".tar", ".gz", ".bz2", ".xz", ".tgz",
+            ".tbz", ".tbz2", ".txz", ".lz", ".lzma", ".zst", ".cab",
+            ".cpio", ".jar", ".war", ".ear", ".apk":
+        return true;
+    default:
+        return false;
+    }
+}
+
+@("archive path candidates cover the supported container extensions")
+unittest
+{
+    assert(isArchivePathCandidate("bundle.zip"));
+    assert(isArchivePathCandidate("nested/archive.tar.gz"));
+    assert(!isArchivePathCandidate("notes.txt"));
 }
 
 /** Stable identity for one JSON file reference, independent of filtered order. */

@@ -136,9 +136,11 @@ Die Auswahl eines Datei-Blatts extrahiert den Member über den gemeinsamen
 Backend-Cache und leitet den Cache-Pfad an den normalen Previewer weiter. Die
 virtuelle Referenz bleibt der logische Pfad; der Cache-Pfad wird nicht in den
 Katalog geschrieben. Die Preview-Lease bleibt bis zum Wechseln des Previews oder
-Schließen des Tabs aktiv. Die Hauptansicht expandiert Archivdateien noch nicht;
-die vollständige TreeView-Integration und Cache-Einstellungen bleiben Teil von
-WP-13.5.
+Schließen des Tabs aktiv. Der Haupt-Verzeichnisbaum zeigt virtuelle Member nicht
+als physische Verzeichnisse an; Archivdateien lassen sich dort ebenfalls lazy
+und paginiert expandieren. Archiv-Member, die selbst Archive sind, können im
+gleichen Baum weiter expandiert werden. Cache-Einstellungen und Prefetch bleiben
+Teil von WP-13.5.
 
 - `BlobRow`
   - `id` (lokal)
