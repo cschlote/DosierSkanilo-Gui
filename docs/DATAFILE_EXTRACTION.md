@@ -129,12 +129,16 @@ Projektionen in `source/model/treeprojection.d`; `DirectorySource` adaptiert
 JSON- und Repository-Abfragen. Diese Typen sind Anzeigeprojektionen, nicht der
 persistente Datenmodell-Owner.
 
-Archivmitglieder erscheinen derzeit in verschachtelten Vorschau-Bäumen aus den
-gespeicherten `archiveSpecs`/Repository-Archiveinträgen. Die Hauptansicht kann
-Archivdateien noch nicht expandieren; ausgewählte Member werden noch nicht über
-einen gemeinsamen Extraktionscache in die normalen Previewer geleitet. WP-13.5
-definiert virtuelle FileSpec-Pfade, Content-Blob-Verknüpfungen und
-sessiongebundene Cache-Regeln.
+Archivmitglieder erscheinen in einem paginierten Archive-Preview-Baum aus den
+gespeicherten Legacy-`archiveSpecs` bzw. den virtuellen JSON-v5- und
+Repository-Dateireferenzen.
+Die Auswahl eines Datei-Blatts extrahiert den Member über den gemeinsamen
+Backend-Cache und leitet den Cache-Pfad an den normalen Previewer weiter. Die
+virtuelle Referenz bleibt der logische Pfad; der Cache-Pfad wird nicht in den
+Katalog geschrieben. Die Preview-Lease bleibt bis zum Wechseln des Previews oder
+Schließen des Tabs aktiv. Die Hauptansicht expandiert Archivdateien noch nicht;
+die vollständige TreeView-Integration und Cache-Einstellungen bleiben Teil von
+WP-13.5.
 
 - `BlobRow`
   - `id` (lokal)

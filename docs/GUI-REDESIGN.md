@@ -385,6 +385,12 @@ for this feature.
 
 ## Archive Member Tree, Extraction, and Cache (Planned)
 
+Archive Preview leaf selection now extracts through the shared leased cache and
+uses the regular media/text/fallback preview pipeline. The logical reference
+stays virtual, while the cache lease pins the temporary preview file for the
+active document. Main directory-tree expansion, recursive UI listing, cache
+preferences, and prefetch remain planned.
+
 The archive file remains the TreeView file row and is expandable when
 `hasArchive` is true. Expansion lists safe member rows lazily; it does not unpack
 the whole archive. Selecting a member extracts it through the shared cache and

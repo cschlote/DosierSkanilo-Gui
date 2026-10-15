@@ -40,6 +40,8 @@ import gstinterfaces.VideoOverlay;
 import pango.c.types : PangoEllipsizeMode;
 
 import dosierskanilo.repository.repository : Repository;
+import dosierskanilo.membercontentcache : MemberContentLease;
+import dosierarkivo.archive : parseArchiveVirtualPath;
 import va_toolbox.hexdumps : toPrettyHexDump;
 import std.algorithm.searching : canFind;
 import std.conv : to;
@@ -258,6 +260,7 @@ string torrentMetadataSummary(const(BlobRow) row)
 
 import dosierskanilo.metadata.mediainfosig : MediaInfoAudio, MediaInfoSig, MediaInfoText, MediaInfoVideo;
 import model.blobrow : BlobRow;
+import model.treeprojection : NestedFileNode;
 import ui.documenttab : DocumentTab, PreviewScaleMode;
 import ui.contextpaths : resolveDocumentSourcePath;
 import ui.fallbackrenderer : fallbackDetailRows;
@@ -446,7 +449,7 @@ void setKnownFilesTable(DocumentTab document, const(BlobRow) row)
 }
 
 private void appendNestedPath(TreeStore store, string path, string sizeText,
-    ref TreeIter[string] directories)
+    ref TreeIter[string] directories, string identity = "")
 {
     import std.string : replace;
     auto normalized = path.replace('\\', '/');
@@ -483,6 +486,7 @@ private void appendNestedPath(TreeStore store, string path, string sizeText,
     store.setValue(fileIter, 1, sizeText);
     store.setValue(fileIter, 2, normalized);
     store.setValue(fileIter, 3, "File");
+    store.setValue(fileIter, 5, identity);
 }
 
 private void populateArchiveEntryTree(DocumentTab document, const(BlobRow) row)
@@ -506,16 +510,117 @@ private void populateArchiveEntryTree(DocumentTab document, const(BlobRow) row)
     TreeIter[string] directories;
     if (row.sourceBlob !is null)
     {
-        foreach (entry; row.sourceBlob.archiveSpecs)
+        if (row.sourceBlob.archiveSpecs.length > 0)
         {
-            if (entry !is null && entry.fileName.length > 0)
+            foreach (entry; row.sourceBlob.archiveSpecs)
             {
-                appendNestedPath(document.detailArchiveTreeStore, entry.fileName,
-                    format("%s bytes", entry.fileSize), directories);
+                if (entry !is null && entry.fileName.length > 0)
+                {
+                    appendNestedPath(document.detailArchiveTreeStore, entry.fileName,
+                        format("%s bytes", entry.fileSize), directories,
+                        entry.occurrence.to!string);
+                }
+            }
+        }
+        else
+            populateVirtualArchiveMembers(document, row, directories);
+    }
+    document.detailArchiveTreeView.setVisible(document.detailArchiveTreeStore.iterNChildren(null) > 0);
+}
+
+private void populateVirtualArchiveMembers(DocumentTab document,
+    const(BlobRow) row, ref TreeIter[string] directories)
+{
+    foreach (member; virtualArchiveMembers(row, document.loadedRows))
+        appendNestedPath(document.detailArchiveTreeStore, member.relativePath,
+            format("%s bytes", member.size), directories, member.id);
+}
+
+/** Project direct virtual archive-member references for one JSON container row. */
+NestedFileNode[] virtualArchiveMembers(const(BlobRow) row,
+    const(BlobRow)[] catalogRows)
+{
+    if (row.sourceBlob is null)
+        return [];
+    string[] containerPaths;
+    foreach (spec; row.sourceBlob.fileSpecs)
+    {
+        if (spec is null || spec.fileName.length == 0)
+            continue;
+        try
+        {
+            auto parsed = parseArchiveVirtualPath(spec.fileName);
+            if (!parsed.isVirtual)
+                containerPaths ~= parsed.physicalPath;
+        }
+        catch (Exception)
+        {
+        }
+    }
+    if (containerPaths.length == 0)
+        return [];
+
+    NestedFileNode[] members;
+    foreach (candidate; catalogRows)
+    {
+        if (candidate.sourceBlob is null)
+            continue;
+        foreach (spec; candidate.sourceBlob.fileSpecs)
+        {
+            if (spec is null || spec.fileName.length == 0)
+                continue;
+            try
+            {
+                auto parsed = parseArchiveVirtualPath(spec.fileName);
+                if (!parsed.isVirtual || parsed.entries.length != 1
+                    || !containerPaths.canFind(parsed.physicalPath))
+                    continue;
+                const auto layer = parsed.entries[0];
+                members ~= NestedFileNode(
+                    (layer.hasOccurrence ? layer.occurrence : 0).to!string,
+                    layer.relativePath, layer.relativePath, candidate.fileSize, "");
+            }
+            catch (Exception)
+            {
             }
         }
     }
-    document.detailArchiveTreeView.setVisible(document.detailArchiveTreeStore.iterNChildren(null) > 0);
+    return members;
+}
+
+@("JSON archive virtual references project direct duplicate occurrences")
+unittest
+{
+    import dosierarkivo.archive : appendArchiveVirtualPath;
+    import dosierskanilo.model.filespec : FileSpec;
+    import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob;
+
+    auto containerBlob = new NamedBinaryBlob();
+    containerBlob.fileSpecs = [new FileSpec("archives/bundle.zip", "")];
+    BlobRow container;
+    container.sourceBlob = containerBlob;
+
+    BlobRow first;
+    first.sourceBlob = new NamedBinaryBlob();
+    first.sourceBlob.fileSpecs = [new FileSpec(appendArchiveVirtualPath(
+        "archives/bundle.zip", "docs/readme.txt", 0), "")];
+    first.fileSize = 7;
+    BlobRow second;
+    second.sourceBlob = new NamedBinaryBlob();
+    second.sourceBlob.fileSpecs = [new FileSpec(appendArchiveVirtualPath(
+        "archives/bundle.zip", "docs/readme.txt", 1), "")];
+    second.fileSize = 8;
+    BlobRow nested;
+    nested.sourceBlob = new NamedBinaryBlob();
+    nested.sourceBlob.fileSpecs = [new FileSpec(
+        "archives/bundle.zip!/inner.zip!/nested.txt", "")];
+    nested.fileSize = 9;
+
+    auto members = virtualArchiveMembers(container, [first, second, nested]);
+    assert(members.length == 2);
+    assert(members[0].relativePath == "docs/readme.txt");
+    assert(members[0].id == "0" && members[0].size == 7);
+    assert(members[1].id == "1" && members[1].size == 8);
 }
 
 private void populateTorrentFileTree(DocumentTab document, const(BlobRow) row)
@@ -2256,12 +2361,25 @@ void refreshMediaPreview(DocumentTab document)
  * Returns: Nothing.
  * Throws: None.
  */
-void setMediaPreview(DocumentTab document, const(BlobRow) row)
+void setMediaPreview(DocumentTab document, const(BlobRow) row,
+    string previewPathOverride = "", MemberContentLease memberLease = null,
+    string logicalArchiveMemberPath = "")
 {
     import core.thread : Thread;
     import glib.Idle;
     import std.datetime.systime : SysTime;
     import std.file : exists, getAttributes, getSize, getTimes, read;
+
+    if (memberLease is null)
+        ++document.archiveMemberPreviewRequestId;
+    if (document.selectedArchiveMemberLease !is null
+        && document.selectedArchiveMemberLease !is memberLease)
+    {
+        stopVideoPreview(document);
+        document.selectedArchiveMemberLease.release();
+    }
+    document.selectedArchiveMemberLease = memberLease;
+    document.selectedArchiveMemberPath = logicalArchiveMemberPath;
 
     document.detailPreviewTitle.setText("Preview");
     setPreviewSummaryMonospace(document.detailPreviewSummary, false);
@@ -2272,8 +2390,12 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
 
     auto fileName = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
     auto mediaSummary = row.mediaInfoDetails.length > 0 ? row.mediaInfoDetails : "No media metadata available.";
-    auto previewPath = resolvePreviewPath(document, row);
+    auto previewPath = previewPathOverride.length > 0
+        ? previewPathOverride : resolvePreviewPath(document, row);
     auto previewKind = previewContentKind(row);
+    if (memberLease is null)
+        document.archivePreviewContainerPath = previewKind == PreviewContentKind.archive
+            ? previewPath : "";
 
     document.selectedPreviewSourcePath = "";
     document.selectedPreviewSourcePixbuf = null;

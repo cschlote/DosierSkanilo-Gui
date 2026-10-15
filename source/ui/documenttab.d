@@ -36,6 +36,7 @@ import gstreamer.Element;
 import gstinterfaces.VideoOverlay;
 import core.thread : Thread;
 import dosierskanilo.operations : OperationControl, OperationKind, OperationState;
+import dosierskanilo.membercontentcache : MemberContentLease;
 import model.blobrow : BlobRow;
 import model.treeprojection : DirectorySource, DirectoryTree, FileCursor;
 import ui.filterrequeststate : FilterRequestState;
@@ -266,6 +267,10 @@ class DocumentTab
     Label pageStatus;
     Box pageBar;
     string selectedPreviewPath = "";
+    string archivePreviewContainerPath;
+    string selectedArchiveMemberPath;
+    MemberContentLease selectedArchiveMemberLease;
+    ulong archiveMemberPreviewRequestId;
     ulong previewPathRequestId;
     bool previewPathCheckPending;
     bool selectedPreviewIsImage;

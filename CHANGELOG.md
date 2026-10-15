@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Selecting a leaf in the Archive Preview now extracts that member through the
+  backend's shared leased cache and sends it to the normal image, audio, video,
+  text, or fallback previewer. Duplicate occurrence identity is preserved;
+  preview cache files are released when the preview changes or its tab closes.
+
 ## Release 0.9.0 - 2026-10-13
 
 - Added Tools actions for shared backend scan, metadata, and analysis requests,

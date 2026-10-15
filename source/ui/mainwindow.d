@@ -84,6 +84,8 @@ import gstreamer.c.types : GstState, GstStateChangeReturn;
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
 import model.datasource : SourceQuery, isRepositorySource, loadDocumentDetails,
+    AcquiredArchiveMemberPreview, acquireJsonArchiveMemberPreview,
+    acquireRepositoryArchiveMemberPreview,
     loadDocumentCursorPage, loadDocumentPage, loadDocumentSource, loadRepositoryArchiveEntries,
     loadRepositoryTorrentFiles, openRepositoryDirectorySource,
     scanDocumentArchive, scanDocumentArchives, setDocumentArchivePassword;
@@ -671,6 +673,7 @@ private void appendNestedEntry(TreeStore store, TreeModelIF model, TreeIter root
     store.setValue(file, 2, normalizedPath);
     store.setValue(file, 3, "File");
     store.setValue(file, 4, blobId);
+    store.setValue(file, 5, entry.id);
 }
 
 private void appendNestedPageMarker(TreeStore store, TreeIter parent, string blobId,
@@ -3360,7 +3363,86 @@ int runMainWindow(string[] args, ref CliOptions cli)
         bindDetailPaneSignals(document, DetailPaneCallbacks(
             (DocumentTab doc, string fileName) { openKnownFileExternally(doc, fileName); },
             (string title, string text, DocumentTab doc) { copyTextToClipboard(title, text, doc); },
-            (DocumentTab doc) { updateSelectedRowDetails(doc); }
+            (DocumentTab doc) { updateSelectedRowDetails(doc); },
+            (DocumentTab doc, string memberPath, string memberIdentity) {
+                if (doc.archivePreviewContainerPath.length == 0)
+                    return;
+                const auto requestId = ++doc.archiveMemberPreviewRequestId;
+                ++doc.previewPathRequestId;
+                doc.previewPathCheckPending = false;
+                const auto sourcePath = doc.filePath;
+                const auto containerPath = doc.archivePreviewContainerPath;
+                const auto isRepository = doc.directorySourceRemote;
+                string archivePassword;
+                if (!isRepository && doc.directSelectedRow.sourceBlob !is null)
+                    archivePassword = doc.directSelectedRow.sourceBlob.archivePassword;
+                doc.detailPreviewTitle.setText("Extracting archive member...");
+                doc.detailPreviewSummary.setText(memberPath);
+                new Thread({
+                    AcquiredArchiveMemberPreview preview;
+                    string error;
+                    try
+                    {
+                        if (isRepository)
+                        {
+                            const auto fileReferenceId = to!long(memberIdentity);
+                            preview = acquireRepositoryArchiveMemberPreview(sourcePath,
+                                fileReferenceId);
+                        }
+                        else
+                        {
+                            size_t occurrence;
+                            try
+                                occurrence = to!size_t(memberIdentity);
+                            catch (Exception)
+                                occurrence = 0;
+                            preview = acquireJsonArchiveMemberPreview(sourcePath,
+                                containerPath, memberPath, occurrence,
+                                archivePassword);
+                        }
+                    }
+                    catch (Exception ex)
+                        error = ex.msg;
+
+                    scheduleUiIdle({
+                        if (requestId != doc.archiveMemberPreviewRequestId
+                            || sourcePath != doc.filePath
+                            || containerPath != doc.archivePreviewContainerPath)
+                        {
+                            if (preview.lease !is null)
+                                preview.lease.release();
+                            return false;
+                        }
+                        if (error.length > 0 || preview.lease is null)
+                        {
+                            doc.detailPreviewTitle.setText("Archive member unavailable");
+                            doc.detailPreviewSummary.setText(error.length > 0
+                                ? error : "The archive member could not be extracted.");
+                            return false;
+                        }
+
+                        auto memberSize = preview.size;
+                        if (memberSize == 0)
+                        {
+                            import std.file : getSize;
+                            try
+                                memberSize = getSize(preview.lease.path);
+                            catch (Exception)
+                            {
+                            }
+                        }
+                        auto previewBlob = new NamedBinaryBlob();
+                        previewBlob.fileSize = cast(long) memberSize;
+                        BlobRow previewRow;
+                        previewRow.sourceBlob = previewBlob;
+                        previewRow.primaryFileName = baseName(memberPath);
+                        previewRow.fileSize = memberSize;
+                        setMediaPreview(doc, previewRow, preview.lease.path,
+                            preview.lease, preview.virtualPath);
+                        return false;
+                    });
+                }).start();
+            }
         ));
 
         logLineVerbose("[ui] populating preview slot for ", filePath);
@@ -4249,6 +4331,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto pageIndex = notebook.pageNum(document.pageRoot);
         if (pageIndex < 0)
             return;
+        ++document.archiveMemberPreviewRequestId;
+        stopVideoPreview(document);
+        if (document.selectedArchiveMemberLease !is null)
+        {
+            document.selectedArchiveMemberLease.release();
+            document.selectedArchiveMemberLease = null;
+        }
         if (document.directorySource !is null)
             document.directorySource.close();
         notebook.removePage(pageIndex);
@@ -5804,6 +5893,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
             (UiMainSource value) { windowSizePersistTimer = value; },
             () {
                 cancelAndJoinDocumentOperations();
+                foreach (document; documents)
+                {
+                    ++document.archiveMemberPreviewRequestId;
+                    stopVideoPreview(document);
+                    if (document.selectedArchiveMemberLease !is null)
+                    {
+                        document.selectedArchiveMemberLease.release();
+                        document.selectedArchiveMemberLease = null;
+                    }
+                }
                 stopAllUiSources();
             }
         )

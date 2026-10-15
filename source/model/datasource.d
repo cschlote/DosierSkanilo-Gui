@@ -1,16 +1,22 @@
 /** Shared data-source adapter for JSON files and SQLite repositories. */
 module model.datasource;
 
+import std.algorithm.searching : canFind;
 import std.file : exists, isDir;
 import std.conv : to;
 import std.datetime.systime : Clock;
 import std.exception : enforce;
-import std.path : baseName, dirName;
+import std.path : absolutePath, baseName, buildPath, dirName, isAbsolute;
 import std.string : empty;
 
-import dosierarkivo.archive : ArchivePasswordCallback,
-    ArchivePasswordCancelledException;
+import dosierarkivo.archive : ArchiveEntryDescriptor, ArchivePasswordCallback,
+    ArchivePasswordCancelledException, appendArchiveVirtualPath,
+    parseArchiveVirtualPath;
+import dosierarkivo.factory : fileArchive;
 import dosierskanilo;
+import dosierskanilo.catalogbackend : ContentId, ContentLocator;
+import dosierskanilo.membercontentcache : MemberContentLease,
+    sharedMemberContentCache;
 import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob,
     DATA_CLASS_VERSION3, NamedBinaryBlobCatalog, deserializeDataClassJsonFile,
     updateArchives;
@@ -33,6 +39,14 @@ struct SourcePage
     size_t total;
     long nextBlobId;
     bool hasMore;
+}
+
+/** Extracted bytes and logical path for one archive-member preview. */
+struct AcquiredArchiveMemberPreview
+{
+    MemberContentLease lease;
+    string virtualPath;
+    ulong size;
 }
 
 /** Filter state translated into repository query options. */
@@ -347,6 +361,130 @@ NestedFileNode[] loadRepositoryArchiveEntries(string path, long blobId,
         result ~= NestedFileNode(entry.id.to!string, entry.name, entry.name,
             entry.size, entry.modifiedAt);
     return result;
+}
+
+/** Acquire one repository archive member into the shared preview cache. */
+AcquiredArchiveMemberPreview acquireRepositoryArchiveMemberPreview(string path,
+    long fileReferenceId)
+{
+    auto repository = Repository.open(path);
+    scope (exit)
+        repository.close();
+
+    auto member = repository.fileReference(fileReferenceId);
+    enforce(member.id > 0 && member.archiveMember,
+        "The selected repository reference is not an archive member.");
+    auto parsed = parseArchiveVirtualPath(member.relativePath);
+    enforce(parsed.isVirtual, "The selected repository path is not virtual.");
+
+    string password;
+    if (member.containerReferenceId > 0)
+    {
+        auto container = repository.fileReference(member.containerReferenceId);
+        if (container.id > 0)
+            password = repository.loadBlobDetails(container.blobId).archivePassword;
+    }
+
+    AcquiredArchiveMemberPreview preview;
+    preview.lease = acquireVirtualArchiveMember(repository.rootPath,
+        member.relativePath, "repository:" ~ repository.rootPath ~ ":"
+            ~ member.archiveContainerIdentity, member.size, password);
+    preview.virtualPath = member.relativePath;
+    preview.size = member.size;
+    return preview;
+}
+
+/** Acquire one member from a JSON archive using its physical container path. */
+AcquiredArchiveMemberPreview acquireJsonArchiveMemberPreview(string documentPath,
+    string containerPath, string memberPath, size_t occurrence = 0,
+    string password = "")
+{
+    enforce(containerPath.length > 0 && memberPath.length > 0,
+        "Archive member preview requires a container and member path.");
+    auto physicalContainer = isAbsolute(containerPath)
+        ? absolutePath(containerPath)
+        : resolveDocumentSourcePath(documentPath, containerPath);
+    auto virtualPath = appendArchiveVirtualPath(physicalContainer, memberPath,
+        occurrence);
+    AcquiredArchiveMemberPreview preview;
+    preview.lease = acquireVirtualArchiveMember("", virtualPath,
+        "json:" ~ absolutePath(documentPath), 0, password);
+    preview.virtualPath = virtualPath;
+    import std.file : getSize;
+    preview.size = getSize(preview.lease.path);
+    return preview;
+}
+
+private MemberContentLease acquireVirtualArchiveMember(string sourceRoot,
+    string virtualPath, string sourceIdentity, ulong expectedSize,
+    string password)
+{
+    auto parsed = parseArchiveVirtualPath(virtualPath);
+    enforce(parsed.isVirtual, "Archive preview requires a virtual member path.");
+    auto containerPath = isAbsolute(parsed.physicalPath)
+        ? parsed.physicalPath : buildPath(sourceRoot, parsed.physicalPath);
+    auto cache = sharedMemberContentCache();
+    auto containerPathIdentity = parsed.physicalPath;
+    MemberContentLease previousLease;
+
+    try
+    {
+        foreach (index, layer; parsed.entries)
+        {
+            auto archive = fileArchive(containerPath);
+            enforce(archive !is null,
+                "The archive member's container format is unavailable.");
+            auto descriptors = archive.getEntryDescriptors(password);
+            enforce(descriptors !is null,
+                "The archive adapter could not list member descriptors.");
+
+            ArchiveEntryDescriptor selected;
+            bool found;
+            const auto requestedOccurrence = layer.hasOccurrence
+                ? layer.occurrence : 0;
+            foreach (descriptor; descriptors)
+            {
+                if (descriptor.hasSafePath && !descriptor.isDirectory
+                    && descriptor.relativePath == layer.relativePath
+                    && descriptor.occurrence == requestedOccurrence)
+                {
+                    selected = descriptor;
+                    found = true;
+                    break;
+                }
+            }
+            enforce(found, "The selected archive member no longer exists.");
+
+            const auto locator = ContentLocator.init;
+            const auto fallbackIdentity = sourceIdentity ~ ":container:"
+                ~ containerPathIdentity ~ "!/" ~ layer.relativePath ~ "!~"
+                ~ requestedOccurrence.to!string;
+            const auto sizeLimit = selected.hasSize ? selected.size
+                : index + 1 == parsed.entries.length ? expectedSize : 0;
+            auto lease = cache.acquire(locator, ContentId.init,
+                fallbackIdentity, layer.relativePath, sizeLimit,
+                (string destinationDirectory) {
+                    return archive.extractEntry(selected, destinationDirectory,
+                        password);
+                });
+
+            if (previousLease !is null)
+                previousLease.release();
+            previousLease = lease;
+            containerPath = lease.path;
+            containerPathIdentity = appendArchiveVirtualPath(
+                containerPathIdentity, layer.relativePath,
+                layer.hasOccurrence ? layer.occurrence : size_t.max);
+        }
+    }
+    catch (Throwable failure)
+    {
+        if (previousLease !is null)
+            previousLease.release();
+        throw failure;
+    }
+
+    return previousLease;
 }
 
 /** Load one bounded page of torrent files for a repository blob. */
@@ -944,7 +1082,7 @@ unittest
 @("repository detail adapter keeps archive and torrent entries lazy")
 unittest
 {
-    import std.file : copy, exists, mkdirRecurse, rmdirRecurse, tempDir, write;
+    import std.file : copy, exists, mkdirRecurse, readText, rmdirRecurse, tempDir, write;
     import std.path : buildPath;
     import std.process : execute;
     import std.uuid : randomUUID;
@@ -982,7 +1120,16 @@ unittest
     auto archiveDetails = loadDocumentDetails(root, archiveFile.blobId);
     assert(archiveDetails !is null);
     assert(archiveDetails.archiveSpecs.length == 0);
-    assert(loadRepositoryArchiveEntries(root, archiveFile.blobId).length > 0);
+    auto archiveMembers = loadRepositoryArchiveEntries(root, archiveFile.blobId);
+    assert(archiveMembers.length > 0);
+    auto memberPreview = acquireRepositoryArchiveMemberPreview(root,
+        to!long(archiveMembers[0].id));
+    scope (exit)
+        if (memberPreview.lease !is null)
+            memberPreview.lease.release();
+    assert(memberPreview.virtualPath.canFind("!/payload.txt"));
+    assert(memberPreview.size == "archive payload\n".length);
+    assert(readText(memberPreview.lease.path) == "archive payload\n");
 
     auto torrentDetails = loadDocumentDetails(root, torrentFile.blobId);
     assert(torrentDetails !is null && torrentDetails.torrentInfo !is null);
@@ -1107,14 +1254,31 @@ unittest
     assert(summary.failed == 0);
 
     auto scanned = deserializeDataClassJsonFile(jsonPath);
-    assert(scanned.length == 1);
-    assert(scanned[0].archivePassword == "catalog-secret");
-    assert(scanned[0].archiveSpecs.length == 1);
-    assert(scanned[0].archiveSpecs[0].fileName == "payload.txt");
+    import std.string : startsWith;
+    NamedBinaryBlob scannedArchive;
+    bool hasVirtualMember;
+    foreach (scannedBlob; scanned)
+    {
+        foreach (spec; scannedBlob.fileSpecs)
+        {
+            if (spec is null)
+                continue;
+            if (spec.fileName == "private.zip")
+                scannedArchive = scannedBlob;
+            else if (spec.fileName.startsWith("private.zip!/payload.txt"))
+                hasVirtualMember = true;
+        }
+    }
+    assert(scannedArchive !is null);
+    assert(scannedArchive.archivePassword == "catalog-secret");
+    assert(hasVirtualMember);
 
     setDocumentArchivePassword(jsonPath, "private.zip", "");
     auto cleared = deserializeDataClassJsonFile(jsonPath);
-    assert(cleared[0].archivePassword.length == 0);
+    foreach (clearedBlob; cleared)
+        foreach (spec; clearedBlob.fileSpecs)
+            if (spec !is null && spec.fileName == "private.zip")
+                assert(clearedBlob.archivePassword.length == 0);
 
     size_t selectedPrompts;
     ArchivePasswordCallback selectedCallback = (string requestedPath,
@@ -1125,7 +1289,53 @@ unittest
     };
     auto selectedSummary = scanDocumentArchive(jsonPath, "private.zip",
         selectedCallback);
-    assert(selectedPrompts == 1);
+    // The first scan's shared-cache extraction avoids a redundant password prompt.
+    assert(selectedPrompts == 0);
     assert(selectedSummary.blobsVisited == 1);
     assert(selectedSummary.archivesUpdated == 1);
+}
+
+@("JSON archive member previews use leased cache files and preserve virtual paths")
+unittest
+{
+    import std.file : exists, mkdirRecurse, readText, rmdirRecurse, tempDir;
+    import std.path : buildPath;
+    import std.process : Config, execute;
+    import std.uuid : randomUUID;
+
+    auto root = buildPath(tempDir(), "gui-json-member-preview-"
+        ~ randomUUID().toString());
+    mkdirRecurse(root);
+    scope (exit)
+        if (exists(root))
+            rmdirRecurse(root);
+
+    auto archivePath = buildPath(root, "bundle.zip");
+    const auto createArchive = "import sys, zipfile; z=zipfile.ZipFile(sys.argv[1], 'w'); "
+        ~ "z.writestr('preview.txt', 'first occurrence\\n'); "
+        ~ "z.writestr('preview.txt', 'second occurrence\\n'); z.close()";
+    assert(execute(["python3", "-c", createArchive, archivePath], null,
+        Config.none).status == 0);
+
+    auto firstPreview = acquireJsonArchiveMemberPreview(
+        buildPath(root, "catalog.json"), archivePath, "preview.txt", 0);
+    scope (exit)
+    {
+        if (firstPreview.lease !is null)
+            firstPreview.lease.release();
+    }
+    auto secondPreview = acquireJsonArchiveMemberPreview(
+        buildPath(root, "catalog.json"), archivePath, "preview.txt", 1);
+    scope (exit)
+        if (secondPreview.lease !is null)
+            secondPreview.lease.release();
+
+    assert(firstPreview.virtualPath == archivePath ~ "!/preview.txt!~0");
+    assert(secondPreview.virtualPath == archivePath ~ "!/preview.txt!~1");
+    assert(firstPreview.size == "first occurrence\n".length);
+    assert(secondPreview.size == "second occurrence\n".length);
+    assert(readText(firstPreview.lease.path) == "first occurrence\n");
+    assert(readText(secondPreview.lease.path) == "second occurrence\n");
+    assert(firstPreview.lease.path != secondPreview.lease.path);
+    assert(firstPreview.lease.path != archivePath);
 }
