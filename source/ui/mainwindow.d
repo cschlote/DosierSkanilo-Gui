@@ -2334,14 +2334,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 ", minimum=", minimumListWidth(document));
             return maxPosition;
         }
-        logLineVerbose("[layout] clamp ok ", document.filePath,
-            ": orientation=", cast(int) orientation,
-            ", totalExtent=", totalExtent,
-            ", requested=", requestedPosition,
-            ", min=", minPosition,
-            ", max=", maxPosition,
-            ", natural=", naturalListWidth(document),
-            ", minimum=", minimumListWidth(document));
+        // logLineVerbose("[layout] clamp ok ", document.filePath,
+        //     ": orientation=", cast(int) orientation,
+        //     ", totalExtent=", totalExtent,
+        //     ", requested=", requestedPosition,
+        //     ", min=", minPosition,
+        //     ", max=", maxPosition,
+        //     ", natural=", naturalListWidth(document),
+        //     ", minimum=", minimumListWidth(document));
         return requestedPosition;
     }
 
