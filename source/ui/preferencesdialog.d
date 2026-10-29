@@ -36,6 +36,8 @@ struct PreferencesDialogUi
     Button btnClearRecentFiles;
     Label lblExternalOpenProgram;
     Entry entryExternalOpenProgram;
+    Entry entryArchiveCacheDirectory;
+    SpinButton spinArchiveCacheSizeMiB;
     CheckButton optClearWindowGeometry;
 }
 
@@ -64,6 +66,13 @@ PreferencesDialogUi loadPreferencesDialogUi()
     ui.btnClearRecentFiles = builderObject!Button(prefsBuilder, "prefs", "btnClearRecentFiles");
     ui.lblExternalOpenProgram = builderObject!Label(prefsBuilder, "prefs", "lblExternalOpenProgram");
     ui.entryExternalOpenProgram = builderObject!Entry(prefsBuilder, "prefs", "entryExternalOpenProgram");
+    ui.entryArchiveCacheDirectory = builderObject!Entry(prefsBuilder, "prefs", "entryArchiveCacheDirectory");
+    auto archiveCacheSizeSpinSlot = builderObject!Box(prefsBuilder, "prefs", "archiveCacheSizeSpinSlot");
+    ui.spinArchiveCacheSizeMiB = new SpinButton(1, 1_048_576, 64);
+    ui.spinArchiveCacheSizeMiB.setNumeric(true);
+    ui.spinArchiveCacheSizeMiB.setWidthChars(7);
+    ui.spinArchiveCacheSizeMiB.setValue(1024);
+    archiveCacheSizeSpinSlot.packStart(ui.spinArchiveCacheSizeMiB, false, false, 0);
     ui.optClearWindowGeometry = builderObject!CheckButton(prefsBuilder, "prefs", "optClearWindowGeometry");
     return ui;
 }
@@ -78,6 +87,9 @@ PreferencesDialogUi loadPreferencesDialogUi()
  *     prefRestoreOpenFiles = In/out flag for restoring previously open files.
  *     recentFileCountLimit = In/out maximum count for the recently used file list.
  *     externalOpenProgram = In/out external program used for opening files.
+ *     archiveCacheDirectory = In/out archive member cache root; empty uses the
+ *         system temporary directory.
+ *     archiveCacheSizeMiB = In/out archive member cache size limit in MiB.
  *     clearSavedWindowGeometryOnExit = In/out flag that controls whether the
  *         saved window geometry should be cleared on exit.
  *     callbacks = Persistence and layout callbacks used when the user saves.
@@ -92,6 +104,8 @@ void showPreferencesDialog(
     ref bool prefRestoreOpenFiles,
     ref int recentFileCountLimit,
     ref string externalOpenProgram,
+    ref string archiveCacheDirectory,
+    ref int archiveCacheSizeMiB,
     ref bool clearSavedWindowGeometryOnExit,
     PreferencesDialogCallbacks callbacks
 )
@@ -114,6 +128,8 @@ void showPreferencesDialog(
     auto spinRecentFileCount = prefsUi.spinRecentFileCount;
     auto btnClearRecentFiles = prefsUi.btnClearRecentFiles;
     auto entryExternalOpenProgram = prefsUi.entryExternalOpenProgram;
+    auto entryArchiveCacheDirectory = prefsUi.entryArchiveCacheDirectory;
+    auto spinArchiveCacheSizeMiB = prefsUi.spinArchiveCacheSizeMiB;
     auto optClearWindowGeometry = prefsUi.optClearWindowGeometry;
 
     prefsBox.setBorderWidth(8);
@@ -123,6 +139,8 @@ void showPreferencesDialog(
     optRestoreOpenFiles.setActive(prefRestoreOpenFiles);
     spinRecentFileCount.setValue(recentFileCountLimit);
     entryExternalOpenProgram.setText(externalOpenProgram);
+    entryArchiveCacheDirectory.setText(archiveCacheDirectory);
+    spinArchiveCacheSizeMiB.setValue(archiveCacheSizeMiB);
 
     btnClearRecentFiles.addOnClicked((Button _) {
         callbacks.clearRecentFiles();
@@ -148,6 +166,8 @@ void showPreferencesDialog(
 
         auto newExternalOpenProgram = entryExternalOpenProgram.getText();
         externalOpenProgram = newExternalOpenProgram.length > 0 ? newExternalOpenProgram : "xdg-open";
+        archiveCacheDirectory = entryArchiveCacheDirectory.getText();
+        archiveCacheSizeMiB = spinArchiveCacheSizeMiB.getValueAsInt();
         auto clearGeometry = optClearWindowGeometry.getActive();
         clearSavedWindowGeometryOnExit = clearGeometry;
         callbacks.persistCurrentState(clearGeometry);

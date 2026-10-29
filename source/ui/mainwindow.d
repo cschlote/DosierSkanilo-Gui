@@ -146,6 +146,8 @@ import ui.mainsources : UiMainSource, scheduleUiIdle, scheduleUiTimeout,
 import ui.virtualblobtable : VirtualBlobTableModel;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : filterRowsByText;
+import dosierskanilo.membercontentcache : closeSharedMemberContentCache,
+    configureSharedMemberContentCache, defaultMemberCacheByteLimit;
 import dosierarkivo.archive : ArchivePasswordCallback, appendArchiveVirtualPath,
     escapeArchiveVirtualPath, ParsedArchiveVirtualPath, parseArchiveVirtualPath;
 import dosierarkivo.factory : fileArchive;
@@ -1853,6 +1855,36 @@ int runMainWindow(string[] args, ref CliOptions cli)
     {
         recentFileLimit = 10;
     }
+    string archiveCacheDirectory = loadedState.archiveCacheDirectory;
+    int archiveCacheSizeMiB = loadedState.archiveCacheSizeMiB;
+    if (archiveCacheSizeMiB < 1)
+    {
+        archiveCacheSizeMiB = 1024;
+    }
+
+    void applyArchiveCachePreferences()
+    {
+        const auto byteLimit = cast(ulong) archiveCacheSizeMiB * 1024UL * 1024UL;
+        try
+        {
+            configureSharedMemberContentCache(archiveCacheDirectory, byteLimit);
+        }
+        catch (Exception error)
+        {
+            logLine("Cannot configure the archive member cache: ", error.msg);
+            try
+            {
+                configureSharedMemberContentCache("", defaultMemberCacheByteLimit);
+            }
+            catch (Exception fallbackError)
+            {
+                logLine("Cannot configure the fallback archive member cache: ",
+                    fallbackError.msg);
+            }
+        }
+    }
+
+    applyArchiveCachePreferences();
     bool clearSavedWindowGeometryOnExit;
     bool allowRuntimeStatePersistence = !loadedState.hasWindowSize;
     bool isSyncingToolbarState;
@@ -5686,7 +5718,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 {
                     if (completedResult.state == OperationState.completed)
                     {
-                        final switch (kind)
+                        switch (kind)
                         {
                         case OperationKind.scan:
                             document.status.setText(format(
@@ -5711,6 +5743,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                                 "Analysis complete: %s duplicate groups, %s merged blobs.",
                                 completedResult.analysisSummary.duplicateGroups,
                                 completedResult.analysisSummary.mergedBlobs));
+                            break;
+                        default:
+                            document.status.setText("Operation complete.");
                             break;
                         }
                         if (isLoading)
@@ -6144,6 +6179,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     editPreferencesMenuItem.addOnActivate((MenuItem _) {
         auto previousCaseSensitiveFilter = prefCaseSensitiveFilter;
+        const previousArchiveCacheDirectory = archiveCacheDirectory;
+        const previousArchiveCacheSizeMiB = archiveCacheSizeMiB;
         showPreferencesDialog(
             window,
             prefAutoApplyFilter,
@@ -6152,6 +6189,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             prefRestoreOpenFiles,
             recentFileLimit,
             externalOpenProgram,
+            archiveCacheDirectory,
+            archiveCacheSizeMiB,
             clearSavedWindowGeometryOnExit,
             PreferencesDialogCallbacks(
                 () { applyDetailsPanePreferenceToAll(); },
@@ -6160,6 +6199,25 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 () { clearRecentFiles(); }
             )
         );
+        if (archiveCacheDirectory != previousArchiveCacheDirectory
+            || archiveCacheSizeMiB != previousArchiveCacheSizeMiB)
+        {
+            if (closeSharedMemberContentCache())
+            {
+                applyArchiveCachePreferences();
+            }
+            else
+            {
+                logLine("Archive cache settings apply after the next restart ",
+                    "because member previews are still active.");
+                auto document = currentDocument();
+                if (document !is null)
+                {
+                    document.status.setText(
+                        "Archive cache settings apply after the next restart.");
+                }
+            }
+        }
         syncToolbarFromCurrentDocument();
         if (prefCaseSensitiveFilter != previousCaseSensitiveFilter)
         {
@@ -6356,6 +6414,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
     Main.run();
     cancelAndJoinDocumentOperations();
     stopAllUiSources();
+    if (!closeSharedMemberContentCache())
+    {
+        logLine("Archive member cache still has leased members; ",
+            "the session is removed on process exit.");
+    }
     return 0;
 }
 

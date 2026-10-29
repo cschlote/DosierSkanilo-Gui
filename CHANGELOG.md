@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Preferences now configure the shared archive-member cache (base directory and
+  size limit in MiB). The cache is configured at startup, reapplied when the
+  settings change and no preview still holds a lease (otherwise after restart),
+  and its session directory is removed on normal exit.
+- Operation completion status handles the backend's catalog import/export
+  operation kinds instead of failing to build against the current catalog API.
+
 - Selecting a leaf in the Archive Preview now extracts that member through the
   backend's shared leased cache and sends it to the normal image, audio, video,
   text, or fallback previewer. Duplicate occurrence identity is preserved;

@@ -113,25 +113,28 @@ tests and the display-backed startup/filter smoke test pass.
 
 ## P1 — Archive member TreeView and shared extraction cache (WP-13.5)
 
-Status: **planned; backend JSON v5 and SQLite schema-v4 work is tracked in the
-DosierSkanilo WP-13.5 plan.** The archive file remains the expandable file row;
-the GUI must not create a second sibling folder or persist cache paths.
+Status: **archive expansion and cached member previews implemented** (commits
+`038d5e3`, `b17efab`, `6167f8f`); cache settings and shutdown cleanup added.
+The archive file remains the expandable file row; the GUI must not create a
+second sibling folder or persist cache paths.
 
-- [ ] Give `hasArchive` file rows an async TreeView expander. Expanding lists safe
+- [x] Give `hasArchive` file rows an async TreeView expander. Expanding lists safe
   entries lazily; selecting a member extracts it for preview. Nested archives
   use the same flow, and visible names hide the duplicate-occurrence path suffix.
-- [ ] Carry the structured container/entry locator through JSON and SQLite
+- [x] Carry the structured container/entry locator through JSON and SQLite
   directory/file sources. Use the virtual path only as a reversible reference
   spelling (`!/`, `!!`, `!~N`), not as an OS path or the primary identity.
-- [ ] Add one shared extraction-cache service for preview, checksums, File Type,
+- [x] Add one shared extraction-cache service for preview, checksums, File Type,
   MediaInfo, archive scans, and optional prefetch. Coalesce in-flight requests,
   pin active previews, bound size/workers, and never persist cache paths as
   `FileSpec` references.
-- [ ] Add cache preferences: JSON defaults below OS temp; SQLite uses a
+- [x] Add cache preferences: JSON defaults below OS temp; SQLite uses a
   configurable local cache base and a per-session subdirectory. Remove the
   session cache on normal exit and sweep only application-owned stale sessions
-  at startup. Stop media previews and join/cancel workers before cleanup. A RAM
-  disk can be selected as the cache base.
+  at startup. A RAM disk can be selected as the cache base. Preview threads are
+  stopped best-effort; the backend refuses to close while leases are active.
+- [ ] Join archive preview worker threads before cache cleanup so a normal exit
+  always removes the current session instead of deferring it to process exit.
 - [ ] Keep same-directory sibling prefetch disabled by default. When enabled,
   make it cancellable, bounded, and use the same cache leases as foreground
   preview/extraction.
@@ -145,6 +148,22 @@ the GUI must not create a second sibling folder or persist cache paths.
 **Acceptance:** selecting an archive member displays it in the normal Previewer;
 scraped metadata survives cache eviction, no cache paths enter JSON/SQLite source
 references, and shutdown removes the current session's extracted files.
+
+## P1 — WP-13.6.2: storage-neutral catalog access in the GUI
+
+Status: **blocked on backend contract gaps** (see the DosierSkanilo TODO).
+Cache integration is done; `RepositoryDirectorySource` still depends on the
+concrete `Repository` instead of `CatalogBackend`.
+
+- [ ] Decide how the GUI addresses catalog objects: store typed
+  `ContentId`/`ReferenceId`/`DirectoryId` values and load details through
+  `loadContent(ContentId)`, or add public token round-trips to the contract
+  (currently IDs are documented as private to the adapter).
+- [ ] Add a backend member-content acquisition method so the GUI no longer
+  extracts archive members through concrete repository helpers.
+- [ ] Move `RepositoryDirectorySource` tree, detail, and archive-member loading
+  onto `CatalogBackend` for both JSON and SQLite sources.
+- [ ] Keep CLI/GUI operation parity covered when the source abstraction changes.
 
 ## P2 — Stabilize GTK layout and video preview
 
