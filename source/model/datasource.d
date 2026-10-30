@@ -2,7 +2,9 @@
 module model.datasource;
 
 import std.algorithm.searching : canFind;
+import std.base64 : Base64;
 import std.file : exists, isDir;
+import std.format : format;
 import std.conv : to;
 import std.datetime.systime : Clock;
 import std.exception : enforce;
@@ -16,13 +18,19 @@ import dosierarkivo.archive : ArchiveEntryDescriptor, ArchivePasswordCallback,
     parseArchiveVirtualPath;
 import dosierarkivo.factory : fileArchive;
 import dosierskanilo;
-import dosierskanilo.catalogbackend : ContentId, ContentLocator;
+import dosierskanilo.catalogbackend : ArchiveEntryId, CatalogArchiveEntry,
+    CatalogContentFingerprint, CatalogContentQuery, CatalogContentRow,
+    CatalogContentSnapshot, CatalogDetailMask,
+    CatalogFile, CatalogFileQuery, CatalogFilter, CatalogMediaKind, CatalogMediaStream,
+    CatalogPageCursor, CatalogPageRequest, CatalogReferenceAvailability,
+    CatalogTorrentManifestEntry, ContentId, ContentLocator, DirectoryId, ReferenceId;
 import dosierskanilo.membercontentcache : MemberContentLease,
     sharedMemberContentCache;
 import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob,
     DATA_CLASS_VERSION3, NamedBinaryBlobCatalog, deserializeDataClassJsonFile,
     updateArchives;
 import model.blobrow : BlobRow;
+import model.catalogsource : CatalogDirectorySource, openCatalogBackend;
 import dosierskanilo.service.storageio : writeStorageJsonFile;
 import dosierskanilo.operationlease : TargetCatalogReplacementLease,
     TargetReadLease, TargetWriteLease;
@@ -371,7 +379,7 @@ final class RepositoryDirectorySource : DirectorySource
 /** Open a repository-backed directory source for the GUI tree. */
 DirectorySource openRepositoryDirectorySource(string path)
 {
-    return new RepositoryDirectorySource(path);
+    return new CatalogDirectorySource(openCatalogBackend(path));
 }
 
 private class ConcurrentSourceQueryResults
@@ -381,6 +389,247 @@ private class ConcurrentSourceQueryResults
     size_t detailLoads;
     string treeError;
     string detailError;
+}
+
+/** One page of deduplicated catalog content rows for table projections. */
+struct CatalogRowPage
+{
+    BlobRow[] rows;
+    CatalogPageCursor nextCursor;
+    size_t total;
+    bool hasMore;
+}
+
+private CatalogFilter catalogFilterFor(SourceQuery query)
+{
+    CatalogFilter filter;
+    filter.pathText = query.text;
+    filter.caseSensitive = query.caseSensitive;
+    filter.video = query.video;
+    filter.audio = query.audio;
+    filter.image = query.image;
+    filter.text = query.textStream;
+    filter.mediaNegated = query.mediaNegated;
+    filter.fileType = query.fileType;
+    filter.archive = query.archive;
+    filter.torrent = query.torrent;
+    return filter;
+}
+
+private string digestBase64(const CatalogContentFingerprint fingerprint,
+    string algorithm)
+{
+    foreach (digest; fingerprint.digests)
+        if (digest.algorithm == algorithm)
+            return cast(string) Base64.encode(digest.value);
+    return "";
+}
+
+private string renderMediaDetails(const CatalogMediaStream[] streams)
+{
+    string result;
+    foreach (stream; streams)
+    {
+        string kind;
+        final switch (stream.kind)
+        {
+        case CatalogMediaKind.image:
+            kind = "image";
+            break;
+        case CatalogMediaKind.video:
+            kind = "video";
+            break;
+        case CatalogMediaKind.audio:
+            kind = "audio";
+            break;
+        case CatalogMediaKind.text:
+            kind = "text";
+            break;
+        }
+        result ~= format("%s %d: %s", kind, stream.index, stream.format);
+        if (stream.width > 0 || stream.height > 0)
+            result ~= format(" %dx%d", stream.width, stream.height);
+        if (stream.channels > 0)
+            result ~= format(" %d channels", stream.channels);
+        if (stream.frameRate > 0)
+            result ~= format(" %.3f fps", stream.frameRate);
+        if (stream.bitRate > 0)
+            result ~= format(" %d bit/s", stream.bitRate);
+        if (stream.duration.length > 0)
+            result ~= " " ~ stream.duration;
+        if (stream.language.length > 0)
+            result ~= " (" ~ stream.language ~ ")";
+        result ~= "\n";
+    }
+    return result;
+}
+
+private BlobRow blobRowForContent(const CatalogContentRow row)
+{
+    BlobRow result;
+    result.sourceKey = row.displayPath;
+    result.primaryFileName = row.displayName;
+    result.fileSize = row.size;
+    result.fileCount = row.referenceCount;
+    result.hasSummaryFlags = true;
+    result.summaryHasFileType = row.hasFileType;
+    result.summaryHasMedia = row.hasMedia;
+    result.summaryHasVideo = row.hasVideo;
+    result.summaryHasAudio = row.hasAudio;
+    result.summaryHasImage = row.hasImage;
+    result.summaryHasText = row.hasText;
+    result.summaryHasArchive = row.hasArchive;
+    result.summaryHasTorrent = row.hasTorrent;
+    result.detailsLoaded = false;
+    result.md5 = digestBase64(row.fingerprint, "md5");
+    result.sha1 = digestBase64(row.fingerprint, "sha1");
+    result.xxh64 = digestBase64(row.fingerprint, "xxh64");
+    return result;
+}
+
+/** Load one content-row page through the storage-neutral catalog backend. */
+CatalogRowPage loadCatalogRowPage(string path, CatalogPageCursor cursor,
+    size_t limit, SourceQuery query = SourceQuery())
+{
+    auto backend = openCatalogBackend(path);
+    scope (exit)
+        backend.close();
+    return loadCatalogRowPage(backend, cursor, limit, query);
+}
+
+/** Load one content-row page from an already opened catalog backend. */
+CatalogRowPage loadCatalogRowPage(CatalogBackend backend,
+    CatalogPageCursor cursor, size_t limit, SourceQuery query = SourceQuery())
+{
+    CatalogContentQuery contentQuery;
+    contentQuery.filter = catalogFilterFor(query);
+    CatalogPageRequest request;
+    request.limit = limit;
+    request.cursor = cursor;
+    const page = backend.listContents(contentQuery, request);
+    CatalogRowPage result;
+    result.rows.reserve(page.rows.length);
+    foreach (row; page.rows)
+        result.rows ~= blobRowForContent(row);
+    result.nextCursor = page.nextCursor;
+    result.hasMore = page.hasMore;
+    result.total = page.total;
+    return result;
+}
+
+/** Load an offset-addressed content-row page through the catalog backend. */
+CatalogRowPage loadCatalogRowOffsetPage(string path, size_t offset,
+    size_t limit, SourceQuery query = SourceQuery())
+{
+    auto backend = openCatalogBackend(path);
+    scope (exit)
+        backend.close();
+    return loadCatalogRowOffsetPage(backend, offset, limit, query);
+}
+
+/** Load an offset-addressed page from an already opened catalog backend. */
+CatalogRowPage loadCatalogRowOffsetPage(CatalogBackend backend, size_t offset,
+    size_t limit, SourceQuery query = SourceQuery())
+{
+    CatalogContentQuery contentQuery;
+    contentQuery.filter = catalogFilterFor(query);
+    CatalogPageRequest request;
+    request.limit = limit;
+    CatalogPageCursor cursor;
+    size_t seen;
+    CatalogRowPage result;
+    while (true)
+    {
+        request.cursor = cursor;
+        const page = backend.listContents(contentQuery, request);
+        result.total = page.total;
+        result.nextCursor = page.nextCursor;
+        result.hasMore = page.hasMore;
+        foreach (index, row; page.rows)
+        {
+            const position = seen + index;
+            if (position >= offset && result.rows.length < limit)
+                result.rows ~= blobRowForContent(row);
+        }
+        seen += page.rows.length;
+        if (!page.hasMore || result.rows.length >= limit)
+            break;
+        cursor = page.nextCursor;
+    }
+    return result;
+}
+
+/** Load full display details for one catalog reference path. */
+BlobRow loadCatalogFileDetails(string path, string relativePath)
+{
+    auto backend = openCatalogBackend(path);
+    scope (exit)
+        backend.close();
+    return loadCatalogFileDetails(backend, relativePath);
+}
+
+/** Load full display details from an already opened catalog backend. */
+BlobRow loadCatalogFileDetails(CatalogBackend backend, string relativePath)
+{
+    const referenceId = backend.resolveReference(relativePath);
+    if (!referenceId.isValid)
+        throw new Exception("The selected file no longer exists.");
+    const file = backend.loadReference(referenceId);
+    CatalogDetailMask mask;
+    mask.fingerprint = true;
+    mask.fileType = true;
+    mask.media = true;
+    mask.archiveSummary = true;
+    mask.torrentSummary = true;
+    const snapshot = backend.loadContent(file.contentId, mask);
+    BlobRow row;
+    row.sourceKey = file.relativePath;
+    row.primaryFileName = file.name;
+    row.fileSize = file.size;
+    row.fileCount = 1;
+    row.hasSummaryFlags = true;
+    row.summaryHasFileType = snapshot.fileType.length > 0;
+    row.summaryHasMedia = snapshot.mediaStreams.length > 0;
+    row.summaryHasArchive = snapshot.hasArchive;
+    row.summaryHasTorrent = snapshot.hasTorrent;
+    foreach (stream; snapshot.mediaStreams)
+        final switch (stream.kind)
+        {
+        case CatalogMediaKind.image:
+            row.summaryHasImage = true;
+            break;
+        case CatalogMediaKind.video:
+            row.summaryHasVideo = true;
+            break;
+        case CatalogMediaKind.audio:
+            row.summaryHasAudio = true;
+            break;
+        case CatalogMediaKind.text:
+            row.summaryHasText = true;
+            break;
+        }
+    row.md5 = digestBase64(snapshot.fingerprint, "md5");
+    row.sha1 = digestBase64(snapshot.fingerprint, "sha1");
+    row.xxh64 = digestBase64(snapshot.fingerprint, "xxh64");
+    row.catalogFileType = snapshot.fileType;
+    row.catalogMediaDetails = renderMediaDetails(snapshot.mediaStreams);
+    if (snapshot.hasArchive)
+        row.catalogArchiveDetails = format(
+            "Archive index: %s\nEntries: %s\nComplete fingerprints: %s",
+            snapshot.archiveSummary.indexKnown ? "known" : "unknown",
+            snapshot.archiveSummary.entryCount,
+            snapshot.archiveSummary.entriesWithCompleteFingerprints);
+    if (snapshot.hasTorrent)
+        row.catalogTorrentDetails = format(
+            "Name: %s\nTotal size: %s\nMulti-file: %s\nInfo hash: %s\nAnnounce: %s",
+            snapshot.torrentSummary.name, snapshot.torrentSummary.totalSize,
+            snapshot.torrentSummary.isMultiFile ? "yes" : "no",
+            snapshot.torrentSummary.infoHashHex, snapshot.torrentSummary.announce);
+    row.catalogSourceDetails = format("Path: %s\nSize: %s bytes\nMD5: %s\nSHA1: %s\nXXH64: %s",
+        file.relativePath, file.size, row.md5, row.sha1, row.xxh64);
+    row.catalogFileNames = file.relativePath;
+    row.detailsLoaded = true;
+    return row;
 }
 
 /** Load one bounded page of archive entries for a repository blob. */
@@ -731,6 +980,202 @@ private MemberContentLease acquireVirtualArchiveMember(string sourceRoot,
     }
 
     return previousLease;
+}
+
+/** Load a bounded page of catalog archive entries for one container reference. */
+NestedFileNode[] loadCatalogArchiveEntries(string path, string containerPath,
+    size_t offset = 0, size_t limit = 250)
+{
+    auto backend = openCatalogBackend(path);
+    scope (exit)
+        backend.close();
+    return loadCatalogArchiveEntries(backend, containerPath, offset, limit);
+}
+
+/** Load archive entries from an already opened catalog backend. */
+NestedFileNode[] loadCatalogArchiveEntries(CatalogBackend backend,
+    string containerPath, size_t offset = 0, size_t limit = 250)
+{
+    const referenceId = backend.resolveReference(containerPath);
+    if (!referenceId.isValid)
+        throw new Exception("The archive container no longer exists.");
+    const container = backend.loadReference(referenceId);
+    const basePath = parseArchiveVirtualPath(containerPath).isVirtual
+        ? containerPath : escapeArchiveVirtualPath(containerPath);
+    NestedFileNode[] result;
+    size_t seen;
+    CatalogPageCursor cursor;
+    while (result.length < limit)
+    {
+        CatalogPageRequest request;
+        request.limit = 250;
+        request.cursor = cursor;
+        const page = backend.listArchiveEntries(container.contentId, request);
+        foreach (entry; page.entries)
+        {
+            if (seen >= offset && result.length < limit)
+            {
+                string identity;
+                if (entry.hasSafePath && !entry.isDirectory)
+                    identity = appendArchiveVirtualPath(basePath,
+                        entry.relativePath, entry.occurrence);
+                result ~= NestedFileNode(identity, entry.name, entry.name,
+                    entry.size, entry.modifiedAt);
+            }
+            ++seen;
+        }
+        if (!page.hasMore)
+            break;
+        cursor = page.nextCursor;
+    }
+    return result;
+}
+
+/** Load a bounded page of catalog torrent entries for one container reference. */
+NestedFileNode[] loadCatalogTorrentEntries(string path, string containerPath,
+    size_t offset = 0, size_t limit = 250)
+{
+    auto backend = openCatalogBackend(path);
+    scope (exit)
+        backend.close();
+    return loadCatalogTorrentEntries(backend, containerPath, offset, limit);
+}
+
+/** Load torrent entries from an already opened catalog backend. */
+NestedFileNode[] loadCatalogTorrentEntries(CatalogBackend backend,
+    string containerPath, size_t offset = 0, size_t limit = 250)
+{
+    const referenceId = backend.resolveReference(containerPath);
+    if (!referenceId.isValid)
+        throw new Exception("The torrent reference no longer exists.");
+    const container = backend.loadReference(referenceId);
+    NestedFileNode[] result;
+    size_t seen;
+    CatalogPageCursor cursor;
+    while (result.length < limit)
+    {
+        CatalogPageRequest request;
+        request.limit = 250;
+        request.cursor = cursor;
+        const page = backend.listTorrentEntries(container.contentId, request);
+        foreach (entry; page.entries)
+        {
+            if (seen >= offset && result.length < limit)
+            {
+                string relativePath;
+                foreach (index, component; entry.pathComponents)
+                {
+                    if (index > 0)
+                        relativePath ~= "/";
+                    relativePath ~= component;
+                }
+                result ~= NestedFileNode(containerPath ~ "!/" ~ relativePath,
+                    relativePath, relativePath, entry.size, "");
+            }
+            ++seen;
+        }
+        if (!page.hasMore)
+            break;
+        cursor = page.nextCursor;
+    }
+    return result;
+}
+
+/** Load direct catalog archive members for one container reference path. */
+ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(string path,
+    string containerPath, size_t offset = 0, size_t limit = 250)
+{
+    auto backend = openCatalogBackend(path);
+    scope (exit)
+        backend.close();
+    return loadCatalogArchiveMemberTreePage(backend, containerPath, offset, limit);
+}
+
+/** Load direct archive members from an already opened catalog backend. */
+ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(CatalogBackend backend,
+    string containerPath, size_t offset = 0, size_t limit = 250)
+{
+    enforce(limit > 0, "Archive-member page size must be greater than zero.");
+    const referenceId = backend.resolveReference(containerPath);
+    if (!referenceId.isValid)
+        return ArchiveMemberTreePage.init;
+    const container = backend.loadReference(referenceId);
+    const containerLayers = parseArchiveVirtualPath(containerPath).entries.length;
+
+    CatalogFileQuery query;
+    query.directoryId = container.directoryId;
+    query.filter.includeArchiveMembers = true;
+    query.filter.pathText = containerPath ~ "!/";
+
+    ArchiveMemberTreeEntry[] direct;
+    CatalogPageCursor cursor;
+    while (true)
+    {
+        CatalogPageRequest request;
+        request.limit = 250;
+        request.cursor = cursor;
+        const page = backend.listFiles(query, request);
+        foreach (file; page.files)
+        {
+            ParsedArchiveVirtualPath parsed;
+            try
+                parsed = parseArchiveVirtualPath(file.relativePath);
+            catch (Exception)
+                continue;
+            if (!parsed.isVirtual
+                || parsed.entries.length != containerLayers + 1)
+                continue;
+            ArchiveMemberTreeEntry entry;
+            entry.referenceId = file.relativePath;
+            entry.name = file.name;
+            entry.relativePath = file.name;
+            entry.virtualPath = file.relativePath;
+            entry.size = file.size;
+            entry.hasArchive = file.hasArchive
+                || isArchivePathCandidate(file.name);
+            direct ~= entry;
+        }
+        if (!page.hasMore)
+            break;
+        cursor = page.nextCursor;
+    }
+
+    ArchiveMemberTreePage result;
+    const start = offset < direct.length ? offset : direct.length;
+    auto count = direct.length - start;
+    if (count > limit)
+    {
+        count = limit;
+        result.hasMore = true;
+    }
+    result.entries = direct[start .. start + count].dup;
+    result.nextOffset = offset + count;
+    return result;
+}
+
+/** Acquire one catalog archive member into the shared preview cache. */
+AcquiredArchiveMemberPreview acquireCatalogArchiveMemberPreview(string path,
+    string memberRelativePath)
+{
+    auto backend = openCatalogBackend(path);
+    scope (exit)
+        backend.close();
+    return acquireCatalogArchiveMemberPreview(backend, memberRelativePath);
+}
+
+/** Acquire a member preview from an already opened catalog backend. */
+AcquiredArchiveMemberPreview acquireCatalogArchiveMemberPreview(
+    CatalogBackend backend, string memberRelativePath)
+{
+    const referenceId = backend.resolveReference(memberRelativePath);
+    if (!referenceId.isValid)
+        throw new Exception("The selected archive member no longer exists.");
+    const member = backend.loadReference(referenceId);
+    AcquiredArchiveMemberPreview preview;
+    preview.lease = backend.acquireMemberContent(referenceId);
+    preview.virtualPath = member.relativePath;
+    preview.size = member.size;
+    return preview;
 }
 
 /** Load one bounded page of torrent files for a repository blob. */
@@ -1201,7 +1646,7 @@ unittest
     scope (exit)
         source.close();
     auto selectedFile = source.listFilesPage("root", FileCursor(), 1).files[0];
-    auto blobId = to!long(selectedFile.id);
+    auto filePath = selectedFile.cursorId;
     auto concurrentResults = new ConcurrentSourceQueryResults();
     auto treeThread = new Thread({
         try
@@ -1220,7 +1665,7 @@ unittest
         try
         {
             foreach (_; 0 .. 16)
-                if (loadDocumentDetails(root, blobId) !is null)
+                if (loadCatalogFileDetails(root, filePath).sourceKey.length > 0)
                     ++concurrentResults.detailLoads;
         }
         catch (Exception ex)

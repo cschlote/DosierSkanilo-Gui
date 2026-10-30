@@ -83,14 +83,15 @@ import gstreamer.c.types : GstState, GstStateChangeReturn;
 
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
-import model.datasource : SourceQuery, isRepositorySource, loadDocumentDetails,
+import model.catalogsource : openCatalogBackend;
+import model.datasource : SourceQuery, isRepositorySource,
     AcquiredArchiveMemberPreview, ArchiveMemberTreeEntry, ArchiveMemberTreePage,
     acquireJsonArchiveMemberPreview, acquireJsonVirtualArchiveMemberPreview,
-    acquireRepositoryArchiveMemberPreview,
-    loadJsonArchiveMemberTreePage, loadNestedRepositoryArchiveMemberTreePage,
-    loadRepositoryArchiveMemberTreePage,
-    loadDocumentCursorPage, loadDocumentPage, loadDocumentSource, loadRepositoryArchiveEntries,
-    loadRepositoryTorrentFiles, openRepositoryDirectorySource,
+    loadJsonArchiveMemberTreePage,
+    loadDocumentSource, openRepositoryDirectorySource,
+    loadCatalogRowPage, loadCatalogRowOffsetPage, loadCatalogFileDetails,
+    loadCatalogArchiveEntries, loadCatalogTorrentEntries,
+    loadCatalogArchiveMemberTreePage, acquireCatalogArchiveMemberPreview,
     scanDocumentArchive, scanDocumentArchives, setDocumentArchivePassword;
 import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, FileCursor,
     FileFilter, FileNode, FilePage, FileSortOrder, NestedFileNode,
@@ -154,6 +155,7 @@ import dosierarkivo.factory : fileArchive;
 import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, NamedBinaryBlob;
 import dosierskanilo.repository.types : MetadataSummary, RepositoryBlobFlags;
 import dosierskanilo.repository.repository : Repository;
+import dosierskanilo.catalogbackend : CatalogPageCursor;
 import dosierskanilo.operations : AnalysisOperationRequest, MetadataOperationRequest,
     OperationControl, OperationKind, OperationProgress, OperationResult,
     OperationState, OperationTarget, ScanOperationRequest;
@@ -1163,10 +1165,8 @@ struct AsyncLoadResult
     size_t pageOffset;
     size_t pageTotal;
     bool pagedSource;
-    long nextBlobId;
+    CatalogPageCursor nextContentCursor;
     bool hasMore;
-    long[] blobIds;
-    RepositoryBlobFlags[] blobFlags;
 }
 
 struct AsyncDirectoryResult
@@ -1673,8 +1673,8 @@ private void previewArchiveTreeMember(DocumentTab document, string memberPath,
                     archivePassword = storedPassword;
             }
             if (isRepository)
-                preview = acquireRepositoryArchiveMemberPreview(sourcePath,
-                    to!long(memberIdentity));
+                preview = acquireCatalogArchiveMemberPreview(
+                    document.catalogBackend, memberIdentity);
             else if (virtualPath.length > 0)
                 preview = acquireJsonVirtualArchiveMemberPreview(sourcePath,
                     virtualPath, archivePassword);
@@ -2973,15 +2973,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 try
                 {
                     if (repositorySource)
-                    {
-                        if (parentKind == "ArchiveMember")
-                            page = loadNestedRepositoryArchiveMemberTreePage(
-                                sourcePath, to!long(containerReferenceId), offset, 250);
-                        else
-                            page = loadRepositoryArchiveMemberTreePage(sourcePath,
-                                to!long(containerId), offset, 250,
-                                containerVirtualPath);
-                    }
+                        page = loadCatalogArchiveMemberTreePage(
+                            document.catalogBackend, containerVirtualPath, offset,
+                            250);
                     else
                         page = loadJsonArchiveMemberTreePage(containerVirtualPath,
                             catalogRows, offset, 250,
@@ -3331,6 +3325,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 selectedTreeRelativePath);
             bool rowReferencesSelectedPath(const(BlobRow) candidate)
             {
+                if (candidate.sourceKey.length > 0)
+                    return candidate.sourceKey == selectedTreeRelativePath;
                 if (candidate.sourceBlob is null)
                     return resolveKnownFilePath(document, candidate.primaryFileName)
                         == selectedSourcePath;
@@ -3370,7 +3366,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
             foreach (rowIndex, row; document.visibleRows)
             {
                 bool rowSelected;
-                if (row.sourceId >= 0)
+                if (row.sourceKey.length > 0)
+                    rowSelected = row.sourceKey == selectedId;
+                else if (row.sourceId >= 0)
                     rowSelected = row.sourceId.to!string == selectedId;
                 else
                     rowSelected = rowReferencesSelectedPath(row);
@@ -3436,19 +3434,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
             if (document.directorySourceRemote && selectedId.length > 0)
             {
-                long sourceId;
-                try
-                    sourceId = to!long(selectedId);
-                catch (Exception)
-                    return;
                 auto requestId = ++document.detailRequestId;
                 auto sourcePath = document.filePath;
+                auto catalogBackend = document.catalogBackend;
                 document.status.setText("Loading tree selection details ...");
                 new Thread({
-                    NamedBinaryBlob details;
+                    BlobRow details;
                     string error;
                     try
-                        details = loadDocumentDetails(sourcePath, sourceId);
+                        details = loadCatalogFileDetails(catalogBackend, selectedId);
                     catch (Exception ex)
                         error = ex.msg;
                     scheduleUiIdle({
@@ -3459,11 +3453,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                             document.status.setText("Failed to load tree selection: " ~ error);
                             return false;
                         }
-                        auto rows = extractRowsFromBlobs([details]);
-                        if (rows.length == 0)
-                            return false;
-                        auto row = rows[0];
-                        row.sourceId = sourceId;
+                        auto row = details;
                         row.detailsLoaded = true;
                         row.hasSummaryFlags = true;
                         row.summaryHasFileType = hasFileType;
@@ -3672,8 +3662,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 try
                 {
                     result.entries = archive
-                        ? loadRepositoryArchiveEntries(sourcePath, to!long(blobId), offset, 251)
-                        : loadRepositoryTorrentFiles(sourcePath, to!long(blobId), offset, 251);
+                        ? loadCatalogArchiveEntries(document.catalogBackend, blobId,
+                            offset, 251)
+                        : loadCatalogTorrentEntries(document.catalogBackend, blobId,
+                            offset, 251);
                     auto page = prepareNestedEntryPage(result.entries, offset);
                     result.entries = page.entries;
                     result.hasMore = page.hasMore;
@@ -4224,7 +4216,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     [
                     indexText, sizeText, checksumsText, fileTypeText,
                     mediaInfoText, archiveText, torrentText,
-                    row.sourceId >= 0 ? row.sourceId.to!string : "",
+                    row.sourceKey.length > 0 ? row.sourceKey
+                        : row.sourceId >= 0 ? row.sourceId.to!string : "",
                     row.hasFileType ? "1" : "0", row.hasMedia ? "1" : "0",
                     row.hasVideo ? "1" : "0", row.hasAudio ? "1" : "0",
                     row.hasImage ? "1" : "0", row.hasText ? "1" : "0",
@@ -4350,12 +4343,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
             auto sourceIdText = model.getValueString(iter, COL_SOURCE_ID);
             if (sourceIdText.length > 0)
             {
-                auto sourceId = to!long(sourceIdText);
                 if (!document.hasDirectSelectedRow
-                    || document.directSelectedRow.sourceId != sourceId)
+                    || document.directSelectedRow.sourceKey != sourceIdText)
                 {
                     BlobRow summary;
-                    summary.sourceId = sourceId;
+                    summary.sourceKey = sourceIdText;
                     summary.detailsLoaded = false;
                     summary.fileSize = to!ulong(model.getValueString(iter, COL_FILE_SIZE));
                     summary.hasSummaryFlags = true;
@@ -4440,7 +4432,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             row = document.visibleRows[rowIndex];
         }
 
-        auto treeSelectionId = row.sourceId >= 0
+        auto treeSelectionId = row.sourceKey.length > 0
+            ? row.sourceKey : row.sourceId >= 0
             ? row.sourceId.to!string : primaryTreeFileNodeId(row, rowIndex);
         TreeIter treeRoot;
         TreeIter treeFile;
@@ -4462,19 +4455,20 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 revealTreeFile(document, treeSelectionId);
             break;
         }
-        if (isRepositorySource(document.filePath) && row.sourceId >= 0
+        if (isRepositorySource(document.filePath) && row.sourceKey.length > 0
             && !row.detailsLoaded)
         {
             auto requestId = ++document.detailRequestId;
             auto sourcePath = document.filePath;
-            auto sourceId = row.sourceId;
+            auto sourceKey = row.sourceKey;
+            auto catalogBackend = document.catalogBackend;
             setKnownFilesTable(document, row);
             document.status.setText("Loading selected repository details ...");
             auto worker = new Thread({
-                NamedBinaryBlob details;
+                BlobRow details;
                 string error;
                 try
-                    details = loadDocumentDetails(sourcePath, sourceId);
+                    details = loadCatalogFileDetails(catalogBackend, sourceKey);
                 catch (Exception ex)
                     error = ex.msg;
 
@@ -4488,41 +4482,36 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         return false;
                     }
                     if (document.hasDirectSelectedRow
-                        && document.directSelectedRow.sourceId == sourceId)
+                        && document.directSelectedRow.sourceKey == sourceKey)
                     {
-                        auto rows = extractRowsFromBlobs([details]);
-                        if (rows.length > 0)
-                        {
-                            auto flags = document.directSelectedRow;
-                            document.directSelectedRow = rows[0];
-                            document.directSelectedRow.sourceId = sourceId;
-                            document.directSelectedRow.detailsLoaded = true;
-                            document.directSelectedRow.hasSummaryFlags = flags.hasSummaryFlags;
-                            document.directSelectedRow.summaryHasFileType = flags.summaryHasFileType;
-                            document.directSelectedRow.summaryHasMedia = flags.summaryHasMedia;
-                            document.directSelectedRow.summaryHasVideo = flags.summaryHasVideo;
-                            document.directSelectedRow.summaryHasAudio = flags.summaryHasAudio;
-                            document.directSelectedRow.summaryHasImage = flags.summaryHasImage;
-                            document.directSelectedRow.summaryHasText = flags.summaryHasText;
-                            document.directSelectedRow.summaryHasArchive = flags.summaryHasArchive;
-                            document.directSelectedRow.summaryHasTorrent = flags.summaryHasTorrent;
-                        }
+                        auto flags = document.directSelectedRow;
+                        document.directSelectedRow = details;
+                        document.directSelectedRow.detailsLoaded = true;
+                        document.directSelectedRow.hasSummaryFlags = flags.hasSummaryFlags;
+                        document.directSelectedRow.summaryHasFileType = flags.summaryHasFileType;
+                        document.directSelectedRow.summaryHasMedia = flags.summaryHasMedia;
+                        document.directSelectedRow.summaryHasVideo = flags.summaryHasVideo;
+                        document.directSelectedRow.summaryHasAudio = flags.summaryHasAudio;
+                        document.directSelectedRow.summaryHasImage = flags.summaryHasImage;
+                        document.directSelectedRow.summaryHasText = flags.summaryHasText;
+                        document.directSelectedRow.summaryHasArchive = flags.summaryHasArchive;
+                        document.directSelectedRow.summaryHasTorrent = flags.summaryHasTorrent;
                     }
                     else
                     {
                         foreach (ref candidate; document.loadedRows)
                         {
-                            if (candidate.sourceId == sourceId)
+                            if (candidate.sourceKey == sourceKey)
                             {
-                                candidate.sourceBlob = details;
+                                candidate = details;
                                 candidate.detailsLoaded = true;
                             }
                         }
                         foreach (ref candidate; document.visibleRows)
                         {
-                            if (candidate.sourceId == sourceId)
+                            if (candidate.sourceKey == sourceKey)
                             {
-                                candidate.sourceBlob = details;
+                                candidate = details;
                                 candidate.detailsLoaded = true;
                             }
                         }
@@ -4723,6 +4712,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
         if (document.directorySource !is null)
             document.directorySource.close();
+        if (document.catalogBackend !is null)
+        {
+            document.catalogBackend.close();
+            document.catalogBackend = null;
+        }
         notebook.removePage(pageIndex);
         documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $];
         syncToolbarFromCurrentDocument();
@@ -5172,7 +5166,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.drainRepositoryPages = true;
                 document.pageOffset = 0;
                 document.repositoryRowsLoaded = 0;
-                document.repositoryBlobCursor = 0;
+                document.repositoryContentCursor = CatalogPageCursor.init;
                 document.loadedRows = [];
             }
             document.drainPageRequest = false;
@@ -5198,6 +5192,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
             treeFilterSnapshot.fileType, treeFilterSnapshot.archive,
             treeFilterSnapshot.torrent);
 
+        if (isRepositorySource(document.filePath) && document.catalogBackend is null)
+            document.catalogBackend = openCatalogBackend(document.filePath);
+        auto catalogBackendSnapshot = document.catalogBackend;
         auto worker = new Thread({
             MonoTime started = MonoTime.currTime;
             AsyncLoadResult result;
@@ -5216,35 +5213,29 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     if (document.drainRepositoryPages)
                     {
                         result.pageOffset = document.repositoryRowsLoaded;
-                        auto page = loadDocumentCursorPage(document.filePath,
-                            document.repositoryBlobCursor, document.pageSize,
+                        auto page = loadCatalogRowPage(catalogBackendSnapshot,
+                            document.repositoryContentCursor, document.pageSize,
                             sourceQuerySnapshot);
-                        blobs = page.blobs;
-                        result.blobIds = page.blobIds;
-                        result.blobFlags = page.flags;
+                        result.allRows = page.rows;
                         result.pageTotal = page.total;
-                        result.nextBlobId = page.nextBlobId;
+                        result.nextContentCursor = page.nextCursor;
                         result.hasMore = page.hasMore;
                     }
                     else if (document.loadAllRows)
                     {
-                        auto page = loadDocumentPage(document.filePath, 0,
+                        auto page = loadCatalogRowOffsetPage(catalogBackendSnapshot, 0,
                             size_t.max, sourceQuerySnapshot);
-                        blobs = page.blobs;
-                        result.blobIds = page.blobIds;
-                        result.blobFlags = page.flags;
-                        result.pageOffset = page.offset;
+                        result.allRows = page.rows;
+                        result.pageOffset = 0;
                         result.pageTotal = page.total;
                     }
                     else
                     {
-                        auto page = loadDocumentPage(document.filePath,
+                        auto page = loadCatalogRowOffsetPage(catalogBackendSnapshot,
                             document.pageOffset, document.pageSize,
                             sourceQuerySnapshot);
-                        blobs = page.blobs;
-                        result.blobIds = page.blobIds;
-                        result.blobFlags = page.flags;
-                        result.pageOffset = page.offset;
+                        result.allRows = page.rows;
+                        result.pageOffset = document.pageOffset;
                         result.pageTotal = page.total;
                     }
                     result.pagedSource = true;
@@ -5267,32 +5258,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 }
 
                 setLoadingPhase(document, requestId, "Projecting blob rows for GUI ...");
-                result.allRows = extractRowsFromBlobs(blobs);
-                foreach (index, blobId; result.blobIds)
-                {
-                    if (index >= result.allRows.length)
-                        break;
-                    result.allRows[index].sourceId = blobId;
-                    if (index < result.blobFlags.length)
-                    {
-                        auto flags = result.blobFlags[index];
-                        auto row = &result.allRows[index];
-                        row.hasSummaryFlags = true;
-                        row.summaryHasMedia = flags.hasMedia;
-                        row.summaryHasVideo = flags.hasVideo;
-                        row.summaryHasAudio = flags.hasAudio;
-                        row.summaryHasImage = flags.hasImage;
-                        row.summaryHasText = flags.hasText;
-                        row.summaryHasFileType = flags.hasFileType;
-                        row.summaryHasArchive = flags.hasArchive;
-                        row.summaryHasTorrent = flags.hasTorrent;
-                        row.detailsLoaded = false;
-                        // The blob table retains only the compact summary DTO.
-                        // Full file references and nested metadata are fetched
-                        // on selection through loadDocumentDetails().
-                        row.sourceBlob = null;
-                    }
-                }
+                if (!isRepositorySource(document.filePath))
+                    result.allRows = extractRowsFromBlobs(blobs);
                 if (isRepositorySource(document.filePath))
                 {
                     result.directoryTree = DirectoryTree();
@@ -5388,7 +5355,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 if (result.pagedSource && document.drainRepositoryPages)
                 {
                     document.repositoryRowsLoaded = result.pageOffset + result.allRows.length;
-                    document.repositoryBlobCursor = result.nextBlobId;
+                    document.repositoryContentCursor = result.nextContentCursor;
                     document.loadedRows = [];
                 }
                 else
@@ -5526,8 +5493,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         document.loadedRows = [];
                         document.visibleRows = [];
                         document.repositoryTableModel = new VirtualBlobTableModel(
-                            document.filePath, tableQuery, document.pageSize, result.allRows,
-                            result.pageTotal, result.nextBlobId, result.hasMore);
+                            document.filePath, catalogBackendSnapshot, tableQuery,
+                            document.pageSize, result.allRows, result.pageTotal,
+                            result.nextContentCursor, result.hasMore);
                         setBlobTableVirtualMode(document.tableView, true);
                         document.tableView.setModel(document.repositoryTableModel);
                         if (busyDocument is document)
@@ -6135,7 +6103,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             () { return notebook.getCurrentPage(); },
             () { return cast(int) documents.length; },
             (int pageIndex) { return documents[pageIndex]; },
-            (int pageIndex) { if (documents[pageIndex].directorySource !is null) documents[pageIndex].directorySource.close(); notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
+            (int pageIndex) { if (documents[pageIndex].directorySource !is null) documents[pageIndex].directorySource.close(); if (documents[pageIndex].catalogBackend !is null) documents[pageIndex].catalogBackend.close(); notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
             () { syncToolbarFromCurrentDocument(); },
             (bool clearGeometry) { persistCurrentState(clearGeometry); },
             () {
@@ -6267,7 +6235,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     () { return notebook.getCurrentPage(); },
                     () { return cast(int) documents.length; },
                     (int pageIndex) { return documents[pageIndex]; },
-                    (int pageIndex) { if (documents[pageIndex].directorySource !is null) documents[pageIndex].directorySource.close(); notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
+                    (int pageIndex) { if (documents[pageIndex].directorySource !is null) documents[pageIndex].directorySource.close(); if (documents[pageIndex].catalogBackend !is null) documents[pageIndex].catalogBackend.close(); notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
                     () { syncToolbarFromCurrentDocument(); },
                     (bool clearGeometry) { persistCurrentState(clearGeometry); },
                     () { return isLoading; },

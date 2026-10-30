@@ -491,14 +491,14 @@ private void appendNestedPath(TreeStore store, string path, string sizeText,
 private void populateArchiveEntryTree(DocumentTab document, const(BlobRow) row)
 {
     document.detailArchiveTreeStore.clear();
-    if (document.directorySourceRemote && row.sourceId >= 0 && row.hasArchive)
+    if (document.directorySourceRemote && row.sourceKey.length > 0 && row.hasArchive)
     {
         auto root = document.detailArchiveTreeStore.createIter(null);
         document.detailArchiveTreeStore.setValue(root, 0, "Archive entries");
         document.detailArchiveTreeStore.setValue(root, 1, "");
         document.detailArchiveTreeStore.setValue(root, 2, "");
         document.detailArchiveTreeStore.setValue(root, 3, "ArchiveRoot");
-        document.detailArchiveTreeStore.setValue(root, 4, row.sourceId.to!string);
+        document.detailArchiveTreeStore.setValue(root, 4, row.sourceKey);
         document.detailArchiveTreeStore.setValue(root, 6, document.nestedEntryRequestId.to!string);
         auto loading = document.detailArchiveTreeStore.createIter(root);
         document.detailArchiveTreeStore.setValue(loading, 0, "Loading...");
@@ -546,14 +546,14 @@ private void populateArchiveEntryTree(DocumentTab document, const(BlobRow) row)
 private void populateTorrentFileTree(DocumentTab document, const(BlobRow) row)
 {
     document.detailTorrentTreeStore.clear();
-    if (document.directorySourceRemote && row.sourceId >= 0 && row.hasTorrent)
+    if (document.directorySourceRemote && row.sourceKey.length > 0 && row.hasTorrent)
     {
         auto root = document.detailTorrentTreeStore.createIter(null);
         document.detailTorrentTreeStore.setValue(root, 0, "Torrent files");
         document.detailTorrentTreeStore.setValue(root, 1, "");
         document.detailTorrentTreeStore.setValue(root, 2, "");
         document.detailTorrentTreeStore.setValue(root, 3, "TorrentRoot");
-        document.detailTorrentTreeStore.setValue(root, 4, row.sourceId.to!string);
+        document.detailTorrentTreeStore.setValue(root, 4, row.sourceKey);
         document.detailTorrentTreeStore.setValue(root, 6, document.nestedEntryRequestId.to!string);
         auto loading = document.detailTorrentTreeStore.createIter(root);
         document.detailTorrentTreeStore.setValue(loading, 0, "Loading...");

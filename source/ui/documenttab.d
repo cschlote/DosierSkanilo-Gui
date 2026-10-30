@@ -6,6 +6,7 @@
  */
 module ui.documenttab;
 
+import dosierskanilo.catalogbackend : CatalogBackend, CatalogPageCursor;
 import gtk.AspectFrame;
 import gtk.Box;
 import gtk.Button;
@@ -317,7 +318,8 @@ class DocumentTab
     size_t pageOffset;
     size_t pageTotal;
     size_t repositoryRowsLoaded;
-    long repositoryBlobCursor;
+    CatalogPageCursor repositoryContentCursor;
+    CatalogBackend catalogBackend;
     size_t pageSize = 250;
     bool loadAllRows;
     bool drainRepositoryPages;

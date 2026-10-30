@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Repository documents now read the directory tree, content table, details,
+  archive and torrent entry pages, and archive-member previews through the
+  storage-neutral catalog backend. Tree and cursor identities are
+  source-relative paths, so saved state no longer depends on database IDs.
 - Preferences now configure the shared archive-member cache (base directory and
   size limit in MiB). The cache is configured at startup, reapplied when the
   settings change and no preview still holds a lease (otherwise after restart),

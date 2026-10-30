@@ -151,22 +151,20 @@ references, and shutdown removes the current session's extracted files.
 
 ## P1 — WP-13.6.2: storage-neutral catalog access in the GUI
 
-Status: **backend contract ready, GUI migration open**. Cache integration is
-done. The backend now provides `uiHandle` keys (opaque, instance-scoped),
-`resolveDirectory`/`resolveReference` for path-based restoration,
-`loadReference`, and `acquireMemberContent` with shared cache leases.
+Status: **read paths migrated**. Repository documents now read trees, content
+rows, details, archive/torrent entry pages, and member previews through
+`CatalogBackend`. Tree and cursor identities are source-relative paths, and the
+backend is held per document so page cursors stay valid.
 
-- [ ] Hold `ContentId`/`ReferenceId`/`DirectoryId` values in GUI tree/cursor
-  structs instead of parsed strings; use `uiHandle` only for `GtkTreeStore`
-  keys and detail loads via `loadContent(ContentId)`.
-- [ ] Persist directory/file *paths* (never IDs or handles) in `AppState` and
-  restore selection with `resolveDirectory`/`resolveReference`; unresolved
-  paths are treated as deleted objects, not errors.
-- [ ] Move `RepositoryDirectorySource` tree, detail, archive-member, and torrent
-  loading onto `CatalogBackend` for both JSON and SQLite sources.
-- [ ] Route archive member previews through `acquireMemberContent` and drop the
-  GUI-owned extraction helpers in `source/model/datasource.d`.
+- [x] Use path-based node identities in the GUI tree and table, so restored
+  state resolves with `resolveDirectory`/`resolveReference` and never stores
+  adapter tokens or UI handles.
+- [x] Load content rows via `listContents` and details via `loadContent`.
+- [x] Route archive member previews through `acquireMemberContent` and drop the
+  GUI-owned repository extraction path.
 - [ ] Keep CLI/GUI operation parity covered when the source abstraction changes.
+- [ ] Move remaining write paths (`scan`, archive-password updates) from the
+  concrete `Repository` to catalog operations; keep read paths backend-only.
 
 ## P2 — Stabilize GTK layout and video preview
 

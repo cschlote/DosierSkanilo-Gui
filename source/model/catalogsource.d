@@ -38,40 +38,11 @@ final class CatalogDirectorySource : DirectorySource
     {
         this.backend = backend;
         const info = backend.sourceInfo();
-        CatalogFileQuery fileQuery;
-        size_t fileCount;
-        ulong aggregateSize;
-        CatalogPageRequest request;
-        request.limit = pageSize;
-        while (true)
-        {
-            const page = backend.listFiles(fileQuery, request);
-            foreach (file; page.files)
-            {
-                ++fileCount;
-                aggregateSize += file.size;
-            }
-            if (!page.hasMore)
-                break;
-            request = CatalogPageRequest(pageSize, page.nextCursor);
-        }
-
-        size_t childDirectoryCount;
-        CatalogDirectoryQuery directoryQuery;
-        request = CatalogPageRequest.init;
-        request.limit = pageSize;
-        while (true)
-        {
-            const page = backend.listDirectories(directoryQuery, request);
-            childDirectoryCount += page.directories.length;
-            if (!page.hasMore)
-                break;
-            request = CatalogPageRequest(pageSize, page.nextCursor);
-        }
-
+        const summary = backend.rootSummary();
         rootNode = DirectoryNode("root", "", info.displayName.length > 0
             ? info.displayName : baseName(backend.target().repositoryRoot), "",
-            childDirectoryCount, fileCount, aggregateSize);
+            summary.childDirectoryCount, summary.fileReferenceCount,
+            summary.aggregateSize);
     }
 
     /** The backend used for detail loads by callers that reuse this source. */
@@ -317,8 +288,8 @@ unittest
 
     assert(source.root().id == "root");
     assert(source.root().name == baseName(root));
-    assert(source.root().fileCount == 3);
-    assert(source.root().aggregateSize == 11);
+    assert(source.root().fileCount == 4);
+    assert(source.root().aggregateSize == 15);
 
     auto rootFiles = source.listFiles("root");
     assert(rootFiles.length == 3);

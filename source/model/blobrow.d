@@ -33,6 +33,7 @@ import cli.logging;
 struct BlobRow
 {
     long sourceId = -1; /// Stable repository blob ID when available.
+    string sourceKey; /// Catalog-relative representative path for backend rows.
     size_t sourceOrdinal = size_t.max; /// Stable source-array ordinal for JSON rows.
     bool detailsLoaded = true; /// False while repository details are lazy.
     bool hasSummaryFlags; /// True when metadata presence came from SQLite.
@@ -65,23 +66,31 @@ struct BlobRow
     @property bool hasArchive() const { return hasSummaryFlags ? summaryHasArchive : sourceBlob.archiveSpecs.length > 0; } /// True when archive metadata is present.
     @property bool hasTorrent() const { return hasSummaryFlags ? summaryHasTorrent : sourceBlob.torrentInfo !is null && !sourceBlob.torrentInfo.empty; } /// True when torrent metadata is present.
 
+    /* Catalog-backed detail text used when no NamedBinaryBlob is attached. */
+    string catalogFileType; /// File signature supplied by a catalog snapshot.
+    string catalogMediaDetails; /// Rendered media streams from a catalog snapshot.
+    string catalogArchiveDetails; /// Rendered archive summary from a catalog snapshot.
+    string catalogTorrentDetails; /// Rendered torrent summary from a catalog snapshot.
+    string catalogSourceDetails; /// Rendered identity/checksum summary.
+    string catalogFileNames; /// Rendered reference paths.
+
     /* Fold-out details text for metadata sections, rendered from the source blob. */
-    @property string mediaInfoDetails() const { return hasMedia && sourceBlob !is null && sourceBlob.mediaInfoSig !is null ? sourceBlob.mediaInfoSig.toString() : ""; } /// Pretty-printed media metadata for fold-out inspection.
-    @property string fileTypeDetails() const { return hasFileType && sourceBlob !is null ? sourceBlob.fileType : ""; } /// Pretty-printed file type metadata for fold-out inspection.
-    @property string archiveDetails() const { return hasArchive && sourceBlob !is null ? detailLines(sourceBlob.archiveSpecs) : ""; } /// Pretty-printed archive metadata for fold-out inspection.
-    @property string torrentDetails() const { return hasTorrent && sourceBlob !is null && sourceBlob.torrentInfo !is null ? sourceBlob.torrentInfo.toString() : ""; } /// Pretty-printed torrent metadata for fold-out inspection.
-    @property string fileType() const { return hasFileType ? sourceBlob.fileType : ""; } /// Optional file type signature from scanner metadata.
+    @property string mediaInfoDetails() const { return hasMedia && sourceBlob !is null && sourceBlob.mediaInfoSig !is null ? sourceBlob.mediaInfoSig.toString() : catalogMediaDetails; } /// Pretty-printed media metadata for fold-out inspection.
+    @property string fileTypeDetails() const { return hasFileType ? (sourceBlob !is null ? sourceBlob.fileType : catalogFileType) : ""; } /// Pretty-printed file type metadata for fold-out inspection.
+    @property string archiveDetails() const { return hasArchive ? (sourceBlob !is null ? detailLines(sourceBlob.archiveSpecs) : catalogArchiveDetails) : ""; } /// Pretty-printed archive metadata for fold-out inspection.
+    @property string torrentDetails() const { return hasTorrent ? (sourceBlob !is null && sourceBlob.torrentInfo !is null ? sourceBlob.torrentInfo.toString() : catalogTorrentDetails) : ""; } /// Pretty-printed torrent metadata for fold-out inspection.
+    @property string fileType() const { return hasFileType ? (sourceBlob !is null ? sourceBlob.fileType : catalogFileType) : ""; } /// Optional file type signature from scanner metadata.
 
     /** Render the full source object details directly from the backing blob. */
     @property string sourceBlobDetails()
     {
-        return sourceBlob is null ? "" : blobDetails(sourceBlob);
+        return sourceBlob is null ? catalogSourceDetails : blobDetails(sourceBlob);
     }
 
     /** Render the known file references as a multiline block directly from the backing blob. */
     @property string knownFileNamesText()
     {
-        return sourceBlob is null ? "" : fileSpecDetails(sourceBlob.fileSpecs);
+        return sourceBlob is null ? catalogFileNames : fileSpecDetails(sourceBlob.fileSpecs);
     }
 }
 
