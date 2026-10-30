@@ -151,10 +151,11 @@ references, and shutdown removes the current session's extracted files.
 
 ## P1 — WP-13.6.2: storage-neutral catalog access in the GUI
 
-Status: **read paths migrated**. Repository documents now read trees, content
-rows, details, archive/torrent entry pages, and member previews through
-`CatalogBackend`. Tree and cursor identities are source-relative paths, and the
-backend is held per document so page cursors stay valid.
+Status: **complete**. Repository documents read trees, content rows, details,
+archive/torrent entry pages, and member previews through `CatalogBackend`.
+Archive rescans and password updates also use the shared operation/backend
+surface. Tree and cursor identities are source-relative paths, and the backend
+is held per document so page cursors stay valid.
 
 - [x] Use path-based node identities in the GUI tree and table, so restored
   state resolves with `resolveDirectory`/`resolveReference` and never stores
@@ -167,6 +168,8 @@ backend is held per document so page cursors stay valid.
   `Repository.updateMetadata` directly.
 - [x] Store archive passwords through `CatalogBackend.setArchivePassword`, so
   JSON and repository documents no longer need storage-specific writers.
+- [x] Remove the unused repository-specific GUI load helpers; tests exercise the
+  backend loaders instead.
 
 ## P2 — Stabilize GTK layout and video preview
 

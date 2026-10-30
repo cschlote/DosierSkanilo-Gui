@@ -44,18 +44,6 @@ import model.treeprojection : DirectoryNode, DirectorySource, FileCursor, FileFi
     FilePage, FileSortOrder, NestedFileNode, DirectoryTree, ProjectedDirectorySource,
     buildDirectoryTree, isArchivePathCandidate;
 
-/** One bounded source result page. */
-struct SourcePage
-{
-    NamedBinaryBlob[] blobs;
-    long[] blobIds;
-    RepositoryBlobFlags[] flags;
-    size_t offset;
-    size_t total;
-    long nextBlobId;
-    bool hasMore;
-}
-
 /** One lazy archive member projected into the main Directory Tree. */
 struct ArchiveMemberTreeEntry
 {
@@ -141,245 +129,6 @@ DirectoryTree loadDocumentTree(string path)
 }
 
 /** Directory source backed by bounded SQLite repository queries. */
-final class RepositoryDirectorySource : DirectorySource
-{
-    private string repositoryPath;
-    private DirectoryNode rootNode;
-
-    this(string path)
-    {
-        repositoryPath = path;
-        auto repository = Repository.open(path);
-        scope (exit)
-            repository.close();
-        auto summary = repository.rootSummary();
-        rootNode = DirectoryNode("root", "", baseName(repository.rootPath), "",
-            summary.childDirectoryCount, summary.fileCount, summary.aggregateSize);
-    }
-
-    override DirectoryNode root()
-    {
-        return rootNode;
-    }
-
-    override DirectoryNode[] listDirectories(string parentId, FileFilter filter = FileFilter())
-    {
-        auto repository = Repository.open(repositoryPath);
-        scope (exit)
-            repository.close();
-        RepositoryDirectoryQuery query;
-        query.parentId = parentId == "root" ? 0 : to!long(parentId);
-        query.limit = size_t.max;
-        query.text = filter.text;
-        query.caseSensitive = filter.caseSensitive;
-        query.video = filter.video;
-        query.audio = filter.audio;
-        query.image = filter.image;
-        query.textStream = filter.textStream;
-        query.mediaNegated = filter.mediaNegated;
-        query.fileType = filter.fileType;
-        query.archive = filter.archive;
-        query.torrent = filter.torrent;
-        DirectoryNode[] result;
-        foreach (directory; repository.listDirectories(query))
-        {
-            result ~= DirectoryNode("" ~ directory.id.to!string,
-                directory.parentId == 0 ? "root" : directory.parentId.to!string,
-                directory.name, directory.relativePath, directory.childDirectoryCount,
-                directory.fileCount, directory.aggregateSize);
-        }
-        return result;
-    }
-
-    override bool hasMatchingFileInDirectory(string directoryId,
-        FileFilter filter = FileFilter())
-    {
-        return listFilteredFilesPage(directoryId, FileCursor(), 1, filter).files.length > 0;
-    }
-
-    override FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250,
-        string filter = "")
-    {
-        auto repository = Repository.open(repositoryPath);
-        scope (exit)
-            repository.close();
-        RepositoryFileQuery query;
-        query.directoryId = directoryId == "root" ? 0 : to!long(directoryId);
-        query.offset = offset;
-        query.limit = limit;
-        query.text = filter;
-        FileNode[] result;
-        foreach (file; repository.listFiles(query))
-        {
-            FileNode node;
-            node.id = file.blobId.to!string;
-            node.cursorId = file.id.to!string;
-            node.directoryId = directoryId;
-            node.name = file.name;
-            node.relativePath = file.relativePath;
-            node.size = file.size;
-            node.hasFileType = file.hasFileType;
-            node.hasMedia = file.hasMedia;
-            node.hasVideo = file.hasVideo;
-            node.hasAudio = file.hasAudio;
-            node.hasImage = file.hasImage;
-            node.hasText = file.hasText;
-            node.hasArchive = file.hasArchive || isArchivePathCandidate(file.name);
-            node.hasTorrent = file.hasTorrent;
-            result ~= node;
-        }
-        return result;
-    }
-
-    override FilePage listFilesPage(string directoryId, FileCursor cursor = FileCursor(),
-        size_t limit = 250, string filter = "")
-    {
-        auto repository = Repository.open(repositoryPath);
-        scope (exit)
-            repository.close();
-        RepositoryFileQuery query;
-        query.directoryId = directoryId == "root" ? 0 : to!long(directoryId);
-        query.limit = limit;
-        query.text = filter;
-        query.afterPath = cursor.relativePath;
-        query.afterId = cursor.id.length > 0 ? to!long(cursor.id) : 0;
-        auto page = repository.listFilesPage(query);
-        FilePage result;
-        result.hasMore = page.hasMore;
-        foreach (file; page.files)
-        {
-            FileNode node;
-            node.id = file.blobId.to!string;
-            node.cursorId = file.id.to!string;
-            node.directoryId = directoryId;
-            node.name = file.name;
-            node.relativePath = file.relativePath;
-            node.size = file.size;
-            node.hasFileType = file.hasFileType;
-            node.hasMedia = file.hasMedia;
-            node.hasVideo = file.hasVideo;
-            node.hasAudio = file.hasAudio;
-            node.hasImage = file.hasImage;
-            node.hasText = file.hasText;
-            node.hasArchive = file.hasArchive || isArchivePathCandidate(file.name);
-            node.hasTorrent = file.hasTorrent;
-            result.files ~= node;
-        }
-        if (page.hasMore)
-            result.nextCursor = FileCursor(page.nextCursor.relativePath,
-                page.nextCursor.id.to!string);
-        return result;
-    }
-
-    override FilePage listFilteredFilesPage(string directoryId, FileCursor cursor = FileCursor(),
-        size_t limit = 250, FileFilter filter = FileFilter(),
-        FileSortOrder sortOrder = FileSortOrder.pathAscending)
-    {
-        auto repository = Repository.open(repositoryPath);
-        scope (exit)
-            repository.close();
-        RepositoryFileQuery query;
-        query.directoryId = directoryId == "root" ? 0 : to!long(directoryId);
-        query.limit = limit;
-        query.text = filter.text;
-        query.caseSensitive = filter.caseSensitive;
-        query.video = filter.video;
-        query.audio = filter.audio;
-        query.image = filter.image;
-        query.textStream = filter.textStream;
-        query.mediaNegated = filter.mediaNegated;
-        query.fileType = filter.fileType;
-        query.archive = filter.archive;
-        query.torrent = filter.torrent;
-        query.sortOrder = cast(RepositoryFileSortOrder) sortOrder;
-        query.afterPath = cursor.relativePath;
-        query.afterId = cursor.id.length > 0 ? to!long(cursor.id) : 0;
-        query.afterSize = cursor.size;
-        auto page = repository.listFilesPage(query);
-        FilePage result;
-        result.hasMore = page.hasMore;
-        foreach (file; page.files)
-        {
-            FileNode node;
-            node.id = file.blobId.to!string;
-            node.cursorId = file.id.to!string;
-            node.directoryId = directoryId;
-            node.name = file.name;
-            node.relativePath = file.relativePath;
-            node.size = file.size;
-            node.hasFileType = file.hasFileType;
-            node.hasMedia = file.hasMedia;
-            node.hasVideo = file.hasVideo;
-            node.hasAudio = file.hasAudio;
-            node.hasImage = file.hasImage;
-            node.hasText = file.hasText;
-            node.hasArchive = file.hasArchive || isArchivePathCandidate(file.name);
-            node.hasTorrent = file.hasTorrent;
-            result.files ~= node;
-        }
-        if (page.hasMore)
-            result.nextCursor = FileCursor(page.nextCursor.relativePath,
-                page.nextCursor.id.to!string, page.nextCursor.size);
-        return result;
-    }
-
-    override FilePage listPreviousFilteredFilesPage(string directoryId, FileCursor cursor,
-        size_t limit = 250, FileFilter filter = FileFilter(),
-        FileSortOrder sortOrder = FileSortOrder.pathAscending)
-    {
-        auto repository = Repository.open(repositoryPath);
-        scope (exit)
-            repository.close();
-        RepositoryFileQuery query;
-        query.directoryId = directoryId == "root" ? 0 : to!long(directoryId);
-        query.limit = limit;
-        query.text = filter.text;
-        query.caseSensitive = filter.caseSensitive;
-        query.video = filter.video;
-        query.audio = filter.audio;
-        query.image = filter.image;
-        query.textStream = filter.textStream;
-        query.mediaNegated = filter.mediaNegated;
-        query.fileType = filter.fileType;
-        query.archive = filter.archive;
-        query.torrent = filter.torrent;
-        query.sortOrder = cast(RepositoryFileSortOrder) sortOrder;
-        auto backendCursor = RepositoryFileCursor(cursor.relativePath,
-            to!long(cursor.id), cursor.size);
-        auto page = repository.previousFilesPage(query, backendCursor);
-        FilePage result;
-        result.hasMore = page.hasMore;
-        foreach (file; page.files)
-        {
-            FileNode node;
-            node.id = file.blobId.to!string;
-            node.cursorId = file.id.to!string;
-            node.directoryId = directoryId;
-            node.name = file.name;
-            node.relativePath = file.relativePath;
-            node.size = file.size;
-            node.hasFileType = file.hasFileType;
-            node.hasMedia = file.hasMedia;
-            node.hasVideo = file.hasVideo;
-            node.hasAudio = file.hasAudio;
-            node.hasImage = file.hasImage;
-            node.hasText = file.hasText;
-            node.hasArchive = file.hasArchive || isArchivePathCandidate(file.name);
-            node.hasTorrent = file.hasTorrent;
-            result.files ~= node;
-        }
-        if (page.hasMore)
-            result.nextCursor = FileCursor(page.nextCursor.relativePath,
-                page.nextCursor.id.to!string, page.nextCursor.size);
-        return result;
-    }
-
-    override void close()
-    {
-        // Each operation opens and closes its own repository connection.
-    }
-}
-
 /** Open a repository-backed directory source for the GUI tree. */
 DirectorySource openRepositoryDirectorySource(string path)
 {
@@ -636,84 +385,6 @@ BlobRow loadCatalogFileDetails(CatalogBackend backend, string relativePath)
     return row;
 }
 
-/** Load one bounded page of archive entries for a repository blob. */
-NestedFileNode[] loadRepositoryArchiveEntries(string path, long blobId,
-    size_t offset = 0, size_t limit = 250)
-{
-    auto repository = Repository.open(path);
-    scope (exit)
-        repository.close();
-    RepositoryArchiveQuery query;
-    query.blobId = blobId;
-    query.offset = offset;
-    query.limit = limit;
-    NestedFileNode[] result;
-    foreach (entry; repository.listArchiveEntries(query))
-        result ~= NestedFileNode(entry.id.to!string, entry.name, entry.name,
-            entry.size, entry.modifiedAt);
-    return result;
-}
-
-/** Load a bounded page of repository archive members for a container blob. */
-ArchiveMemberTreePage loadRepositoryArchiveMemberTreePage(string path,
-    long containerBlobId, size_t offset = 0, size_t limit = 250,
-    string containerVirtualPath = "")
-{
-    auto repository = Repository.open(path);
-    scope (exit)
-        repository.close();
-    return repositoryArchiveMemberTreePage(repository, containerBlobId,
-        containerVirtualPath, false, offset, limit);
-}
-
-/** Load a bounded page of members from a nested repository archive reference. */
-ArchiveMemberTreePage loadNestedRepositoryArchiveMemberTreePage(string path,
-    long containerReferenceId, size_t offset = 0, size_t limit = 250)
-{
-    auto repository = Repository.open(path);
-    scope (exit)
-        repository.close();
-    auto container = repository.fileReference(containerReferenceId);
-    enforce(container.id > 0 && container.archiveMember,
-        "The selected repository reference is not an archive member.");
-    return repositoryArchiveMemberTreePage(repository, container.blobId,
-        container.relativePath, true, offset, limit);
-}
-
-private ArchiveMemberTreePage repositoryArchiveMemberTreePage(
-    Repository repository, long containerBlobId, string containerVirtualPath,
-    bool containerIsVirtual, size_t offset, size_t limit)
-{
-    enforce(limit > 0, "Archive-member page size must be greater than zero.");
-    RepositoryArchiveQuery query;
-    query.blobId = containerBlobId;
-    query.offset = offset;
-    query.limit = limit + 1;
-    ArchiveMemberTreePage page;
-    const auto encodedContainerPath = containerIsVirtual
-        ? containerVirtualPath : escapeArchiveVirtualPath(containerVirtualPath);
-    foreach (entry; repository.listArchiveEntries(query))
-    {
-        ArchiveMemberTreeEntry node;
-        node.referenceId = entry.id.to!string;
-        node.contentId = entry.contentBlobId.to!string;
-        node.name = entry.name;
-        node.relativePath = entry.name;
-        node.virtualPath = appendArchiveVirtualPath(encodedContainerPath,
-            entry.relativePath, entry.occurrence);
-        node.size = entry.size;
-        node.hasArchive = isArchivePathCandidate(entry.name);
-        page.entries ~= node;
-    }
-    if (page.entries.length > limit)
-    {
-        page.entries = page.entries[0 .. limit];
-        page.hasMore = true;
-    }
-    page.nextOffset = offset + page.entries.length;
-    return page;
-}
-
 /** Load a bounded page of JSON-v5 virtual members for one archive reference. */
 ArchiveMemberTreePage loadJsonArchiveMemberTreePage(string containerVirtualPath,
     const(BlobRow)[] catalogRows, size_t offset = 0, size_t limit = 250,
@@ -841,37 +512,6 @@ private bool isDirectArchiveChild(ParsedArchiveVirtualPath container,
             return false;
     }
     return true;
-}
-
-/** Acquire one repository archive member into the shared preview cache. */
-AcquiredArchiveMemberPreview acquireRepositoryArchiveMemberPreview(string path,
-    long fileReferenceId)
-{
-    auto repository = Repository.open(path);
-    scope (exit)
-        repository.close();
-
-    auto member = repository.fileReference(fileReferenceId);
-    enforce(member.id > 0 && member.archiveMember,
-        "The selected repository reference is not an archive member.");
-    auto parsed = parseArchiveVirtualPath(member.relativePath);
-    enforce(parsed.isVirtual, "The selected repository path is not virtual.");
-
-    string password;
-    if (member.containerReferenceId > 0)
-    {
-        auto container = repository.fileReference(member.containerReferenceId);
-        if (container.id > 0)
-            password = repository.loadBlobDetails(container.blobId).archivePassword;
-    }
-
-    AcquiredArchiveMemberPreview preview;
-    preview.lease = acquireVirtualArchiveMember(repository.rootPath,
-        member.relativePath, "repository:" ~ repository.rootPath ~ ":"
-            ~ member.archiveContainerIdentity, member.size, password);
-    preview.virtualPath = member.relativePath;
-    preview.size = member.size;
-    return preview;
 }
 
 /** Acquire one member from a JSON archive using its physical container path. */
@@ -1006,31 +646,41 @@ NestedFileNode[] loadCatalogArchiveEntries(CatalogBackend backend,
     const container = backend.loadReference(referenceId);
     const basePath = parseArchiveVirtualPath(containerPath).isVirtual
         ? containerPath : escapeArchiveVirtualPath(containerPath);
-    NestedFileNode[] result;
-    size_t seen;
+
+    const(CatalogArchiveEntry)[] entries;
     CatalogPageCursor cursor;
-    while (result.length < limit)
+    while (true)
     {
         CatalogPageRequest request;
         request.limit = 250;
         request.cursor = cursor;
         const page = backend.listArchiveEntries(container.contentId, request);
-        foreach (entry; page.entries)
-        {
-            if (seen >= offset && result.length < limit)
-            {
-                string identity;
-                if (entry.hasSafePath && !entry.isDirectory)
-                    identity = appendArchiveVirtualPath(basePath,
-                        entry.relativePath, entry.occurrence);
-                result ~= NestedFileNode(identity, entry.name, entry.name,
-                    entry.size, entry.modifiedAt);
-            }
-            ++seen;
-        }
+        entries ~= page.entries;
         if (!page.hasMore)
             break;
         cursor = page.nextCursor;
+    }
+
+    size_t[string] occurrenceCounts;
+    foreach (entry; entries)
+        occurrenceCounts[entry.relativePath] = occurrenceCounts.get(
+            entry.relativePath, 0) + 1;
+
+    NestedFileNode[] result;
+    foreach (index, entry; entries)
+    {
+        if (index < offset || result.length >= limit)
+            continue;
+        string identity;
+        if (entry.hasSafePath && !entry.isDirectory)
+        {
+            const auto occurrence = occurrenceCounts.get(entry.relativePath, 1) > 1
+                ? entry.occurrence : size_t.max;
+            identity = appendArchiveVirtualPath(basePath, entry.relativePath,
+                occurrence);
+        }
+        result ~= NestedFileNode(identity, entry.name, entry.name, entry.size,
+            entry.modifiedAt);
     }
     return result;
 }
@@ -1182,37 +832,10 @@ AcquiredArchiveMemberPreview acquireCatalogArchiveMemberPreview(
     return preview;
 }
 
-/** Load one bounded page of torrent files for a repository blob. */
-NestedFileNode[] loadRepositoryTorrentFiles(string path, long blobId,
-    size_t offset = 0, size_t limit = 250)
-{
-    auto repository = Repository.open(path);
-    scope (exit)
-        repository.close();
-    RepositoryTorrentQuery query;
-    query.blobId = blobId;
-    query.offset = offset;
-    query.limit = limit;
-    NestedFileNode[] result;
-    foreach (file; repository.listTorrentFiles(query))
-        result ~= NestedFileNode(file.id.to!string, file.relativePath,
-            file.relativePath, file.size, "");
-    return result;
-}
-
-/** Load one GUI document from JSON or an SQLite repository. */
+/** Load one JSON catalog document. */
 NamedBinaryBlob[] loadDocumentSource(string path)
 {
-    if (!isRepositorySource(path))
-        return readJsonCatalog(path);
-
-    auto repository = Repository.open(path);
-    scope (exit)
-        repository.close();
-
-    JsonExportOptions options;
-    options.absolutePaths = true;
-    return repository.loadCatalog(options);
+    return readJsonCatalog(path);
 }
 
 /** Store or remove one password after resolving the user's filename to a blob. */
@@ -1400,101 +1023,6 @@ private void writeJsonCatalog(string sourcePath, NamedBinaryBlob[] blobs,
         "Failed to safely save JSON archive metadata to " ~ sourcePath);
 }
 
-/** Load full details for one repository blob. */
-NamedBinaryBlob loadDocumentDetails(string path, long blobId)
-{
-    auto repository = Repository.open(path);
-    scope (exit)
-        repository.close();
-    JsonExportOptions options;
-    options.absolutePaths = true;
-    options.includeArchiveEntries = false;
-    options.includeTorrentFiles = false;
-    return repository.loadBlobDetails(blobId, options);
-}
-
-/** Load one bounded page from a JSON file or SQLite repository. */
-SourcePage loadDocumentPage(string path, size_t offset, size_t limit,
-    SourceQuery query = SourceQuery())
-{
-    if (!isRepositorySource(path))
-    {
-        auto allBlobs = readJsonCatalog(path);
-        auto end = offset + limit;
-        if (end > allBlobs.length)
-            end = allBlobs.length;
-        if (offset > allBlobs.length)
-            offset = allBlobs.length;
-        return SourcePage(allBlobs[offset .. end].dup, [], [], offset, allBlobs.length);
-    }
-
-    auto repository = Repository.open(path);
-    scope (exit)
-        repository.close();
-    JsonExportOptions options;
-    options.absolutePaths = true;
-    options.includeDetails = false;
-    RepositoryQueryOptions repositoryQuery;
-    repositoryQuery.offset = offset;
-    repositoryQuery.limit = limit;
-    repositoryQuery.text = query.text;
-    repositoryQuery.caseSensitive = query.caseSensitive;
-    repositoryQuery.video = query.video;
-    repositoryQuery.audio = query.audio;
-    repositoryQuery.image = query.image;
-    repositoryQuery.textStream = query.textStream;
-    repositoryQuery.mediaNegated = query.mediaNegated;
-    repositoryQuery.fileType = query.fileType;
-    repositoryQuery.archive = query.archive;
-    repositoryQuery.torrent = query.torrent;
-    if (limit == size_t.max)
-    {
-        auto queryTotal = repository.countCatalogQuery(repositoryQuery);
-        repositoryQuery.limit = queryTotal == 0 ? 1 : queryTotal;
-    }
-    auto page = repository.loadCatalogQueryPageWithIds(repositoryQuery, options);
-    auto total = page.total;
-    return SourcePage(page.blobs, page.blobIds, page.flags,
-        offset, total);
-}
-
-/** Load one source-opaque repository catalog chunk using its stable blob cursor. */
-SourcePage loadDocumentCursorPage(string path, long afterBlobId, size_t limit,
-    SourceQuery query = SourceQuery())
-{
-    auto repository = Repository.open(path);
-    scope (exit)
-        repository.close();
-
-    RepositoryQueryOptions options;
-    options.limit = limit;
-    options.afterBlobId = afterBlobId;
-    options.useCursor = true;
-    options.text = query.text;
-    options.caseSensitive = query.caseSensitive;
-    options.video = query.video;
-    options.audio = query.audio;
-    options.image = query.image;
-    options.textStream = query.textStream;
-    options.mediaNegated = query.mediaNegated;
-    options.fileType = query.fileType;
-    options.archive = query.archive;
-    options.torrent = query.torrent;
-
-    JsonExportOptions exportOptions;
-    exportOptions.absolutePaths = true;
-    exportOptions.includeDetails = false;
-    auto page = repository.loadCatalogQueryCursorPage(options, exportOptions);
-    SourcePage result;
-    result.blobs = page.blobs;
-    result.blobIds = page.blobIds;
-    result.flags = page.flags;
-    result.total = page.total;
-    result.nextBlobId = page.nextCursor;
-    result.hasMore = page.hasMore;
-    return result;
-}
-
 @("repository source detection")
 unittest
 {
@@ -1516,9 +1044,9 @@ unittest
     auto nested = buildPath(root, "nested", "directory");
     mkdirRecurse(nested);
     assert(isRepositorySource(nested));
-    auto page = loadDocumentPage(root, 0, 10);
+    auto page = loadCatalogRowOffsetPage(root, 0, 10);
     assert(page.total == 0);
-    assert(page.blobs.length == 0);
+    assert(page.rows.length == 0);
 
     repository = Repository.open(root);
     write(buildPath(root, "one.txt"), "one");
@@ -1529,14 +1057,13 @@ unittest
     assert(repository.countCatalogQuery(RepositoryQueryOptions()) == 3,
         "query=" ~ to!string(repository.countCatalogQuery(RepositoryQueryOptions())));
     repository.close();
-    auto populated = loadDocumentPage(root, 0, 2);
+    auto backend = openCatalogBackend(root);
+    scope (exit)
+        backend.close();
+    auto populated = loadCatalogRowOffsetPage(backend, 0, 2);
     assert(populated.total == 3, "total=" ~ to!string(populated.total));
-    assert(populated.blobs.length == 2);
-    assert(populated.blobIds.length == 2);
-    assert(populated.flags.length == 2);
-    assert(!populated.flags[0].hasMedia);
-    auto tree = loadDocumentTree(root);
-    assert(tree.files.length == 3);
+    assert(populated.rows.length == 2);
+    assert(!populated.rows[0].hasMedia);
     auto directorySource = openRepositoryDirectorySource(root);
     assert(directorySource.root().id == "root");
     assert(directorySource.root().name == baseName(root));
@@ -1544,14 +1071,14 @@ unittest
     assert(directorySource.root().aggregateSize == 11);
     assert(directorySource.listFiles("root").length == 3);
     assert(directorySource.listFiles("root", 0, 250, "one.txt").length == 1);
-    auto catalogPage = loadDocumentCursorPage(root, 0, 1);
-    assert(catalogPage.blobs.length == 1);
+    auto catalogPage = loadCatalogRowPage(backend, CatalogPageCursor.init, 1);
+    assert(catalogPage.rows.length == 1);
     assert(catalogPage.hasMore);
-    auto nextCatalogPage = loadDocumentCursorPage(root, catalogPage.nextBlobId, 1);
-    assert(nextCatalogPage.blobs.length == 1);
-    assert(nextCatalogPage.blobIds[0] > catalogPage.blobIds[0]);
-    auto finalCatalogPage = loadDocumentCursorPage(root, nextCatalogPage.nextBlobId, 10);
-    assert(finalCatalogPage.blobs.length == 1);
+    auto nextCatalogPage = loadCatalogRowPage(backend, catalogPage.nextCursor, 1);
+    assert(nextCatalogPage.rows.length == 1);
+    assert(nextCatalogPage.rows[0].sourceKey != catalogPage.rows[0].sourceKey);
+    auto finalCatalogPage = loadCatalogRowPage(backend, nextCatalogPage.nextCursor, 1);
+    assert(finalCatalogPage.rows.length == 1);
     assert(!finalCatalogPage.hasMore);
     auto firstPage = directorySource.listFilesPage("root", FileCursor(), 1);
     assert(firstPage.files.length == 1);
@@ -1579,9 +1106,9 @@ unittest
     directorySource.close();
     SourceQuery filteredQuery;
     filteredQuery.text = "one.txt";
-    auto filtered = loadDocumentPage(root, 0, 250, filteredQuery);
+    auto filtered = loadCatalogRowOffsetPage(backend, 0, 250, filteredQuery);
     assert(filtered.total == 1);
-    assert(filtered.blobs.length == 1);
+    assert(filtered.rows.length == 1);
 }
 
 @("repository tree and detail queries use independent concurrent connections")
@@ -1812,29 +1339,29 @@ unittest
     auto torrentFile = repository.listFiles(torrentQuery)[0];
     repository.close();
 
-    auto archiveDetails = loadDocumentDetails(root, archiveFile.blobId);
-    assert(archiveDetails !is null);
-    assert(archiveDetails.archiveSpecs.length == 0);
-    auto archiveMembers = loadRepositoryArchiveEntries(root, archiveFile.blobId);
+    auto archiveDetails = loadCatalogFileDetails(root, archiveFile.relativePath);
+    assert(archiveDetails.hasArchive);
+    assert(archiveDetails.hasSummaryFlags);
+    auto archiveMembers = loadCatalogArchiveEntries(root,
+        archiveFile.relativePath);
     assert(archiveMembers.length > 0);
-    auto memberPreview = acquireRepositoryArchiveMemberPreview(root,
-        to!long(archiveMembers[0].id));
+    auto memberTreePage = loadCatalogArchiveMemberTreePage(root,
+        archiveFile.relativePath);
+    assert(memberTreePage.entries.length == 1);
+    assert(memberTreePage.entries[0].referenceId == archiveMembers[0].id);
+    assert(memberTreePage.entries[0].virtualPath.canFind("!/payload.txt"));
+    auto memberPreview = acquireCatalogArchiveMemberPreview(root,
+        memberTreePage.entries[0].referenceId);
     scope (exit)
         if (memberPreview.lease !is null)
             memberPreview.lease.release();
     assert(memberPreview.virtualPath.canFind("!/payload.txt"));
     assert(memberPreview.size == "archive payload\n".length);
     assert(readText(memberPreview.lease.path) == "archive payload\n");
-    auto memberTreePage = loadRepositoryArchiveMemberTreePage(root,
-        archiveFile.blobId);
-    assert(memberTreePage.entries.length == 1);
-    assert(memberTreePage.entries[0].referenceId == archiveMembers[0].id);
-    assert(memberTreePage.entries[0].virtualPath.canFind("!/payload.txt"));
 
-    auto torrentDetails = loadDocumentDetails(root, torrentFile.blobId);
-    assert(torrentDetails !is null && torrentDetails.torrentInfo !is null);
-    assert(torrentDetails.torrentInfo.files.length == 0);
-    assert(loadRepositoryTorrentFiles(root, torrentFile.blobId).length > 0);
+    auto torrentDetails = loadCatalogFileDetails(root, torrentFile.relativePath);
+    assert(torrentDetails.hasTorrent);
+    assert(loadCatalogTorrentEntries(root, torrentFile.relativePath).length > 0);
 }
 
 @("archive and torrent detail adapters continue beyond 250 entries")
@@ -1890,23 +1417,23 @@ unittest
     auto torrentFile = repository.listFiles(torrentQuery)[0];
     repository.close();
 
-    auto archiveProbe = loadRepositoryArchiveEntries(root, archiveFile.blobId,
+    auto archiveProbe = loadCatalogArchiveEntries(root, archiveFile.relativePath,
         0, 251);
     assert(archiveProbe.length == 251);
     auto archivePage = archiveProbe[0 .. 250];
     assert(archivePage.length == 250);
-    auto archiveContinuation = loadRepositoryArchiveEntries(root,
-        archiveFile.blobId, archivePage.length, 251);
+    auto archiveContinuation = loadCatalogArchiveEntries(root,
+        archiveFile.relativePath, archivePage.length, 251);
     assert(archiveContinuation.length == 1);
     assert(archiveContinuation[0].relativePath.endsWith("folder/entry-250.txt"));
 
-    auto torrentProbe = loadRepositoryTorrentFiles(root, torrentFile.blobId,
+    auto torrentProbe = loadCatalogTorrentEntries(root, torrentFile.relativePath,
         0, 251);
     assert(torrentProbe.length == 251);
     auto torrentPage = torrentProbe[0 .. 250];
     assert(torrentPage.length == 250);
-    auto torrentContinuation = loadRepositoryTorrentFiles(root,
-        torrentFile.blobId, torrentPage.length, 251);
+    auto torrentContinuation = loadCatalogTorrentEntries(root,
+        torrentFile.relativePath, torrentPage.length, 251);
     assert(torrentContinuation.length == 1);
     assert(torrentContinuation[0].relativePath == "test/folder/entry-250.txt");
 }

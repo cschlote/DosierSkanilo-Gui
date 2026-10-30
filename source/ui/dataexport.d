@@ -7,9 +7,9 @@ import std.format : format;
 import std.json : JSONType, JSONValue;
 import std.string : replace;
 
-import dosierskanilo.repository.types : RepositoryBlobFlags;
+import dosierskanilo.catalogbackend : CatalogPageCursor;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
-import model.datasource : SourceQuery, isRepositorySource, loadDocumentCursorPage,
+import model.datasource : SourceQuery, isRepositorySource, loadCatalogRowPage,
     loadDocumentSource;
 import view.textreport : filterRowsByText;
 
@@ -46,41 +46,16 @@ BlobRow[] loadFilteredExportRows(string sourcePath, SourceQuery query)
     auto localFilter = query;
     localFilter.text = "";
     BlobRow[] result;
-    long afterBlobId;
+    CatalogPageCursor cursor;
     while (true)
     {
-        auto page = loadDocumentCursorPage(sourcePath, afterBlobId, 250,
-            repositoryQuery);
-        auto rows = extractRowsFromBlobs(page.blobs);
-        foreach (index, ref row; rows)
-        {
-            if (index < page.blobIds.length)
-            {
-                row.sourceId = page.blobIds[index];
-                row.detailsLoaded = false;
-            }
-            if (index < page.flags.length)
-                applySummaryFlags(row, page.flags[index]);
-        }
-        result ~= filterExportRows(rows, localFilter);
+        auto page = loadCatalogRowPage(sourcePath, cursor, 250, repositoryQuery);
+        result ~= filterExportRows(page.rows, localFilter);
         if (!page.hasMore)
             break;
-        afterBlobId = page.nextBlobId;
+        cursor = page.nextCursor;
     }
     return result;
-}
-
-private void applySummaryFlags(ref BlobRow row, RepositoryBlobFlags flags)
-{
-    row.hasSummaryFlags = true;
-    row.summaryHasMedia = flags.hasMedia;
-    row.summaryHasVideo = flags.hasVideo;
-    row.summaryHasAudio = flags.hasAudio;
-    row.summaryHasImage = flags.hasImage;
-    row.summaryHasText = flags.hasText;
-    row.summaryHasFileType = flags.hasFileType;
-    row.summaryHasArchive = flags.hasArchive;
-    row.summaryHasTorrent = flags.hasTorrent;
 }
 
 /** Serialize the visible row projection as a stable CSV document. */
