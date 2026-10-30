@@ -20,6 +20,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout backend dependency
+        run: |
+          git clone --depth 1 https://github.com/cschlote/DosierSkanilo.git ../DosierSkanilo
+          if git -C ../DosierSkanilo fetch --depth 1 origin "$GITHUB_REF_NAME"; then
+            git -C ../DosierSkanilo checkout --detach FETCH_HEAD
+          fi
+
       - name: Cache DUB
         uses: actions/cache@v4
         with:
@@ -49,6 +56,13 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Checkout backend dependency
+        run: |
+          git clone --depth 1 https://github.com/cschlote/DosierSkanilo.git ../DosierSkanilo
+          if git -C ../DosierSkanilo fetch --depth 1 origin "$GITHUB_REF_NAME"; then
+            git -C ../DosierSkanilo checkout --detach FETCH_HEAD
+          fi
 
       - name: Cache DUB
         uses: actions/cache@v4
@@ -84,6 +98,13 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Checkout backend dependency
+        run: |
+          git clone --depth 1 https://github.com/cschlote/DosierSkanilo.git ../DosierSkanilo
+          if git -C ../DosierSkanilo fetch --depth 1 origin "$GITHUB_REF_NAME"; then
+            git -C ../DosierSkanilo checkout --detach FETCH_HEAD
+          fi
 
       - name: Cache DUB
         uses: actions/cache@v4

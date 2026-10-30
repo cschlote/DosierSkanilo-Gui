@@ -1443,7 +1443,7 @@ unittest
 unittest
 {
     import std.algorithm.searching : endsWith;
-    import std.file : exists, mkdirRecurse, readText, rmdirRecurse, tempDir;
+    import std.file : exists, mkdirRecurse, readText, rmdirRecurse, tempDir, write;
     import std.path : buildPath;
     import std.process : execute;
     import std.string : endsWith;
@@ -1458,15 +1458,18 @@ unittest
             rmdirRecurse(root);
     }
 
-    auto archivePath = buildPath(root, "weird!/name.zip");
+    auto firstSource = buildPath(root, "first-source");
+    auto secondSource = buildPath(root, "second-source");
+    mkdirRecurse(firstSource);
+    mkdirRecurse(secondSource);
+    write(buildPath(firstSource, "dup.txt"), "first");
+    write(buildPath(firstSource, "bang!.txt"), "bang");
+    write(buildPath(secondSource, "dup.txt"), "second");
     mkdirRecurse(buildPath(root, "weird!"));
-    const createArchive = "import sys, zipfile; "
-        ~ "z = zipfile.ZipFile(sys.argv[1], 'w'); "
-        ~ "z.writestr('dup.txt', 'first'); "
-        ~ "z.writestr('dup.txt', 'second'); "
-        ~ "z.writestr('bang!.txt', 'bang'); "
-        ~ "z.writestr('../escape.txt', 'bad'); z.close()";
-    assert(execute(["python3", "-c", createArchive, archivePath]).status == 0);
+    auto archivePath = buildPath(root, "weird!/name.tar");
+    assert(execute(["tar", "-cf", archivePath,
+        "-C", firstSource, "dup.txt", "bang!.txt",
+        "-C", secondSource, "dup.txt"]).status == 0);
 
     auto repository = Repository.initialize(root);
     repository.scan();
@@ -1476,7 +1479,7 @@ unittest
     repository.updateMetadata(metadataOptions);
     repository.close();
 
-    const containerPath = escapeArchiveVirtualPath("weird!/name.zip");
+    const containerPath = escapeArchiveVirtualPath("weird!/name.tar");
     auto entries = loadCatalogArchiveEntries(root, containerPath);
     string[] duplicateIds;
     bool sawBang;
@@ -1601,7 +1604,7 @@ unittest
 @("JSON archive member previews use leased cache files and preserve virtual paths")
 unittest
 {
-    import std.file : exists, mkdirRecurse, readText, rmdirRecurse, tempDir;
+    import std.file : exists, mkdirRecurse, readText, rmdirRecurse, tempDir, write;
     import std.path : buildPath;
     import std.process : Config, execute;
     import std.uuid : randomUUID;
@@ -1613,12 +1616,16 @@ unittest
         if (exists(root))
             rmdirRecurse(root);
 
-    auto archivePath = buildPath(root, "bundle!.zip");
-    const auto createArchive = "import sys, zipfile; z=zipfile.ZipFile(sys.argv[1], 'w'); "
-        ~ "z.writestr('preview.txt', 'first occurrence\\n'); "
-        ~ "z.writestr('preview.txt', 'second occurrence\\n'); z.close()";
-    assert(execute(["python3", "-c", createArchive, archivePath], null,
-        Config.none).status == 0);
+    auto firstSource = buildPath(root, "first-source");
+    auto secondSource = buildPath(root, "second-source");
+    mkdirRecurse(firstSource);
+    mkdirRecurse(secondSource);
+    write(buildPath(firstSource, "preview.txt"), "first occurrence\n");
+    write(buildPath(secondSource, "preview.txt"), "second occurrence\n");
+    auto archivePath = buildPath(root, "bundle!.tar");
+    assert(execute(["tar", "-cf", archivePath,
+        "-C", firstSource, "preview.txt",
+        "-C", secondSource, "preview.txt"], null, Config.none).status == 0);
 
     auto firstPreview = acquireJsonArchiveMemberPreview(
         buildPath(root, "catalog.json"), archivePath, "preview.txt", 0);

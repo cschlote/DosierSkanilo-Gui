@@ -10,7 +10,10 @@ if command -v apk >/dev/null 2>&1; then
       ;;
     build|runtime)
       # ldc delegates final linking to cc; build-base provides gcc/cc on Alpine.
-      apk add --no-cache bash dub ldc build-base gtk+3.0-dev
+      # gstreamer is loaded dynamically by the generated gtk-d bindings, so the
+      # shared libraries are needed to run the test suite.
+      apk add --no-cache bash dub ldc build-base gtk+3.0-dev \
+        gstreamer-dev gst-plugins-base-dev gst-plugins-bad-dev zip unzip
       ;;
     *)
       echo "Unknown mode: ${MODE}" >&2
@@ -28,7 +31,9 @@ if command -v apt-get >/dev/null 2>&1; then
       apt-get install -y --no-install-recommends bash dub ldc
       ;;
     build|runtime)
-      apt-get install -y --no-install-recommends bash dub ldc libgtk-3-dev
+      apt-get install -y --no-install-recommends bash dub ldc libgtk-3-dev \
+        libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+        libgstreamer-plugins-bad1.0-dev zip unzip
       ;;
     *)
       echo "Unknown mode: ${MODE}" >&2
