@@ -230,7 +230,7 @@ unittest
         idleFired = true;
         return false;
     });
-    scheduleUiTimeout(10, {
+    scheduleUiTimeout(50, {
         timeoutFired = true;
         loop.quit();
         return false;

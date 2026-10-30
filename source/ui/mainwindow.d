@@ -83,13 +83,19 @@ import gstreamer.c.types : GstState, GstStateChangeReturn;
 
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
-import model.datasource : SourceQuery, isRepositorySource, loadDocumentDetails,
-    loadDocumentCursorPage, loadDocumentPage, loadDocumentSource, loadRepositoryArchiveEntries,
-    loadRepositoryTorrentFiles, openRepositoryDirectorySource,
+import model.catalogsource : openCatalogBackend;
+import model.datasource : SourceQuery, isRepositorySource,
+    AcquiredArchiveMemberPreview, ArchiveMemberTreeEntry, ArchiveMemberTreePage,
+    acquireJsonArchiveMemberPreview, acquireJsonVirtualArchiveMemberPreview,
+    loadJsonArchiveMemberTreePage,
+    loadDocumentSource, openRepositoryDirectorySource,
+    loadCatalogRowPage, loadCatalogRowOffsetPage, loadCatalogFileDetails,
+    loadCatalogArchiveEntries, loadCatalogTorrentEntries,
+    loadCatalogArchiveMemberTreePage, acquireCatalogArchiveMemberPreview,
     scanDocumentArchive, scanDocumentArchives, setDocumentArchivePassword;
 import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, FileCursor,
     FileFilter, FileNode, FilePage, FileSortOrder, NestedFileNode,
-    ProjectedDirectorySource, jsonFileNodeId;
+    ProjectedDirectorySource, isArchivePathCandidate, jsonFileNodeId;
 import ui.appstate : AppState, DocumentFilterState, TableSortState, TreeCursorState, loadAppState,
     saveAppState;
 import ui.builderutils : builderObject;
@@ -141,11 +147,15 @@ import ui.mainsources : UiMainSource, scheduleUiIdle, scheduleUiTimeout,
 import ui.virtualblobtable : VirtualBlobTableModel;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : filterRowsByText;
-import dosierarkivo.archive : ArchivePasswordCallback;
+import dosierskanilo.membercontentcache : closeSharedMemberContentCache,
+    configureSharedMemberContentCache, defaultMemberCacheByteLimit;
+import dosierarkivo.archive : ArchivePasswordCallback, appendArchiveVirtualPath,
+    escapeArchiveVirtualPath, ParsedArchiveVirtualPath, parseArchiveVirtualPath;
 import dosierarkivo.factory : fileArchive;
 import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, NamedBinaryBlob;
 import dosierskanilo.repository.types : MetadataSummary, RepositoryBlobFlags;
 import dosierskanilo.repository.repository : Repository;
+import dosierskanilo.catalogbackend : CatalogPageCursor;
 import dosierskanilo.operations : AnalysisOperationRequest, MetadataOperationRequest,
     OperationControl, OperationKind, OperationProgress, OperationResult,
     OperationState, OperationTarget, ScanOperationRequest;
@@ -586,6 +596,24 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
             file.sourceIndex.to!string);
         store.setValue(fileIter, TREE_COL_SORT_SIZE, format("%020d", file.size));
         setTreeNodeVisible(store, fileIter, true, visibilityValue);
+        if (file.hasArchive && store.iterNChildren(fileIter) == 0)
+        {
+            TreeIter archivePlaceholder;
+            store.append(archivePlaceholder, fileIter);
+            store.setValue(archivePlaceholder, 0, "Load archive members...");
+            store.setValue(archivePlaceholder, 1, "ArchivePlaceholder");
+            store.setValue(archivePlaceholder, 2, "");
+            store.setValue(archivePlaceholder, 3, file.id);
+            store.setValue(archivePlaceholder, 4, file.cursorId);
+            store.setValue(archivePlaceholder, 5, file.relativePath);
+            store.setValue(archivePlaceholder, 6, "0");
+            store.setValue(archivePlaceholder, TREE_COL_NODE_ID,
+                "ArchivePlaceholder:" ~ nodeId);
+            store.setValue(archivePlaceholder, TREE_COL_PROJECTION_INDEX,
+                file.sourceIndex.to!string);
+            store.setValue(archivePlaceholder, TREE_COL_SORT_SIZE, "");
+            setTreeNodeVisible(store, archivePlaceholder, true, visibilityValue);
+        }
     }
     if (sortedFileRows.length > fileLimit)
     {
@@ -671,6 +699,7 @@ private void appendNestedEntry(TreeStore store, TreeModelIF model, TreeIter root
     store.setValue(file, 2, normalizedPath);
     store.setValue(file, 3, "File");
     store.setValue(file, 4, blobId);
+    store.setValue(file, 5, entry.id);
 }
 
 private void appendNestedPageMarker(TreeStore store, TreeIter parent, string blobId,
@@ -1136,10 +1165,8 @@ struct AsyncLoadResult
     size_t pageOffset;
     size_t pageTotal;
     bool pagedSource;
-    long nextBlobId;
+    CatalogPageCursor nextContentCursor;
     bool hasMore;
-    long[] blobIds;
-    RepositoryBlobFlags[] blobFlags;
 }
 
 struct AsyncDirectoryResult
@@ -1612,6 +1639,142 @@ string digestBase64ToHex(string digest)
     }
 }
 
+private Thread[] archivePreviewWorkers;
+
+/** Wait for in-flight archive preview extractions before releasing the cache. */
+private void joinArchivePreviewWorkers()
+{
+    foreach (worker; archivePreviewWorkers)
+        if (worker.isRunning)
+            worker.join();
+    archivePreviewWorkers.length = 0;
+}
+
+/** Extract one selected archive member off the GTK thread and preview its lease. */
+private void previewArchiveTreeMember(DocumentTab document, string memberPath,
+    string memberIdentity, bool isRepository, string virtualPath = "")
+{
+    if (memberPath.length == 0)
+        return;
+    const auto requestId = ++document.archiveMemberPreviewRequestId;
+    ++document.previewPathRequestId;
+    document.previewPathCheckPending = false;
+    const auto sourcePath = document.filePath;
+    const auto containerPath = document.archivePreviewContainerPath;
+    const auto catalogRows = document.loadedRows;
+    string archivePassword;
+    if (!isRepository && document.directSelectedRow.sourceBlob !is null)
+        archivePassword = document.directSelectedRow.sourceBlob.archivePassword;
+    document.detailPreviewTitle.setText("Extracting archive member...");
+    document.detailPreviewSummary.setText(memberPath);
+    logLineVerbose("[archive-preview] request source=", sourcePath,
+        " repository=", isRepository, " member=", memberPath,
+        " reference=", memberIdentity, " virtual=", virtualPath);
+    auto previewWorker = new Thread({
+        AcquiredArchiveMemberPreview preview;
+        string error;
+        auto started = MonoTime.currTime;
+        try
+        {
+            if (!isRepository && virtualPath.length > 0)
+            {
+                const auto storedPassword = jsonArchivePasswordForMemberContainer(
+                    catalogRows, virtualPath);
+                if (storedPassword.length > 0)
+                    archivePassword = storedPassword;
+            }
+            if (isRepository)
+                preview = acquireCatalogArchiveMemberPreview(
+                    document.catalogBackend, memberIdentity);
+            else if (virtualPath.length > 0)
+                preview = acquireJsonVirtualArchiveMemberPreview(sourcePath,
+                    virtualPath, archivePassword);
+            else
+            {
+                size_t occurrence;
+                try
+                    occurrence = to!size_t(memberIdentity);
+                catch (Exception)
+                    occurrence = 0;
+                preview = acquireJsonArchiveMemberPreview(sourcePath,
+                    containerPath, memberPath,
+                    occurrence, archivePassword);
+            }
+        }
+        catch (Exception ex)
+            error = ex.msg;
+
+        logLineVerbose("[archive-preview] materialized member=", memberPath,
+            " error=", error, " elapsedMs=",
+            cast(long) (MonoTime.currTime - started).total!"msecs");
+
+        scheduleUiIdle({
+            if (requestId != document.archiveMemberPreviewRequestId
+                || sourcePath != document.filePath)
+            {
+                if (preview.lease !is null)
+                    preview.lease.release();
+                return false;
+            }
+            if (error.length > 0 || preview.lease is null)
+            {
+                document.detailPreviewTitle.setText("Archive member unavailable");
+                document.detailPreviewSummary.setText(error.length > 0
+                    ? error : "The archive member could not be extracted.");
+                return false;
+            }
+
+            auto memberSize = preview.size;
+            if (memberSize == 0)
+            {
+                import std.file : getSize;
+                try
+                    memberSize = getSize(preview.lease.path);
+                catch (Exception)
+                {
+                }
+            }
+            auto previewBlob = new NamedBinaryBlob();
+            previewBlob.fileSize = cast(long) memberSize;
+            BlobRow previewRow;
+            previewRow.sourceBlob = previewBlob;
+            previewRow.primaryFileName = baseName(memberPath);
+            previewRow.fileSize = memberSize;
+            setMediaPreview(document, previewRow, preview.lease.path,
+                preview.lease, preview.virtualPath);
+            return false;
+        });
+    });
+    archivePreviewWorkers ~= previewWorker;
+    previewWorker.start();
+}
+
+private string jsonArchivePasswordForMemberContainer(const(BlobRow)[] rows,
+    string memberVirtualPath)
+{
+    ParsedArchiveVirtualPath parsed;
+    try
+        parsed = parseArchiveVirtualPath(memberVirtualPath);
+    catch (Exception)
+        return "";
+    if (!parsed.isVirtual)
+        return "";
+    auto containerPath = escapeArchiveVirtualPath(parsed.physicalPath);
+    foreach (layer; parsed.entries[0 .. $ - 1])
+        containerPath = appendArchiveVirtualPath(containerPath,
+            layer.relativePath,
+            layer.hasOccurrence ? layer.occurrence : size_t.max);
+    foreach (row; rows)
+    {
+        if (row.sourceBlob is null)
+            continue;
+        foreach (spec; row.sourceBlob.fileSpecs)
+            if (spec !is null && spec.fileName == containerPath)
+                return row.sourceBlob.archivePassword;
+    }
+    return "";
+}
+
 /** Program entry point.
  *
  * Params:
@@ -1705,6 +1868,36 @@ int runMainWindow(string[] args, ref CliOptions cli)
     {
         recentFileLimit = 10;
     }
+    string archiveCacheDirectory = loadedState.archiveCacheDirectory;
+    int archiveCacheSizeMiB = loadedState.archiveCacheSizeMiB;
+    if (archiveCacheSizeMiB < 1)
+    {
+        archiveCacheSizeMiB = 1024;
+    }
+
+    void applyArchiveCachePreferences()
+    {
+        const auto byteLimit = cast(ulong) archiveCacheSizeMiB * 1024UL * 1024UL;
+        try
+        {
+            configureSharedMemberContentCache(archiveCacheDirectory, byteLimit);
+        }
+        catch (Exception error)
+        {
+            logLine("Cannot configure the archive member cache: ", error.msg);
+            try
+            {
+                configureSharedMemberContentCache("", defaultMemberCacheByteLimit);
+            }
+            catch (Exception fallbackError)
+            {
+                logLine("Cannot configure the fallback archive member cache: ",
+                    fallbackError.msg);
+            }
+        }
+    }
+
+    applyArchiveCachePreferences();
     bool clearSavedWindowGeometryOnExit;
     bool allowRuntimeStatePersistence = !loadedState.hasWindowSize;
     bool isSyncingToolbarState;
@@ -2186,14 +2379,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 ", minimum=", minimumListWidth(document));
             return maxPosition;
         }
-        logLineVerbose("[layout] clamp ok ", document.filePath,
-            ": orientation=", cast(int) orientation,
-            ", totalExtent=", totalExtent,
-            ", requested=", requestedPosition,
-            ", min=", minPosition,
-            ", max=", maxPosition,
-            ", natural=", naturalListWidth(document),
-            ", minimum=", minimumListWidth(document));
+        // logLineVerbose("[layout] clamp ok ", document.filePath,
+        //     ": orientation=", cast(int) orientation,
+        //     ", totalExtent=", totalExtent,
+        //     ", requested=", requestedPosition,
+        //     ", min=", minPosition,
+        //     ", max=", maxPosition,
+        //     ", natural=", naturalListWidth(document),
+        //     ", minimum=", minimumListWidth(document));
         return requestedPosition;
     }
 
@@ -2742,6 +2935,235 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 });
             }).start();
         };
+        void delegate(TreePath, size_t, TreePath) loadArchiveTreePage;
+        loadArchiveTreePage = (TreePath parentPath, size_t offset,
+                TreePath markerPath) {
+            auto model = document.directoryTreeView.getModel();
+            auto parent = new TreeIter();
+            auto marker = new TreeIter();
+            if (!model.getIter(parent, parentPath)
+                || !model.getIter(marker, markerPath))
+                return;
+            const auto parentKind = model.getValueString(parent, 1);
+            if (parentKind != "File" && parentKind != "ArchiveMember")
+                return;
+            const auto markerKind = model.getValueString(marker, 1);
+            if (offset == 0
+                ? markerKind != "ArchivePlaceholder" && markerKind != "ArchiveLoading"
+                : markerKind != "ArchivePage" && markerKind != "ArchiveLoadingPage")
+                return;
+
+            const auto parentNodeId = model.getValueString(parent,
+                TREE_COL_NODE_ID);
+            const auto containerId = model.getValueString(parent, 3);
+            const auto containerReferenceId = parentKind == "ArchiveMember"
+                ? model.getValueString(parent, 4)
+                : model.getValueString(parent, 6);
+            const auto containerVirtualPath = model.getValueString(parent, 5);
+            const auto repositorySource = document.directorySourceRemote;
+            const auto sourcePath = document.filePath;
+            const auto loadingKind = offset == 0
+                ? "ArchiveLoading" : "ArchiveLoadingPage";
+            const auto markerNodeId = "ArchiveLoading:" ~ (++document.nestedEntryRequestId)
+                .to!string;
+            auto storeParent = treeStoreIter(document, parent);
+            auto storeMarker = treeStoreIter(document, marker);
+            document.directoryTreeStore.setValue(storeMarker, 0, "Loading archive members...");
+            document.directoryTreeStore.setValue(storeMarker, 1, loadingKind);
+            document.directoryTreeStore.setValue(storeMarker, 3, parentNodeId);
+            document.directoryTreeStore.setValue(storeMarker, TREE_COL_NODE_ID,
+                markerNodeId);
+
+            logLineVerbose("[archive-tree] request source=", sourcePath,
+                " parentKind=", parentKind, " parent=", parentNodeId,
+                " path=", containerVirtualPath, " offset=", offset,
+                " repository=", repositorySource);
+            auto catalogRows = document.loadedRows;
+            new Thread({
+                ArchiveMemberTreePage page;
+                string error;
+                auto started = MonoTime.currTime;
+                try
+                {
+                    if (repositorySource)
+                        page = loadCatalogArchiveMemberTreePage(
+                            document.catalogBackend, containerVirtualPath, offset,
+                            250);
+                    else
+                        page = loadJsonArchiveMemberTreePage(containerVirtualPath,
+                            catalogRows, offset, 250,
+                            parentKind == "ArchiveMember");
+                }
+                catch (Exception ex)
+                    error = ex.msg;
+
+                logLineVerbose("[archive-tree] loaded parent=", parentNodeId,
+                    " offset=", offset, " entries=", page.entries.length,
+                    " hasMore=", page.hasMore, " error=", error,
+                    " elapsedMs=",
+                    cast(long) (MonoTime.currTime - started).total!"msecs");
+
+                scheduleUiIdle({
+                    if (sourcePath != document.filePath)
+                        return false;
+                    TreeModelIF currentModel = document.directoryTreeStore;
+                    auto currentParent = new TreeIter();
+                    if (!findTreeIterByValue(currentModel, new TreeIter(), false,
+                            TREE_COL_NODE_ID, parentNodeId, currentParent))
+                    {
+                        logLineVerbose("[archive-tree] discard reply: parent not found node=",
+                            parentNodeId);
+                        return false;
+                    }
+                    auto currentParentStore = currentParent;
+                    TreeIter currentMarkerStore;
+                    if (!findTreeChildById(document.directoryTreeStore,
+                            currentParentStore, markerNodeId, currentMarkerStore))
+                    {
+                        logLineVerbose("[archive-tree] discard reply: loading marker not found node=",
+                            markerNodeId, " parent=", parentNodeId);
+                        return false;
+                    }
+                    if (document.directoryTreeStore.getValueString(
+                            currentMarkerStore, 1) != loadingKind)
+                        return false;
+                    logLineVerbose("[archive-tree] applying parent=", parentNodeId,
+                        " label=", document.directoryTreeStore.getValueString(
+                            currentParentStore, 0), " childrenBefore=",
+                        document.directoryTreeStore.iterNChildren(currentParentStore),
+                        " entries=", page.entries.length);
+                    document.directoryTreeStore.remove(currentMarkerStore);
+                    if (error.length > 0)
+                    {
+                        TreeIter errorRow;
+                        document.directoryTreeStore.append(errorRow,
+                            currentParentStore);
+                        document.directoryTreeStore.setValue(errorRow, 0,
+                            "Failed to load archive members: " ~ error);
+                        document.directoryTreeStore.setValue(errorRow, 1, "Error");
+                        document.directoryTreeStore.setValue(errorRow, 3, parentNodeId);
+                        document.directoryTreeStore.setValue(errorRow,
+                            TREE_COL_NODE_ID, "ArchiveError:" ~ markerNodeId);
+                        document.directoryTreeStore.setValue(errorRow,
+                            TREE_COL_PROJECTION_INDEX,
+                            document.directoryTreeStore.getValueString(
+                                currentParentStore, TREE_COL_PROJECTION_INDEX));
+                        setTreeNodeVisible(document.directoryTreeStore, errorRow, true);
+                        return false;
+                    }
+
+                    foreach (entry; page.entries)
+                    {
+                        TreeIter member;
+                        document.directoryTreeStore.append(member,
+                            currentParentStore);
+                        auto memberNodeId = "ArchiveMember:" ~ entry.virtualPath;
+                        document.directoryTreeStore.setValue(member, 0,
+                            entry.relativePath);
+                        document.directoryTreeStore.setValue(member, 1,
+                            "ArchiveMember");
+                        document.directoryTreeStore.setValue(member, 2,
+                            format("%s bytes", entry.size));
+                        document.directoryTreeStore.setValue(member, 3,
+                            entry.contentId);
+                        document.directoryTreeStore.setValue(member, 4,
+                            entry.referenceId);
+                        document.directoryTreeStore.setValue(member, 5,
+                            entry.virtualPath);
+                        document.directoryTreeStore.setValue(member, 6,
+                            entry.referenceId);
+                        document.directoryTreeStore.setValue(member, 7,
+                            entry.size.to!string);
+                        document.directoryTreeStore.setValue(member, 14,
+                            entry.hasArchive ? "1" : "0");
+                        document.directoryTreeStore.setValue(member,
+                            TREE_COL_NODE_ID, memberNodeId);
+                        document.directoryTreeStore.setValue(member,
+                            TREE_COL_PROJECTION_INDEX,
+                            document.directoryTreeStore.getValueString(
+                                currentParentStore, TREE_COL_PROJECTION_INDEX));
+                        document.directoryTreeStore.setValue(member,
+                            TREE_COL_SORT_SIZE, format("%020d", entry.size));
+                        setTreeNodeVisible(document.directoryTreeStore, member, true);
+                        if (entry.hasArchive)
+                        {
+                            TreeIter childPlaceholder;
+                            document.directoryTreeStore.append(childPlaceholder, member);
+                            document.directoryTreeStore.setValue(childPlaceholder, 0,
+                                "Load archive members...");
+                            document.directoryTreeStore.setValue(childPlaceholder, 1,
+                                "ArchivePlaceholder");
+                            document.directoryTreeStore.setValue(childPlaceholder, 3,
+                                memberNodeId);
+                            document.directoryTreeStore.setValue(childPlaceholder,
+                                TREE_COL_NODE_ID,
+                                "ArchivePlaceholder:" ~ memberNodeId);
+                            document.directoryTreeStore.setValue(childPlaceholder,
+                                TREE_COL_PROJECTION_INDEX,
+                                document.directoryTreeStore.getValueString(member,
+                                    TREE_COL_PROJECTION_INDEX));
+                            document.directoryTreeStore.setValue(childPlaceholder,
+                                TREE_COL_SORT_SIZE, "");
+                            setTreeNodeVisible(document.directoryTreeStore,
+                                childPlaceholder, true);
+                        }
+                    }
+                    if (page.hasMore)
+                    {
+                        TreeIter more;
+                        document.directoryTreeStore.append(more,
+                            currentParentStore);
+                        const auto pageNodeId = "ArchivePage:" ~ parentNodeId
+                            ~ ":" ~ page.nextOffset.to!string;
+                        document.directoryTreeStore.setValue(more, 0,
+                            "More archive members available...");
+                        document.directoryTreeStore.setValue(more, 1, "ArchivePage");
+                        document.directoryTreeStore.setValue(more, 3, parentNodeId);
+                        document.directoryTreeStore.setValue(more, 4,
+                            containerReferenceId);
+                        document.directoryTreeStore.setValue(more, 5,
+                            containerVirtualPath);
+                        document.directoryTreeStore.setValue(more, 6,
+                            page.nextOffset.to!string);
+                        document.directoryTreeStore.setValue(more,
+                            TREE_COL_NODE_ID, pageNodeId);
+                        document.directoryTreeStore.setValue(more,
+                            TREE_COL_PROJECTION_INDEX,
+                            document.directoryTreeStore.getValueString(
+                                currentParentStore, TREE_COL_PROJECTION_INDEX));
+                        document.directoryTreeStore.setValue(more,
+                            TREE_COL_SORT_SIZE, "");
+                        setTreeNodeVisible(document.directoryTreeStore, more, true);
+                    }
+                    else if (page.entries.length == 0 && offset == 0)
+                    {
+                        TreeIter emptyInfo;
+                        document.directoryTreeStore.append(emptyInfo,
+                            currentParentStore);
+                        document.directoryTreeStore.setValue(emptyInfo, 0,
+                            "No indexed safe members; scan this archive first.");
+                        document.directoryTreeStore.setValue(emptyInfo, 1,
+                            "ArchiveInfo");
+                        document.directoryTreeStore.setValue(emptyInfo, 3,
+                            parentNodeId);
+                        document.directoryTreeStore.setValue(emptyInfo,
+                            TREE_COL_NODE_ID, "ArchiveInfo:" ~ parentNodeId);
+                        document.directoryTreeStore.setValue(emptyInfo,
+                            TREE_COL_PROJECTION_INDEX,
+                            document.directoryTreeStore.getValueString(
+                                currentParentStore, TREE_COL_PROJECTION_INDEX));
+                        document.directoryTreeStore.setValue(emptyInfo,
+                            TREE_COL_SORT_SIZE, "");
+                        setTreeNodeVisible(document.directoryTreeStore, emptyInfo,
+                            true);
+                    }
+                    logLineVerbose("[archive-tree] applied parent=", parentNodeId,
+                        " childrenAfter=",
+                        document.directoryTreeStore.iterNChildren(currentParentStore));
+                    return false;
+                });
+            }).start();
+        };
         loadExpandedTreePlaceholders = () {
             if (!document.directorySourceRemote)
                 return;
@@ -2758,6 +3180,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
             if (!model.iterChildren(child, iter))
                 return;
             auto childKind = model.getValueString(child, 1);
+            if (childKind == "ArchivePlaceholder")
+            {
+                loadArchiveTreePage(model.getPath(iter), 0, model.getPath(child));
+                return;
+            }
             if (childKind != "Placeholder" && childKind != "Loading")
                 return;
 
@@ -2809,6 +3236,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             if (!model.getIter(pageIter, path))
                 return;
             auto kind = model.getValueString(pageIter, 1);
+            if (kind == "ArchiveMember")
+                return;
             if (kind == "File")
             {
                 openKnownFileExternally(document, model.getValueString(pageIter, 5));
@@ -2817,6 +3246,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
             if (kind == "Directory")
             {
                 toggleDirectoryExpansion(treeView, path);
+                return;
+            }
+            if (kind == "ArchivePage")
+            {
+                TreeIter parentIter;
+                if (!model.iterParent(parentIter, pageIter))
+                    return;
+                size_t offset;
+                try
+                    offset = to!size_t(model.getValueString(pageIter, 6));
+                catch (Exception)
+                    return;
+                loadArchiveTreePage(model.getPath(parentIter), offset, path);
                 return;
             }
             if (kind != "Page")
@@ -2860,9 +3302,20 @@ int runMainWindow(string[] args, ref CliOptions cli)
             TreeIter treeIter;
             if (!document.directoryTreeView.getSelection().getSelected(model, treeIter))
                 return;
-            if (model.getValueString(treeIter, 1) != "File")
-                return;
             if (document.syncingTreeSelection)
+                return;
+            const auto kind = model.getValueString(treeIter, 1);
+            if (kind == "ArchiveMember")
+            {
+                auto memberPath = model.getValueString(treeIter, 0);
+                auto memberIdentity = model.getValueString(treeIter, 4);
+                auto virtualPath = model.getValueString(treeIter, 5);
+                previewArchiveTreeMember(document, memberPath, memberIdentity,
+                    document.directorySourceRemote,
+                    document.directorySourceRemote ? "" : virtualPath);
+                return;
+            }
+            if (kind != "File")
                 return;
 
             auto selectedId = model.getValueString(treeIter, 3);
@@ -2885,13 +3338,30 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 selectedTreeRelativePath);
             bool rowReferencesSelectedPath(const(BlobRow) candidate)
             {
+                if (candidate.sourceKey.length > 0)
+                    return candidate.sourceKey == selectedTreeRelativePath;
                 if (candidate.sourceBlob is null)
                     return resolveKnownFilePath(document, candidate.primaryFileName)
                         == selectedSourcePath;
                 foreach (spec; candidate.sourceBlob.fileSpecs)
                 {
-                    if (spec !is null && spec.fileName.length > 0
-                        && resolveKnownFilePath(document, spec.fileName) == selectedSourcePath)
+                    if (spec is null || spec.fileName.length == 0)
+                        continue;
+                    string referencePath = spec.fileName;
+                    if (candidate.sourceBlob.fileSpecsUseArchiveVirtualGrammar)
+                    {
+                        try
+                        {
+                            auto parsed = parseArchiveVirtualPath(referencePath);
+                            if (parsed.isVirtual)
+                                continue;
+                            referencePath = parsed.physicalPath;
+                        }
+                        catch (Exception)
+                            continue;
+                    }
+                    if (resolveKnownFilePath(document, referencePath)
+                        == selectedSourcePath)
                         return true;
                 }
                 return candidate.sourceBlob.fileSpecs.length == 0
@@ -2909,7 +3379,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
             foreach (rowIndex, row; document.visibleRows)
             {
                 bool rowSelected;
-                if (row.sourceId >= 0)
+                if (row.sourceKey.length > 0)
+                    rowSelected = row.sourceKey == selectedId;
+                else if (row.sourceId >= 0)
                     rowSelected = row.sourceId.to!string == selectedId;
                 else
                     rowSelected = rowReferencesSelectedPath(row);
@@ -2975,19 +3447,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
             if (document.directorySourceRemote && selectedId.length > 0)
             {
-                long sourceId;
-                try
-                    sourceId = to!long(selectedId);
-                catch (Exception)
-                    return;
                 auto requestId = ++document.detailRequestId;
                 auto sourcePath = document.filePath;
+                auto catalogBackend = document.catalogBackend;
                 document.status.setText("Loading tree selection details ...");
                 new Thread({
-                    NamedBinaryBlob details;
+                    BlobRow details;
                     string error;
                     try
-                        details = loadDocumentDetails(sourcePath, sourceId);
+                        details = loadCatalogFileDetails(catalogBackend, selectedId);
                     catch (Exception ex)
                         error = ex.msg;
                     scheduleUiIdle({
@@ -2998,11 +3466,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                             document.status.setText("Failed to load tree selection: " ~ error);
                             return false;
                         }
-                        auto rows = extractRowsFromBlobs([details]);
-                        if (rows.length == 0)
-                            return false;
-                        auto row = rows[0];
-                        row.sourceId = sourceId;
+                        auto row = details;
                         row.detailsLoaded = true;
                         row.hasSummaryFlags = true;
                         row.summaryHasFileType = hasFileType;
@@ -3211,8 +3675,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 try
                 {
                     result.entries = archive
-                        ? loadRepositoryArchiveEntries(sourcePath, to!long(blobId), offset, 251)
-                        : loadRepositoryTorrentFiles(sourcePath, to!long(blobId), offset, 251);
+                        ? loadCatalogArchiveEntries(document.catalogBackend, blobId,
+                            offset, 251)
+                        : loadCatalogTorrentEntries(document.catalogBackend, blobId,
+                            offset, 251);
                     auto page = prepareNestedEntryPage(result.entries, offset);
                     result.entries = page.entries;
                     result.hasMore = page.hasMore;
@@ -3360,7 +3826,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
         bindDetailPaneSignals(document, DetailPaneCallbacks(
             (DocumentTab doc, string fileName) { openKnownFileExternally(doc, fileName); },
             (string title, string text, DocumentTab doc) { copyTextToClipboard(title, text, doc); },
-            (DocumentTab doc) { updateSelectedRowDetails(doc); }
+            (DocumentTab doc) { updateSelectedRowDetails(doc); },
+            (DocumentTab doc, string memberPath, string memberIdentity) {
+                previewArchiveTreeMember(doc, memberPath, memberIdentity,
+                    doc.directorySourceRemote);
+            }
         ));
 
         logLineVerbose("[ui] populating preview slot for ", filePath);
@@ -3759,7 +4229,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     [
                     indexText, sizeText, checksumsText, fileTypeText,
                     mediaInfoText, archiveText, torrentText,
-                    row.sourceId >= 0 ? row.sourceId.to!string : "",
+                    row.sourceKey.length > 0 ? row.sourceKey
+                        : row.sourceId >= 0 ? row.sourceId.to!string : "",
                     row.hasFileType ? "1" : "0", row.hasMedia ? "1" : "0",
                     row.hasVideo ? "1" : "0", row.hasAudio ? "1" : "0",
                     row.hasImage ? "1" : "0", row.hasText ? "1" : "0",
@@ -3885,12 +4356,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
             auto sourceIdText = model.getValueString(iter, COL_SOURCE_ID);
             if (sourceIdText.length > 0)
             {
-                auto sourceId = to!long(sourceIdText);
                 if (!document.hasDirectSelectedRow
-                    || document.directSelectedRow.sourceId != sourceId)
+                    || document.directSelectedRow.sourceKey != sourceIdText)
                 {
                     BlobRow summary;
-                    summary.sourceId = sourceId;
+                    summary.sourceKey = sourceIdText;
                     summary.detailsLoaded = false;
                     summary.fileSize = to!ulong(model.getValueString(iter, COL_FILE_SIZE));
                     summary.hasSummaryFlags = true;
@@ -3975,7 +4445,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             row = document.visibleRows[rowIndex];
         }
 
-        auto treeSelectionId = row.sourceId >= 0
+        auto treeSelectionId = row.sourceKey.length > 0
+            ? row.sourceKey : row.sourceId >= 0
             ? row.sourceId.to!string : primaryTreeFileNodeId(row, rowIndex);
         TreeIter treeRoot;
         TreeIter treeFile;
@@ -3997,19 +4468,20 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 revealTreeFile(document, treeSelectionId);
             break;
         }
-        if (isRepositorySource(document.filePath) && row.sourceId >= 0
+        if (isRepositorySource(document.filePath) && row.sourceKey.length > 0
             && !row.detailsLoaded)
         {
             auto requestId = ++document.detailRequestId;
             auto sourcePath = document.filePath;
-            auto sourceId = row.sourceId;
+            auto sourceKey = row.sourceKey;
+            auto catalogBackend = document.catalogBackend;
             setKnownFilesTable(document, row);
             document.status.setText("Loading selected repository details ...");
             auto worker = new Thread({
-                NamedBinaryBlob details;
+                BlobRow details;
                 string error;
                 try
-                    details = loadDocumentDetails(sourcePath, sourceId);
+                    details = loadCatalogFileDetails(catalogBackend, sourceKey);
                 catch (Exception ex)
                     error = ex.msg;
 
@@ -4023,41 +4495,36 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         return false;
                     }
                     if (document.hasDirectSelectedRow
-                        && document.directSelectedRow.sourceId == sourceId)
+                        && document.directSelectedRow.sourceKey == sourceKey)
                     {
-                        auto rows = extractRowsFromBlobs([details]);
-                        if (rows.length > 0)
-                        {
-                            auto flags = document.directSelectedRow;
-                            document.directSelectedRow = rows[0];
-                            document.directSelectedRow.sourceId = sourceId;
-                            document.directSelectedRow.detailsLoaded = true;
-                            document.directSelectedRow.hasSummaryFlags = flags.hasSummaryFlags;
-                            document.directSelectedRow.summaryHasFileType = flags.summaryHasFileType;
-                            document.directSelectedRow.summaryHasMedia = flags.summaryHasMedia;
-                            document.directSelectedRow.summaryHasVideo = flags.summaryHasVideo;
-                            document.directSelectedRow.summaryHasAudio = flags.summaryHasAudio;
-                            document.directSelectedRow.summaryHasImage = flags.summaryHasImage;
-                            document.directSelectedRow.summaryHasText = flags.summaryHasText;
-                            document.directSelectedRow.summaryHasArchive = flags.summaryHasArchive;
-                            document.directSelectedRow.summaryHasTorrent = flags.summaryHasTorrent;
-                        }
+                        auto flags = document.directSelectedRow;
+                        document.directSelectedRow = details;
+                        document.directSelectedRow.detailsLoaded = true;
+                        document.directSelectedRow.hasSummaryFlags = flags.hasSummaryFlags;
+                        document.directSelectedRow.summaryHasFileType = flags.summaryHasFileType;
+                        document.directSelectedRow.summaryHasMedia = flags.summaryHasMedia;
+                        document.directSelectedRow.summaryHasVideo = flags.summaryHasVideo;
+                        document.directSelectedRow.summaryHasAudio = flags.summaryHasAudio;
+                        document.directSelectedRow.summaryHasImage = flags.summaryHasImage;
+                        document.directSelectedRow.summaryHasText = flags.summaryHasText;
+                        document.directSelectedRow.summaryHasArchive = flags.summaryHasArchive;
+                        document.directSelectedRow.summaryHasTorrent = flags.summaryHasTorrent;
                     }
                     else
                     {
                         foreach (ref candidate; document.loadedRows)
                         {
-                            if (candidate.sourceId == sourceId)
+                            if (candidate.sourceKey == sourceKey)
                             {
-                                candidate.sourceBlob = details;
+                                candidate = details;
                                 candidate.detailsLoaded = true;
                             }
                         }
                         foreach (ref candidate; document.visibleRows)
                         {
-                            if (candidate.sourceId == sourceId)
+                            if (candidate.sourceKey == sourceKey)
                             {
-                                candidate.sourceBlob = details;
+                                candidate = details;
                                 candidate.detailsLoaded = true;
                             }
                         }
@@ -4249,8 +4716,20 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto pageIndex = notebook.pageNum(document.pageRoot);
         if (pageIndex < 0)
             return;
+        ++document.archiveMemberPreviewRequestId;
+        stopVideoPreview(document);
+        if (document.selectedArchiveMemberLease !is null)
+        {
+            document.selectedArchiveMemberLease.release();
+            document.selectedArchiveMemberLease = null;
+        }
         if (document.directorySource !is null)
             document.directorySource.close();
+        if (document.catalogBackend !is null)
+        {
+            document.catalogBackend.close();
+            document.catalogBackend = null;
+        }
         notebook.removePage(pageIndex);
         documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $];
         syncToolbarFromCurrentDocument();
@@ -4700,7 +5179,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.drainRepositoryPages = true;
                 document.pageOffset = 0;
                 document.repositoryRowsLoaded = 0;
-                document.repositoryBlobCursor = 0;
+                document.repositoryContentCursor = CatalogPageCursor.init;
                 document.loadedRows = [];
             }
             document.drainPageRequest = false;
@@ -4726,6 +5205,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
             treeFilterSnapshot.fileType, treeFilterSnapshot.archive,
             treeFilterSnapshot.torrent);
 
+        if (isRepositorySource(document.filePath) && document.catalogBackend is null)
+            document.catalogBackend = openCatalogBackend(document.filePath);
+        auto catalogBackendSnapshot = document.catalogBackend;
         auto worker = new Thread({
             MonoTime started = MonoTime.currTime;
             AsyncLoadResult result;
@@ -4744,35 +5226,29 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     if (document.drainRepositoryPages)
                     {
                         result.pageOffset = document.repositoryRowsLoaded;
-                        auto page = loadDocumentCursorPage(document.filePath,
-                            document.repositoryBlobCursor, document.pageSize,
+                        auto page = loadCatalogRowPage(catalogBackendSnapshot,
+                            document.repositoryContentCursor, document.pageSize,
                             sourceQuerySnapshot);
-                        blobs = page.blobs;
-                        result.blobIds = page.blobIds;
-                        result.blobFlags = page.flags;
+                        result.allRows = page.rows;
                         result.pageTotal = page.total;
-                        result.nextBlobId = page.nextBlobId;
+                        result.nextContentCursor = page.nextCursor;
                         result.hasMore = page.hasMore;
                     }
                     else if (document.loadAllRows)
                     {
-                        auto page = loadDocumentPage(document.filePath, 0,
+                        auto page = loadCatalogRowOffsetPage(catalogBackendSnapshot, 0,
                             size_t.max, sourceQuerySnapshot);
-                        blobs = page.blobs;
-                        result.blobIds = page.blobIds;
-                        result.blobFlags = page.flags;
-                        result.pageOffset = page.offset;
+                        result.allRows = page.rows;
+                        result.pageOffset = 0;
                         result.pageTotal = page.total;
                     }
                     else
                     {
-                        auto page = loadDocumentPage(document.filePath,
+                        auto page = loadCatalogRowOffsetPage(catalogBackendSnapshot,
                             document.pageOffset, document.pageSize,
                             sourceQuerySnapshot);
-                        blobs = page.blobs;
-                        result.blobIds = page.blobIds;
-                        result.blobFlags = page.flags;
-                        result.pageOffset = page.offset;
+                        result.allRows = page.rows;
+                        result.pageOffset = document.pageOffset;
                         result.pageTotal = page.total;
                     }
                     result.pagedSource = true;
@@ -4795,32 +5271,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 }
 
                 setLoadingPhase(document, requestId, "Projecting blob rows for GUI ...");
-                result.allRows = extractRowsFromBlobs(blobs);
-                foreach (index, blobId; result.blobIds)
-                {
-                    if (index >= result.allRows.length)
-                        break;
-                    result.allRows[index].sourceId = blobId;
-                    if (index < result.blobFlags.length)
-                    {
-                        auto flags = result.blobFlags[index];
-                        auto row = &result.allRows[index];
-                        row.hasSummaryFlags = true;
-                        row.summaryHasMedia = flags.hasMedia;
-                        row.summaryHasVideo = flags.hasVideo;
-                        row.summaryHasAudio = flags.hasAudio;
-                        row.summaryHasImage = flags.hasImage;
-                        row.summaryHasText = flags.hasText;
-                        row.summaryHasFileType = flags.hasFileType;
-                        row.summaryHasArchive = flags.hasArchive;
-                        row.summaryHasTorrent = flags.hasTorrent;
-                        row.detailsLoaded = false;
-                        // The blob table retains only the compact summary DTO.
-                        // Full file references and nested metadata are fetched
-                        // on selection through loadDocumentDetails().
-                        row.sourceBlob = null;
-                    }
-                }
+                if (!isRepositorySource(document.filePath))
+                    result.allRows = extractRowsFromBlobs(blobs);
                 if (isRepositorySource(document.filePath))
                 {
                     result.directoryTree = DirectoryTree();
@@ -4916,7 +5368,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 if (result.pagedSource && document.drainRepositoryPages)
                 {
                     document.repositoryRowsLoaded = result.pageOffset + result.allRows.length;
-                    document.repositoryBlobCursor = result.nextBlobId;
+                    document.repositoryContentCursor = result.nextContentCursor;
                     document.loadedRows = [];
                 }
                 else
@@ -5054,8 +5506,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         document.loadedRows = [];
                         document.visibleRows = [];
                         document.repositoryTableModel = new VirtualBlobTableModel(
-                            document.filePath, tableQuery, document.pageSize, result.allRows,
-                            result.pageTotal, result.nextBlobId, result.hasMore);
+                            document.filePath, catalogBackendSnapshot, tableQuery,
+                            document.pageSize, result.allRows, result.pageTotal,
+                            result.nextContentCursor, result.hasMore);
                         setBlobTableVirtualMode(document.tableView, true);
                         document.tableView.setModel(document.repositoryTableModel);
                         if (busyDocument is document)
@@ -5246,7 +5699,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 {
                     if (completedResult.state == OperationState.completed)
                     {
-                        final switch (kind)
+                        switch (kind)
                         {
                         case OperationKind.scan:
                             document.status.setText(format(
@@ -5271,6 +5724,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                                 "Analysis complete: %s duplicate groups, %s merged blobs.",
                                 completedResult.analysisSummary.duplicateGroups,
                                 completedResult.analysisSummary.mergedBlobs));
+                            break;
+                        default:
+                            document.status.setText("Operation complete.");
                             break;
                         }
                         if (isLoading)
@@ -5660,7 +6116,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             () { return notebook.getCurrentPage(); },
             () { return cast(int) documents.length; },
             (int pageIndex) { return documents[pageIndex]; },
-            (int pageIndex) { if (documents[pageIndex].directorySource !is null) documents[pageIndex].directorySource.close(); notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
+            (int pageIndex) { if (documents[pageIndex].directorySource !is null) documents[pageIndex].directorySource.close(); if (documents[pageIndex].catalogBackend !is null) documents[pageIndex].catalogBackend.close(); notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
             () { syncToolbarFromCurrentDocument(); },
             (bool clearGeometry) { persistCurrentState(clearGeometry); },
             () {
@@ -5704,6 +6160,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     editPreferencesMenuItem.addOnActivate((MenuItem _) {
         auto previousCaseSensitiveFilter = prefCaseSensitiveFilter;
+        const previousArchiveCacheDirectory = archiveCacheDirectory;
+        const previousArchiveCacheSizeMiB = archiveCacheSizeMiB;
         showPreferencesDialog(
             window,
             prefAutoApplyFilter,
@@ -5712,6 +6170,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             prefRestoreOpenFiles,
             recentFileLimit,
             externalOpenProgram,
+            archiveCacheDirectory,
+            archiveCacheSizeMiB,
             clearSavedWindowGeometryOnExit,
             PreferencesDialogCallbacks(
                 () { applyDetailsPanePreferenceToAll(); },
@@ -5720,6 +6180,25 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 () { clearRecentFiles(); }
             )
         );
+        if (archiveCacheDirectory != previousArchiveCacheDirectory
+            || archiveCacheSizeMiB != previousArchiveCacheSizeMiB)
+        {
+            if (closeSharedMemberContentCache())
+            {
+                applyArchiveCachePreferences();
+            }
+            else
+            {
+                logLine("Archive cache settings apply after the next restart ",
+                    "because member previews are still active.");
+                auto document = currentDocument();
+                if (document !is null)
+                {
+                    document.status.setText(
+                        "Archive cache settings apply after the next restart.");
+                }
+            }
+        }
         syncToolbarFromCurrentDocument();
         if (prefCaseSensitiveFilter != previousCaseSensitiveFilter)
         {
@@ -5769,7 +6248,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     () { return notebook.getCurrentPage(); },
                     () { return cast(int) documents.length; },
                     (int pageIndex) { return documents[pageIndex]; },
-                    (int pageIndex) { if (documents[pageIndex].directorySource !is null) documents[pageIndex].directorySource.close(); notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
+                    (int pageIndex) { if (documents[pageIndex].directorySource !is null) documents[pageIndex].directorySource.close(); if (documents[pageIndex].catalogBackend !is null) documents[pageIndex].catalogBackend.close(); notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
                     () { syncToolbarFromCurrentDocument(); },
                     (bool clearGeometry) { persistCurrentState(clearGeometry); },
                     () { return isLoading; },
@@ -5804,6 +6283,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
             (UiMainSource value) { windowSizePersistTimer = value; },
             () {
                 cancelAndJoinDocumentOperations();
+                foreach (document; documents)
+                {
+                    ++document.archiveMemberPreviewRequestId;
+                    stopVideoPreview(document);
+                    if (document.selectedArchiveMemberLease !is null)
+                    {
+                        document.selectedArchiveMemberLease.release();
+                        document.selectedArchiveMemberLease = null;
+                    }
+                }
                 stopAllUiSources();
             }
         )
@@ -5905,7 +6394,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     Main.run();
     cancelAndJoinDocumentOperations();
+    joinArchivePreviewWorkers();
     stopAllUiSources();
+    if (!closeSharedMemberContentCache())
+    {
+        logLine("Archive member cache still has leased members; ",
+            "the session is removed on process exit.");
+    }
     return 0;
 }
 

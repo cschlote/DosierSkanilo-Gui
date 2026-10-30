@@ -6,6 +6,7 @@
  */
 module ui.documenttab;
 
+import dosierskanilo.catalogbackend : CatalogBackend, CatalogPageCursor;
 import gtk.AspectFrame;
 import gtk.Box;
 import gtk.Button;
@@ -36,6 +37,7 @@ import gstreamer.Element;
 import gstinterfaces.VideoOverlay;
 import core.thread : Thread;
 import dosierskanilo.operations : OperationControl, OperationKind, OperationState;
+import dosierskanilo.membercontentcache : MemberContentLease;
 import model.blobrow : BlobRow;
 import model.treeprojection : DirectorySource, DirectoryTree, FileCursor;
 import ui.filterrequeststate : FilterRequestState;
@@ -266,6 +268,10 @@ class DocumentTab
     Label pageStatus;
     Box pageBar;
     string selectedPreviewPath = "";
+    string archivePreviewContainerPath;
+    string selectedArchiveMemberPath;
+    MemberContentLease selectedArchiveMemberLease;
+    ulong archiveMemberPreviewRequestId;
     ulong previewPathRequestId;
     bool previewPathCheckPending;
     bool selectedPreviewIsImage;
@@ -312,7 +318,8 @@ class DocumentTab
     size_t pageOffset;
     size_t pageTotal;
     size_t repositoryRowsLoaded;
-    long repositoryBlobCursor;
+    CatalogPageCursor repositoryContentCursor;
+    CatalogBackend catalogBackend;
     size_t pageSize = 250;
     bool loadAllRows;
     bool drainRepositoryPages;

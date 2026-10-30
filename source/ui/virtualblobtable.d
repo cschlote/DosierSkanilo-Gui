@@ -12,10 +12,11 @@ import std.algorithm : min;
 import std.conv : to;
 import std.format : format;
 
+import dosierskanilo.catalogbackend : CatalogBackend, CatalogPageCursor;
 import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob;
 import dosierskanilo.repository.types : RepositoryBlobFlags;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
-import model.datasource : SourceQuery, SourcePage, loadDocumentCursorPage;
+import model.datasource : CatalogRowPage, SourceQuery, loadCatalogRowPage;
 import ui.mainsources : scheduleUiIdle;
 import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT,
     COL_FILE_TYPE, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_INDEX, COL_INDEX_SORT,
@@ -35,11 +36,12 @@ private:
     enum size_t maxCachedChunks = 4;
 
     string sourcePath;
+    CatalogBackend backend;
     SourceQuery query;
     size_t chunkSize;
     size_t rowCount;
     size_t loadedChunkCount = 1;
-    long[] chunkCursors;
+    CatalogPageCursor[] chunkCursors;
     BlobRow[][size_t] chunks;
     size_t[] cacheOrder;
     bool requestActive;
@@ -49,19 +51,21 @@ private:
     string loadError;
 
 public:
-    this(string sourcePath, SourceQuery query, size_t chunkSize, BlobRow[] firstChunk,
-        size_t totalRows, long nextBlobId, bool hasMore)
+    this(string sourcePath, CatalogBackend backend, SourceQuery query,
+        size_t chunkSize, BlobRow[] firstChunk, size_t totalRows,
+        CatalogPageCursor nextCursor, bool hasMore)
     {
         super();
         this.sourcePath = sourcePath;
+        this.backend = backend;
         this.query = query;
         this.chunkSize = chunkSize > 0 ? chunkSize : 250;
         this.rowCount = totalRows;
         this.chunks[0] = firstChunk.dup;
         this.cacheOrder ~= 0;
-        this.chunkCursors ~= 0;
+        this.chunkCursors ~= CatalogPageCursor.init;
         if (hasMore)
-            this.chunkCursors ~= nextBlobId;
+            this.chunkCursors ~= nextCursor;
     }
 
     override GtkTreeModelFlags getFlags() const
@@ -226,7 +230,8 @@ private:
         case COL_HAS_TORRENT: return row.hasTorrent ? "✓" : "—";
         case COL_INDEX_SORT: return format("%020d", index + 1);
         case COL_FILE_SIZE_SORT: return format("%020d", row.fileSize);
-        case COL_SOURCE_ID: return row.sourceId >= 0 ? row.sourceId.to!string : "";
+        case COL_SOURCE_ID: return row.sourceKey.length > 0 ? row.sourceKey
+            : row.sourceId >= 0 ? row.sourceId.to!string : "";
         case COL_HAS_FILE_TYPE_FLAG: return row.hasFileType ? "1" : "0";
         case COL_HAS_MEDIA_FLAG: return row.hasMedia ? "1" : "0";
         case COL_HAS_VIDEO_FLAG: return row.hasVideo ? "1" : "0";
@@ -255,22 +260,26 @@ private:
             return;
         auto chunkIndex = wantedChunk < chunkCursors.length
             ? wantedChunk : chunkCursors.length - 1;
+        while (chunkIndex < chunkCursors.length && chunkIndex in chunks)
+            ++chunkIndex;
+        if (chunkIndex >= chunkCursors.length)
+            return;
         if (wantedChunk > chunkIndex)
         {
             requestedTargetChunk = wantedChunk;
             hasRequestedTargetChunk = true;
         }
-        auto afterBlobId = chunkCursors[chunkIndex];
+        auto cursor = chunkCursors[chunkIndex];
         auto path = sourcePath;
         auto queryCopy = query;
         auto size = chunkSize;
         activeChunkIndex = chunkIndex;
         requestActive = true;
         new Thread({
-            SourcePage page;
+            CatalogRowPage page;
             string error;
             try
-                page = loadDocumentCursorPage(path, afterBlobId, size, queryCopy);
+                page = loadCatalogRowPage(backend, cursor, size, queryCopy);
             catch (Exception ex)
                 error = ex.msg;
             scheduleUiIdle({
@@ -290,10 +299,10 @@ private:
                 }
                 else
                 {
-                    auto rows = projectRows(page.blobs, page.blobIds, page.flags);
+                    auto rows = page.rows;
                     chunks[chunkIndex] = rows;
                     if (chunkIndex == chunkCursors.length - 1 && page.hasMore)
-                        chunkCursors ~= page.nextBlobId;
+                        chunkCursors ~= page.nextCursor;
                     cacheOrder ~= chunkIndex;
                     while (cacheOrder.length > maxCachedChunks)
                     {
@@ -363,8 +372,8 @@ unittest
     BlobRow row;
     row.sourceId = 17;
     row.fileSize = 123;
-    auto model = new VirtualBlobTableModel("", SourceQuery(), 10,
-        [row], 1, 0, false);
+    auto model = new VirtualBlobTableModel("", null, SourceQuery(), 10,
+        [row], 1, CatalogPageCursor.init, false);
     TreeIter iter;
     assert(model.iterNthChild(iter, null, 0));
     assert(model.getValueString(iter, COL_SOURCE_ID) == "17");
@@ -384,7 +393,8 @@ unittest
     import gtk.TreeViewColumn;
     import gtk.Window;
     import glib.MainContext;
-    import model.datasource : SourceQuery, loadDocumentCursorPage;
+    import model.catalogsource : openCatalogBackend;
+    import model.datasource : SourceQuery, loadCatalogRowPage;
     import std.file : exists, mkdirRecurse, rmdirRecurse, tempDir, write;
     import std.format : format;
     import std.path : buildPath;
@@ -418,16 +428,15 @@ unittest
     repository.importJson(catalogPath);
     assert(repository.blobCount == rowCount);
 
-    auto firstPage = loadDocumentCursorPage(root, 0, chunkSize, SourceQuery());
-    auto firstRows = extractRowsFromBlobs(firstPage.blobs);
-    foreach (index, ref row; firstRows)
-    {
-        row.sourceId = firstPage.blobIds[index];
-        row.detailsLoaded = false;
-    }
-    auto firstBlobId = firstPage.blobIds[0];
-    auto model = new VirtualBlobTableModel(root, SourceQuery(), chunkSize, firstRows,
-        firstPage.total, firstPage.nextBlobId, firstPage.hasMore);
+    auto backend = openCatalogBackend(root);
+    scope (exit)
+        backend.close();
+    auto firstPage = loadCatalogRowPage(backend, CatalogPageCursor.init, chunkSize,
+        SourceQuery());
+    auto firstRows = firstPage.rows;
+    auto firstBlobId = firstRows[0].sourceKey;
+    auto model = new VirtualBlobTableModel(root, backend, SourceQuery(), chunkSize,
+        firstRows, firstPage.total, firstPage.nextCursor, firstPage.hasMore);
 
     auto context = MainContext.default_();
     string sourceIdAt(size_t rowIndex)
@@ -444,7 +453,10 @@ unittest
             sourceId = model.getValueString(iter, COL_SOURCE_ID);
         }
         assert(sourceId.length > 0,
-            format("The model did not load row %s from its cursor chunk.", rowIndex));
+            format("The model did not load row %s from its cursor chunk (cursors=%s chunks=%s active=%s target=%s pending=%s error=%s).",
+                rowIndex, model.chunkCursors.length, model.chunks.length,
+                model.requestActive, model.requestedTargetChunk,
+                model.hasRequestedTargetChunk, model.loadError));
         assert(model.chunks.length <= 4,
             "The virtual table retained more than four summary chunks.");
         return sourceId;
@@ -463,14 +475,14 @@ unittest
     assert(model.iterNthChild(firstRow, null, 0));
     assert(model.getValueString(firstRow, COL_SOURCE_ID) == "");
     assert(model.hasRequestedTargetChunk && model.requestedTargetChunk == 0);
-    assert(sourceIdAt(0) == firstBlobId.to!string);
+    assert(sourceIdAt(0) == firstBlobId);
 
     auto observedIds = new string[rowCount];
     foreach (rowIndex; 0 .. rowCount)
     {
         observedIds[rowIndex] = sourceIdAt(rowIndex);
     }
-    assert(observedIds[0] == firstBlobId.to!string);
+    assert(observedIds[0] == firstBlobId);
     assert(observedIds[distantRowIndex] == distantBlobId);
     assert(model.chunks.length <= 4);
 

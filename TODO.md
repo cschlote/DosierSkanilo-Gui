@@ -77,8 +77,10 @@ and remaining process/display checks are in the backend's `docs/OPERATION-PARITY
   operation's target lease until completion.
 - [x] Refresh the affected document after successful mutations and prevent tab
   closure while its operation is draining.
-- [ ] Add GTK-independent task-manager lifecycle tests and opt-in display-backed
-  tests for Tools wiring, progress, pause/resume, cancellation, and refresh.
+- [x] Add GTK-independent task-manager lifecycle tests for stale/foreign events,
+  invalid transitions, terminal results, and refresh decisions.
+- [ ] Add opt-in display-backed tests for Tools wiring, progress, pause/resume,
+  cancellation, and refresh.
 - [ ] Complete WP-09.5 CLI/GUI result, progress, cancellation, error, refresh, and
   explicit storage-mode parity coverage.
 
@@ -110,6 +112,68 @@ retains its per-document store behind `GtkTreeModelFilter`. See
 recreating existing source nodes; matching descendants keep their ancestor paths
 visible; repeated filtering is GC-friendly and preserves existing behavior. Unit
 tests and the display-backed startup/filter smoke test pass.
+
+## P1 — Archive member TreeView and shared extraction cache (WP-13.5)
+
+Status: **archive expansion and cached member previews implemented** (commits
+`038d5e3`, `b17efab`, `6167f8f`); cache settings and shutdown cleanup added.
+The archive file remains the expandable file row; the GUI must not create a
+second sibling folder or persist cache paths.
+
+- [x] Give `hasArchive` file rows an async TreeView expander. Expanding lists safe
+  entries lazily; selecting a member extracts it for preview. Nested archives
+  use the same flow, and visible names hide the duplicate-occurrence path suffix.
+- [x] Carry the structured container/entry locator through JSON and SQLite
+  directory/file sources. Use the virtual path only as a reversible reference
+  spelling (`!/`, `!!`, `!~N`), not as an OS path or the primary identity.
+- [x] Add one shared extraction-cache service for preview, checksums, File Type,
+  MediaInfo, archive scans, and optional prefetch. Coalesce in-flight requests,
+  pin active previews, bound size/workers, and never persist cache paths as
+  `FileSpec` references.
+- [x] Add cache preferences: JSON defaults below OS temp; SQLite uses a
+  configurable local cache base and a per-session subdirectory. Remove the
+  session cache on normal exit and sweep only application-owned stale sessions
+  at startup. A RAM disk can be selected as the cache base. Preview threads are
+  stopped best-effort; the backend refuses to close while leases are active.
+- [x] Join archive preview worker threads before cache cleanup so a normal exit
+  always removes the current session instead of deferring it to process exit.
+- [ ] Keep same-directory sibling prefetch disabled by default. When enabled,
+  make it cancellable, bounded, and use the same cache leases as foreground
+  preview/extraction.
+- [ ] During explicit deep scans, process every safely selectable non-directory
+  member using one cache lease for checksums and the selected metadata extractors;
+  persist metadata against the member content blob, not the temporary path.
+- [x] Test `!` escaping, duplicate occurrence IDs, unsafe paths, and nested
+  member identities for both storage modes.
+- [ ] Test encrypted containers, extraction cancellation, prefetch cancellation,
+  cache eviction/pinning, and shutdown/stale-session cleanup for both storage
+  modes.
+
+**Acceptance:** selecting an archive member displays it in the normal Previewer;
+scraped metadata survives cache eviction, no cache paths enter JSON/SQLite source
+references, and shutdown removes the current session's extracted files.
+
+## P1 — WP-13.6.2: storage-neutral catalog access in the GUI
+
+Status: **complete**. Repository documents read trees, content rows, details,
+archive/torrent entry pages, and member previews through `CatalogBackend`.
+Archive rescans and password updates also use the shared operation/backend
+surface. Tree and cursor identities are source-relative paths, and the backend
+is held per document so page cursors stay valid.
+
+- [x] Use path-based node identities in the GUI tree and table, so restored
+  state resolves with `resolveDirectory`/`resolveReference` and never stores
+  adapter tokens or UI handles.
+- [x] Load content rows via `listContents` and details via `loadContent`.
+- [x] Route archive member previews through `acquireMemberContent` and drop the
+  GUI-owned repository extraction path.
+- [x] Keep CLI/GUI operation parity covered when the source abstraction changes.
+- [x] Run repository archive rescans through `runOperation` instead of calling
+  `Repository.updateMetadata` directly.
+- [x] Store archive passwords through `CatalogBackend.setArchivePassword`, so
+  JSON and repository documents no longer need storage-specific writers.
+- [x] Remove the unused repository-specific GUI load helpers; tests exercise the
+  backend loaders instead.
 
 ## P2 — Stabilize GTK layout and video preview
 

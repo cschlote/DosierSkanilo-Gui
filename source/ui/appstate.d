@@ -64,6 +64,10 @@ struct AppState
     string externalOpenProgram = "xdg-open";
     bool previewVideoAutostart;
     double previewVideoVolume = 0.5;
+    /// Archive member cache root; empty selects the system temporary directory.
+    string archiveCacheDirectory;
+    /// Archive member cache size limit in mebibytes.
+    int archiveCacheSizeMiB = 1024;
 
     string[] recentFilePaths;
     int maxRecentFileCount = 10;
@@ -478,6 +482,18 @@ private AppState loadAppStateFromPath(string path)
                 state.externalOpenProgram = value.str;
             }
         }
+        if (auto value = "archiveCacheDirectory" in root)
+        {
+            if (value.type == JSONType.string)
+            {
+                state.archiveCacheDirectory = value.str;
+            }
+        }
+        if (auto value = "archiveCacheSizeMiB" in root)
+        {
+            state.archiveCacheSizeMiB = jsonToInt(*value,
+                state.archiveCacheSizeMiB);
+        }
         if (auto value = "previewVideoAutostart" in root)
         {
             state.previewVideoAutostart = jsonToBool(*value, state.previewVideoAutostart);
@@ -602,6 +618,8 @@ private void saveAppStateToPath(const(AppState) state, string path)
             "  \"externalOpenProgram\": \"%s\",\n" ~
             "  \"previewVideoAutostart\": %s,\n" ~
             "  \"previewVideoVolume\": %s,\n" ~
+            "  \"archiveCacheDirectory\": \"%s\",\n" ~
+            "  \"archiveCacheSizeMiB\": %s,\n" ~
             "  \"recentFilePaths\": %s,\n" ~
             "  \"maxRecentFileCount\": %s,\n" ~
             "  \"hasWindowGeometry\": %s,\n" ~
@@ -633,6 +651,8 @@ private void saveAppStateToPath(const(AppState) state, string path)
         jsonEscapeString(state.externalOpenProgram),
         state.previewVideoAutostart ? "true" : "false",
         state.previewVideoVolume,
+        jsonEscapeString(state.archiveCacheDirectory),
+        state.archiveCacheSizeMiB,
         recentFileJson,
         state.maxRecentFileCount,
         state.hasWindowGeometry ? "true" : "false",
@@ -709,6 +729,8 @@ unittest
     expected.externalOpenProgram = "custom tool";
     expected.previewVideoAutostart = true;
     expected.previewVideoVolume = 0.75;
+    expected.archiveCacheDirectory = "/tmp/archive cache";
+    expected.archiveCacheSizeMiB = 512;
     expected.recentFilePaths = ["/tmp/one.json", "/tmp/two path.json"];
     expected.maxRecentFileCount = 12;
     expected.hasWindowGeometry = true;
@@ -745,6 +767,8 @@ unittest
     assert(loaded.externalOpenProgram == expected.externalOpenProgram);
     assert(loaded.previewVideoAutostart == expected.previewVideoAutostart);
     assert(loaded.previewVideoVolume == expected.previewVideoVolume);
+    assert(loaded.archiveCacheDirectory == expected.archiveCacheDirectory);
+    assert(loaded.archiveCacheSizeMiB == expected.archiveCacheSizeMiB);
     assert(loaded.recentFilePaths == expected.recentFilePaths);
     assert(loaded.maxRecentFileCount == expected.maxRecentFileCount);
     assert(loaded.hasWindowGeometry == expected.hasWindowGeometry);

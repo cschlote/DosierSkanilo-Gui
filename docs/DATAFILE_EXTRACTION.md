@@ -1,7 +1,7 @@
 # DosierSkanilo Datenfile-Dokumentation (extrahiert)
 
 Quelle: [DosierSkanilo](https://github.com/cschlote/DosierSkanilo)
-Stand: 2026-10-10
+Stand: 2026-10-13
 
 ## 1. Zweck des Datenfiles
 
@@ -18,7 +18,9 @@ Relevante Stellen:
 
 ## 2. Aktuelles Speicherformat
 
-Serializer schreibt ein Wrapper-Objekt:
+Der Serializer schreibt ein Wrapper-Objekt. Gewöhnliche Kataloge werden weiter
+als Version 3 geschrieben; Version 4 wird für rekursive verschachtelte
+Archivmetadaten verwendet:
 
 ```json
 {
@@ -29,9 +31,10 @@ Serializer schreibt ein Wrapper-Objekt:
 
 Wichtig:
 
-- Beim Schreiben wird immer `dataVersion: 3` ausgegeben.
-- Beim Lesen werden ein unversioniertes Legacy-Array sowie Wrapper-Versionen 1,
-  2 und 3 akzeptiert. Version 1 und Legacy-Felder werden beim Einlesen
+- Beim Schreiben wird standardmäßig `dataVersion: 3` ausgegeben; rekursive
+  Archiveinträge benötigen Version 4.
+- Beim Lesen werden ein unversioniertes Legacy-Array sowie Wrapper-Versionen 1
+  bis 4 akzeptiert. Version 1 und Legacy-Felder werden beim Einlesen
   normalisiert; unbekannte Wrapper-Versionen werden abgewiesen.
 
 Code-Referenzen:
@@ -46,22 +49,24 @@ Pflicht / Kern:
 
 - `fileSize: size_t`
 - `checkSums: { md5sum_b64, sha1sum_b64, xxh64sum_b64 }`
-- Dateireferenzen (intern v3-konform ueber `fileSpecs[]`)
+- Dateireferenzen (physisch in v3/v4; geplant auch virtuell in v5 über `fileSpecs[]`)
 
 Optional:
 
 - `fileType: string`
 - `mediaInfoSig`: image, video, audio, and text stream arrays
-- `archiveSpecs[]` (eingebettete Archiv-Entry-Metadaten inkl. Checksummen)
+- `archiveSpecs[]` (Versionen 3/4: eingebettete Archiv-Entry-Metadaten inkl.
+  Checksummen; in geplantem JSON v5 nur noch Legacy-Eingabe)
 - `archivePassword: string` (optional, per archive blob; stored in clear text,
   so catalogs containing it are sensitive)
 - `torrentInfo` (Name, Info-Hash, Magnet URI, Dateien, ...)
 
 `NamedBinaryBlob` kombiniert heute Payload-Metadaten mit physischen
 `FileSpec[]`-Referenzen. `archiveSpecs[]` und `torrentInfo.files[]` sind
-verschachtelte Beschreibungen, keine normalen Katalog-Blobs. Deshalb nehmen
-Archiv-/Torrent-Mitglieder noch nicht vollständig an derselben
-Deduplizierungs-, Such- und Referenz-API wie Dateisystemdateien teil.
+verschachtelte Beschreibungen. WP-13.5 ersetzt für Archivmitglieder die
+verschachtelte Inhaltsliste in JSON v5 durch normale Blob-Datensätze mit
+virtuellen `FileSpec`-Pfaden. Gleiche vollständige Fingerprints können dabei
+einen Content-Blob teilen, während jede Occurrence eine eigene Referenz behält.
 
 Legacy-Felder (werden beim Einlesen/Schreiben gefixt):
 
@@ -76,12 +81,19 @@ Im Code definiert:
 - `DATA_CLASS_VERSION1 = 1`
 - `DATA_CLASS_VERSION2 = 2`
 - `DATA_CLASS_VERSION3 = 3`
+- `DATA_CLASS_VERSION4 = 4` (rekursive `ArchiveSpec.nestedEntries`)
 
 Effektiv fuer JSON-I/O aktuell relevant:
 
-- gelesen/geschrieben wird Version 3 im Wrapper
-- akzeptierte Legacy- und Wrapper-Eingaben werden intern normalisiert und
-  beim Schreiben als Version 3 ausgegeben
+- Legacy-Arrays und Wrapper-Versionen 1-4 werden gelesen.
+- Gewöhnliche Writes bleiben Version 3; verschachtelte Archive benötigen Version 4.
+- WP-13.5 plant JSON v5 mit normalen Member-Blobs und virtuellen `FileSpec`-
+  Referenzen. `ArchiveSpec[]` wird dann nur noch als Import-Kompatibilität für
+  alte Kataloge gelesen.
+- In JSON v5 verwenden alle `FileSpec.fileName`-Pfade die virtuelle
+  Archivpfad-Grammatik: `!/` trennt Ebenen, `!!` escaped ein wörtliches `!`,
+  `!~N` kennzeichnet eine nullbasierte Occurrence. Physische Pfade werden vor
+  der Dateisystemauflösung aus den codierten Schichten dekodiert.
 
 Beispieldateien:
 
@@ -117,10 +129,18 @@ Projektionen in `source/model/treeprojection.d`; `DirectorySource` adaptiert
 JSON- und Repository-Abfragen. Diese Typen sind Anzeigeprojektionen, nicht der
 persistente Datenmodell-Owner.
 
-Archivmitglieder erscheinen derzeit in verschachtelten Vorschau-Bäumen aus den
-gespeicherten `archiveSpecs`/Repository-Archiveinträgen. Ihre Adresse ist noch
-kein typisierter Content-Locator. Der Zielentwurf dafür steht in der Backend-
-Architektur und im WP-13-Plan.
+Archivmitglieder erscheinen in einem paginierten Archive-Preview-Baum aus den
+gespeicherten Legacy-`archiveSpecs` bzw. den virtuellen JSON-v5- und
+Repository-Dateireferenzen.
+Die Auswahl eines Datei-Blatts extrahiert den Member über den gemeinsamen
+Backend-Cache und leitet den Cache-Pfad an den normalen Previewer weiter. Die
+virtuelle Referenz bleibt der logische Pfad; der Cache-Pfad wird nicht in den
+Katalog geschrieben. Die Preview-Lease bleibt bis zum Wechseln des Previews oder
+Schließen des Tabs aktiv. Der Haupt-Verzeichnisbaum zeigt virtuelle Member nicht
+als physische Verzeichnisse an; Archivdateien lassen sich dort ebenfalls lazy
+und paginiert expandieren. Archiv-Member, die selbst Archive sind, können im
+gleichen Baum weiter expandiert werden. Cache-Einstellungen und Prefetch bleiben
+Teil von WP-13.5.
 
 - `BlobRow`
   - `id` (lokal)

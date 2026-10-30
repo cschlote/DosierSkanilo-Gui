@@ -5,9 +5,10 @@ import std.array : appender;
 import std.algorithm : canFind;
 import std.string : strip, toLower;
 
+import dosierarkivo.archive : parseArchiveVirtualPath;
 import model.blobrow : BlobRow;
 import model.treeprojection : DirectoryNode, DirectoryTree, FileInput,
-    FileFilter, buildDirectoryTree, jsonFileNodeId;
+    FileFilter, buildDirectoryTree, isArchivePathCandidate, jsonFileNodeId;
 import ui.directorytreefilter : treeFileMatchesFilter;
 
 /** Filter options for a loaded JSON catalog. */
@@ -161,10 +162,26 @@ DirectoryTree projectRowsToDirectoryTree(const(BlobRow)[] rows)
         foreach (referenceIndex, spec; row.sourceBlob.fileSpecs)
         {
             if (spec !is null && spec.fileName.length > 0)
-                inputs ~= FileInput(spec.fileName, cast(ulong) row.fileSize,
+            {
+                string path = spec.fileName;
+                if (row.sourceBlob.fileSpecsUseArchiveVirtualGrammar)
+                {
+                    try
+                    {
+                        auto parsed = parseArchiveVirtualPath(path);
+                        if (parsed.isVirtual)
+                            continue;
+                        path = parsed.physicalPath;
+                    }
+                    catch (Exception)
+                        continue;
+                }
+                inputs ~= FileInput(path, cast(ulong) row.fileSize,
                     row.hasFileType, row.hasMedia, row.hasVideo, row.hasAudio,
-                    row.hasImage, row.hasText, row.hasArchive, row.hasTorrent,
+                    row.hasImage, row.hasText,
+                    row.hasArchive || isArchivePathCandidate(path), row.hasTorrent,
                     jsonFileNodeId(sourceOrdinal, referenceIndex));
+            }
         }
         if (row.sourceBlob.fileSpecs.length == 0 && row.primaryFileName.length > 0)
             inputs ~= FileInput(row.primaryFileName, row.fileSize,
@@ -273,4 +290,32 @@ unittest
     auto presenceResult = filterJsonRows(rows, canonicalTree, archiveOrFileType);
     assert(presenceResult.rows.length == 2,
         "presence toggles within their group combine using OR");
+}
+
+@("JSON directory projection keeps virtual archive members off the physical tree")
+unittest
+{
+    import dosierarkivo.archive : appendArchiveVirtualPath;
+    import dosierskanilo.model.filespec : FileSpec;
+    import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob;
+
+    auto archiveBlob = new NamedBinaryBlob();
+    archiveBlob.fileSpecsUseArchiveVirtualGrammar = true;
+    archiveBlob.fileSpecs = [new FileSpec("archives/bundle!!.zip", "")];
+    BlobRow archiveRow;
+    archiveRow.sourceBlob = archiveBlob;
+    archiveRow.fileSize = 100;
+
+    auto memberBlob = new NamedBinaryBlob();
+    memberBlob.fileSpecsUseArchiveVirtualGrammar = true;
+    memberBlob.fileSpecs = [new FileSpec(appendArchiveVirtualPath(
+        "archives/bundle!!.zip", "docs/readme.txt", 0), "")];
+    BlobRow memberRow;
+    memberRow.sourceBlob = memberBlob;
+    memberRow.fileSize = 17;
+
+    auto tree = projectRowsToDirectoryTree([archiveRow, memberRow]);
+    assert(tree.files.length == 1);
+    assert(tree.files[0].relativePath == "archives/bundle!.zip");
+    assert(tree.files[0].hasArchive);
 }

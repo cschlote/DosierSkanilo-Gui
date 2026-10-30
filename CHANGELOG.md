@@ -2,7 +2,42 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## Release 0.10.0 - 2026-10-30
+
+- Operation task-state coverage now checks foreign events, invalid transitions,
+  and refresh decisions for failed and cancelled work.
+
+- Repository documents now read the directory tree, content table, details,
+  archive and torrent entry pages, and archive-member previews through the
+  storage-neutral catalog backend. Tree and cursor identities are
+  source-relative paths, so saved state no longer depends on database IDs.
+- Preferences now configure the shared archive-member cache (base directory and
+  size limit in MiB). The cache is configured at startup, reapplied when the
+  settings change and no preview still holds a lease (otherwise after restart),
+  and its session directory is removed on normal exit.
+- Operation completion status handles the backend's catalog import/export
+  operation kinds instead of failing to build against the current catalog API.
+- Archive rescans of repository documents now run through the shared operation
+  pipeline, so they use the same leases, cancellation, and progress reporting as
+  other operations.
+- Archive passwords for JSON and repository documents are stored through the
+  catalog backend instead of storage-specific writers.
+- In-flight archive preview extractions are joined on exit before the shared
+  member cache is removed.
+- Archive member identities keep `!` escapes and duplicate-occurrence suffixes,
+  so members with special characters or duplicate names preview correctly.
+
+- Selecting a leaf in the Archive Preview now extracts that member through the
+  backend's shared leased cache and sends it to the normal image, audio, video,
+  text, or fallback previewer. Duplicate occurrence identity is preserved;
+  preview cache files are released when the preview changes or its tab closes.
+- The main Directory Tree now keeps virtual member paths out of physical
+  directories and lazily expands archive files into paged member rows, including
+  nested archives. Selecting an expanded member uses the same cached preview.
+- Archive expansion now keeps member rows under their owning archive, retains
+  an informative row when no safe indexed members are available, and avoids
+  scanning the whole JSON catalog on the GTK thread. `-v` logs request, result,
+  parent-row, and elapsed-time milestones for archive listing and preview.
 
 ## Release 0.9.0 - 2026-10-13
 

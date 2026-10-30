@@ -147,6 +147,15 @@ Keep caches bounded, mutable scratch worker-local, and large temporary results
 short-lived. Measure repeated filter cycles, GC behavior where tooling permits,
 and peak memory on representative JSON and SQLite sources.
 
+The planned archive extraction cache is shared by member scraping, checksums,
+file type, MediaInfo, preview, and optional sibling prefetch. Cache leases pin
+entries while a preview or extractor uses them; eviction must not interrupt an
+active user. The cache uses an application-owned per-session directory, is
+removed after workers and previews stop at shutdown, and is never represented as
+a persistent catalog file reference. JSON defaults to OS temporary storage;
+SQLite uses a configurable cache base. A RAM-backed filesystem may be selected as
+that base.
+
 ## 7. Design Principles
 
 - keep parser compatibility logic outside GTK glue code

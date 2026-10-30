@@ -41,6 +41,7 @@ struct DetailPaneCallbacks
     void delegate(DocumentTab, string) openKnownFileExternally;
     void delegate(string, string, DocumentTab) copyTextToClipboard;
     void delegate(DocumentTab) updateSelectedRowDetails;
+    void delegate(DocumentTab, string, string) previewArchiveMember;
 }
 
 /** Bind the detail pane layout to a document tab.
@@ -222,6 +223,19 @@ void bindDetailPaneSignals(DocumentTab document, DetailPaneCallbacks callbacks)
         "archive entry path", callbacks);
     bindNestedEntryActivation(document.detailTorrentTreeView, document,
         "torrent file path", callbacks);
+    document.detailArchiveTreeView.getSelection().addOnChanged(
+        (TreeSelection selection) {
+            if (callbacks.previewArchiveMember is null)
+                return;
+            TreeModelIF model;
+            TreeIter iter;
+            if (!selection.getSelected(model, iter)
+                || model.getValueString(iter, 3) != "File")
+                return;
+            callbacks.previewArchiveMember(document,
+                model.getValueString(iter, 2),
+                model.getValueString(iter, 5));
+        });
 
     void selectRelativeFile(bool next)
     {

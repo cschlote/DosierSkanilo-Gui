@@ -173,7 +173,10 @@ void resetPerfMetrics(DocumentTab document)
 void clearSelectionDetails(DocumentTab document)
 {
     ++document.previewPathRequestId;
+    ++document.archiveMemberPreviewRequestId;
     document.previewPathCheckPending = false;
+    document.archivePreviewContainerPath = "";
+    document.selectedArchiveMemberPath = "";
     document.hasDirectSelectedRow = false;
     document.directSelectedRow = BlobRow.init;
     document.directSelectedIndex = "";
@@ -215,6 +218,11 @@ void clearSelectionDetails(DocumentTab document)
         document.detailPreviewImage.clear();
     }
     stopVideoPreview(document);
+    if (document.selectedArchiveMemberLease !is null)
+    {
+        document.selectedArchiveMemberLease.release();
+        document.selectedArchiveMemberLease = null;
+    }
     if (document.detailPreviewVideoFrame !is null)
     {
         document.detailPreviewVideoFrame.setVisible(false);

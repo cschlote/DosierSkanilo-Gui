@@ -40,6 +40,8 @@ import gstinterfaces.VideoOverlay;
 import pango.c.types : PangoEllipsizeMode;
 
 import dosierskanilo.repository.repository : Repository;
+import dosierskanilo.membercontentcache : MemberContentLease;
+import dosierarkivo.archive : parseArchiveVirtualPath;
 import va_toolbox.hexdumps : toPrettyHexDump;
 import std.algorithm.searching : canFind;
 import std.conv : to;
@@ -446,7 +448,7 @@ void setKnownFilesTable(DocumentTab document, const(BlobRow) row)
 }
 
 private void appendNestedPath(TreeStore store, string path, string sizeText,
-    ref TreeIter[string] directories)
+    ref TreeIter[string] directories, string identity = "")
 {
     import std.string : replace;
     auto normalized = path.replace('\\', '/');
@@ -483,19 +485,20 @@ private void appendNestedPath(TreeStore store, string path, string sizeText,
     store.setValue(fileIter, 1, sizeText);
     store.setValue(fileIter, 2, normalized);
     store.setValue(fileIter, 3, "File");
+    store.setValue(fileIter, 5, identity);
 }
 
 private void populateArchiveEntryTree(DocumentTab document, const(BlobRow) row)
 {
     document.detailArchiveTreeStore.clear();
-    if (document.directorySourceRemote && row.sourceId >= 0 && row.hasArchive)
+    if (document.directorySourceRemote && row.sourceKey.length > 0 && row.hasArchive)
     {
         auto root = document.detailArchiveTreeStore.createIter(null);
         document.detailArchiveTreeStore.setValue(root, 0, "Archive entries");
         document.detailArchiveTreeStore.setValue(root, 1, "");
         document.detailArchiveTreeStore.setValue(root, 2, "");
         document.detailArchiveTreeStore.setValue(root, 3, "ArchiveRoot");
-        document.detailArchiveTreeStore.setValue(root, 4, row.sourceId.to!string);
+        document.detailArchiveTreeStore.setValue(root, 4, row.sourceKey);
         document.detailArchiveTreeStore.setValue(root, 6, document.nestedEntryRequestId.to!string);
         auto loading = document.detailArchiveTreeStore.createIter(root);
         document.detailArchiveTreeStore.setValue(loading, 0, "Loading...");
@@ -506,13 +509,35 @@ private void populateArchiveEntryTree(DocumentTab document, const(BlobRow) row)
     TreeIter[string] directories;
     if (row.sourceBlob !is null)
     {
-        foreach (entry; row.sourceBlob.archiveSpecs)
+        if (row.sourceBlob.archiveSpecs.length > 0)
         {
-            if (entry !is null && entry.fileName.length > 0)
+            size_t shownEntries;
+            foreach (entry; row.sourceBlob.archiveSpecs)
             {
-                appendNestedPath(document.detailArchiveTreeStore, entry.fileName,
-                    format("%s bytes", entry.fileSize), directories);
+                if (entry !is null && entry.fileName.length > 0)
+                {
+                    if (shownEntries == 250)
+                    {
+                        auto info = document.detailArchiveTreeStore.createIter(null);
+                        document.detailArchiveTreeStore.setValue(info, 0,
+                            "Showing first 250 entries; expand the archive in the Directory Tree for more.");
+                        document.detailArchiveTreeStore.setValue(info, 1, "Info");
+                        break;
+                    }
+                    appendNestedPath(document.detailArchiveTreeStore, entry.fileName,
+                        format("%s bytes", entry.fileSize), directories,
+                        entry.occurrence.to!string);
+                    ++shownEntries;
+                }
             }
+        }
+        else
+        {
+            auto info = document.detailArchiveTreeStore.createIter(null);
+            document.detailArchiveTreeStore.setValue(info, 0,
+                "Expand this archive in the Directory Tree to browse members.");
+            document.detailArchiveTreeStore.setValue(info, 1, "Info");
+            document.detailArchiveTreeStore.setValue(info, 2, "");
         }
     }
     document.detailArchiveTreeView.setVisible(document.detailArchiveTreeStore.iterNChildren(null) > 0);
@@ -521,14 +546,14 @@ private void populateArchiveEntryTree(DocumentTab document, const(BlobRow) row)
 private void populateTorrentFileTree(DocumentTab document, const(BlobRow) row)
 {
     document.detailTorrentTreeStore.clear();
-    if (document.directorySourceRemote && row.sourceId >= 0 && row.hasTorrent)
+    if (document.directorySourceRemote && row.sourceKey.length > 0 && row.hasTorrent)
     {
         auto root = document.detailTorrentTreeStore.createIter(null);
         document.detailTorrentTreeStore.setValue(root, 0, "Torrent files");
         document.detailTorrentTreeStore.setValue(root, 1, "");
         document.detailTorrentTreeStore.setValue(root, 2, "");
         document.detailTorrentTreeStore.setValue(root, 3, "TorrentRoot");
-        document.detailTorrentTreeStore.setValue(root, 4, row.sourceId.to!string);
+        document.detailTorrentTreeStore.setValue(root, 4, row.sourceKey);
         document.detailTorrentTreeStore.setValue(root, 6, document.nestedEntryRequestId.to!string);
         auto loading = document.detailTorrentTreeStore.createIter(root);
         document.detailTorrentTreeStore.setValue(loading, 0, "Loading...");
@@ -571,7 +596,20 @@ private string resolvePreviewPath(DocumentTab document, const(BlobRow) row)
         {
             if (spec is null || spec.fileName.length == 0)
                 continue;
-            if (resolveDocumentSourcePath(document.filePath, spec.fileName,
+            string referencePath = spec.fileName;
+            if (row.sourceBlob.fileSpecsUseArchiveVirtualGrammar)
+            {
+                try
+                {
+                    auto parsed = parseArchiveVirtualPath(referencePath);
+                    if (parsed.isVirtual)
+                        continue;
+                    referencePath = parsed.physicalPath;
+                }
+                catch (Exception)
+                    continue;
+            }
+            if (resolveDocumentSourcePath(document.filePath, referencePath,
                     repositoryRoot) == resolvedSelection)
                 return resolvedSelection;
         }
@@ -584,8 +622,21 @@ private string resolvePreviewPath(DocumentTab document, const(BlobRow) row)
             continue;
         }
 
+        string referencePath = spec.fileName;
+        if (row.sourceBlob.fileSpecsUseArchiveVirtualGrammar)
+        {
+            try
+            {
+                auto parsed = parseArchiveVirtualPath(referencePath);
+                if (parsed.isVirtual)
+                    continue;
+                referencePath = parsed.physicalPath;
+            }
+            catch (Exception)
+                continue;
+        }
         auto candidatePath = resolveDocumentSourcePath(document.filePath,
-            spec.fileName, repositoryRoot);
+            referencePath, repositoryRoot);
         return candidatePath;
     }
 
@@ -2256,12 +2307,25 @@ void refreshMediaPreview(DocumentTab document)
  * Returns: Nothing.
  * Throws: None.
  */
-void setMediaPreview(DocumentTab document, const(BlobRow) row)
+void setMediaPreview(DocumentTab document, const(BlobRow) row,
+    string previewPathOverride = "", MemberContentLease memberLease = null,
+    string logicalArchiveMemberPath = "")
 {
     import core.thread : Thread;
     import glib.Idle;
     import std.datetime.systime : SysTime;
     import std.file : exists, getAttributes, getSize, getTimes, read;
+
+    if (memberLease is null)
+        ++document.archiveMemberPreviewRequestId;
+    if (document.selectedArchiveMemberLease !is null
+        && document.selectedArchiveMemberLease !is memberLease)
+    {
+        stopVideoPreview(document);
+        document.selectedArchiveMemberLease.release();
+    }
+    document.selectedArchiveMemberLease = memberLease;
+    document.selectedArchiveMemberPath = logicalArchiveMemberPath;
 
     document.detailPreviewTitle.setText("Preview");
     setPreviewSummaryMonospace(document.detailPreviewSummary, false);
@@ -2272,8 +2336,12 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row)
 
     auto fileName = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
     auto mediaSummary = row.mediaInfoDetails.length > 0 ? row.mediaInfoDetails : "No media metadata available.";
-    auto previewPath = resolvePreviewPath(document, row);
+    auto previewPath = previewPathOverride.length > 0
+        ? previewPathOverride : resolvePreviewPath(document, row);
     auto previewKind = previewContentKind(row);
+    if (memberLease is null)
+        document.archivePreviewContainerPath = previewKind == PreviewContentKind.archive
+            ? previewPath : "";
 
     document.selectedPreviewSourcePath = "";
     document.selectedPreviewSourcePixbuf = null;
