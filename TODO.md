@@ -151,18 +151,21 @@ references, and shutdown removes the current session's extracted files.
 
 ## P1 — WP-13.6.2: storage-neutral catalog access in the GUI
 
-Status: **blocked on backend contract gaps** (see the DosierSkanilo TODO).
-Cache integration is done; `RepositoryDirectorySource` still depends on the
-concrete `Repository` instead of `CatalogBackend`.
+Status: **backend contract ready, GUI migration open**. Cache integration is
+done. The backend now provides `uiHandle` keys (opaque, instance-scoped),
+`resolveDirectory`/`resolveReference` for path-based restoration,
+`loadReference`, and `acquireMemberContent` with shared cache leases.
 
-- [ ] Decide how the GUI addresses catalog objects: store typed
-  `ContentId`/`ReferenceId`/`DirectoryId` values and load details through
-  `loadContent(ContentId)`, or add public token round-trips to the contract
-  (currently IDs are documented as private to the adapter).
-- [ ] Add a backend member-content acquisition method so the GUI no longer
-  extracts archive members through concrete repository helpers.
-- [ ] Move `RepositoryDirectorySource` tree, detail, and archive-member loading
-  onto `CatalogBackend` for both JSON and SQLite sources.
+- [ ] Hold `ContentId`/`ReferenceId`/`DirectoryId` values in GUI tree/cursor
+  structs instead of parsed strings; use `uiHandle` only for `GtkTreeStore`
+  keys and detail loads via `loadContent(ContentId)`.
+- [ ] Persist directory/file *paths* (never IDs or handles) in `AppState` and
+  restore selection with `resolveDirectory`/`resolveReference`; unresolved
+  paths are treated as deleted objects, not errors.
+- [ ] Move `RepositoryDirectorySource` tree, detail, archive-member, and torrent
+  loading onto `CatalogBackend` for both JSON and SQLite sources.
+- [ ] Route archive member previews through `acquireMemberContent` and drop the
+  GUI-owned extraction helpers in `source/model/datasource.d`.
 - [ ] Keep CLI/GUI operation parity covered when the source abstraction changes.
 
 ## P2 — Stabilize GTK layout and video preview
