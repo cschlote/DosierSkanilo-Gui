@@ -77,8 +77,10 @@ and remaining process/display checks are in the backend's `docs/OPERATION-PARITY
   operation's target lease until completion.
 - [x] Refresh the affected document after successful mutations and prevent tab
   closure while its operation is draining.
-- [ ] Add GTK-independent task-manager lifecycle tests and opt-in display-backed
-  tests for Tools wiring, progress, pause/resume, cancellation, and refresh.
+- [x] Add GTK-independent task-manager lifecycle tests for stale/foreign events,
+  invalid transitions, terminal results, and refresh decisions.
+- [ ] Add opt-in display-backed tests for Tools wiring, progress, pause/resume,
+  cancellation, and refresh.
 - [ ] Complete WP-09.5 CLI/GUI result, progress, cancellation, error, refresh, and
   explicit storage-mode parity coverage.
 

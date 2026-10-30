@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Operation task-state coverage now checks foreign events, invalid transitions,
+  and refresh decisions for failed and cancelled work.
+
 - Repository documents now read the directory tree, content table, details,
   archive and torrent entry pages, and archive-member previews through the
   storage-neutral catalog backend. Tree and cursor identities are

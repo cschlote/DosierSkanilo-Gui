@@ -94,6 +94,49 @@ unittest
     assert(!task.apply(progress), "terminal tasks reject later progress");
 }
 
+@("operation task state ignores foreign events and invalid transitions")
+unittest
+{
+    OperationTaskState task;
+    task.begin(1, OperationKind.metadata);
+    OperationProgress progress;
+    progress.operationId = 1;
+    progress.operation = OperationKind.scan;
+    progress.state = OperationState.running;
+    assert(!task.apply(progress), "progress for another operation kind is ignored");
+    progress.operation = OperationKind.metadata;
+    progress.operationId = 2;
+    assert(!task.apply(progress), "progress for another operation id is ignored");
+    progress.operationId = 1;
+    progress.state = OperationState.completed;
+    assert(!task.apply(progress), "queued cannot skip to a terminal state");
+    progress.state = OperationState.running;
+    assert(task.apply(progress));
+    progress.state = OperationState.queued;
+    assert(!task.apply(progress), "running cannot return to queued");
+
+    OperationResult foreign;
+    foreign.operationId = 2;
+    foreign.operation = OperationKind.metadata;
+    foreign.state = OperationState.completed;
+    assert(!task.complete(foreign), "results for other operations are ignored");
+
+    task.paused = true;
+    task.pauseAvailable = true;
+    task.begin(5, OperationKind.analyze);
+    assert(task.operationId == 5 && task.operation == OperationKind.analyze);
+    assert(task.state == OperationState.queued && task.running);
+    assert(!task.paused && !task.pauseAvailable);
+
+    OperationResult failed;
+    failed.operationId = 5;
+    failed.operation = OperationKind.analyze;
+    failed.state = OperationState.failed;
+    assert(task.complete(failed));
+    assert(!task.running);
+    assert(!operationResultMayHaveChangedSource(failed));
+}
+
 @("operation refresh decision distinguishes rolled-back and partial outcomes")
 unittest
 {
