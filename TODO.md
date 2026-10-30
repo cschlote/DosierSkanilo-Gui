@@ -133,7 +133,7 @@ second sibling folder or persist cache paths.
   session cache on normal exit and sweep only application-owned stale sessions
   at startup. A RAM disk can be selected as the cache base. Preview threads are
   stopped best-effort; the backend refuses to close while leases are active.
-- [ ] Join archive preview worker threads before cache cleanup so a normal exit
+- [x] Join archive preview worker threads before cache cleanup so a normal exit
   always removes the current session instead of deferring it to process exit.
 - [ ] Keep same-directory sibling prefetch disabled by default. When enabled,
   make it cancellable, bounded, and use the same cache leases as foreground

@@ -1639,6 +1639,17 @@ string digestBase64ToHex(string digest)
     }
 }
 
+private Thread[] archivePreviewWorkers;
+
+/** Wait for in-flight archive preview extractions before releasing the cache. */
+private void joinArchivePreviewWorkers()
+{
+    foreach (worker; archivePreviewWorkers)
+        if (worker.isRunning)
+            worker.join();
+    archivePreviewWorkers.length = 0;
+}
+
 /** Extract one selected archive member off the GTK thread and preview its lease. */
 private void previewArchiveTreeMember(DocumentTab document, string memberPath,
     string memberIdentity, bool isRepository, string virtualPath = "")
@@ -1659,7 +1670,7 @@ private void previewArchiveTreeMember(DocumentTab document, string memberPath,
     logLineVerbose("[archive-preview] request source=", sourcePath,
         " repository=", isRepository, " member=", memberPath,
         " reference=", memberIdentity, " virtual=", virtualPath);
-    new Thread({
+    auto previewWorker = new Thread({
         AcquiredArchiveMemberPreview preview;
         string error;
         auto started = MonoTime.currTime;
@@ -1733,7 +1744,9 @@ private void previewArchiveTreeMember(DocumentTab document, string memberPath,
                 preview.lease, preview.virtualPath);
             return false;
         });
-    }).start();
+    });
+    archivePreviewWorkers ~= previewWorker;
+    previewWorker.start();
 }
 
 private string jsonArchivePasswordForMemberContainer(const(BlobRow)[] rows,
@@ -6381,6 +6394,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     Main.run();
     cancelAndJoinDocumentOperations();
+    joinArchivePreviewWorkers();
     stopAllUiSources();
     if (!closeSharedMemberContentCache())
     {

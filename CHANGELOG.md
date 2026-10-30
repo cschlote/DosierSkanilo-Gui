@@ -19,6 +19,8 @@ All notable changes to this project are documented in this file.
   other operations.
 - Archive passwords for JSON and repository documents are stored through the
   catalog backend instead of storage-specific writers.
+- In-flight archive preview extractions are joined on exit before the shared
+  member cache is removed.
 
 - Selecting a leaf in the Archive Preview now extracts that member through the
   backend's shared leased cache and sends it to the normal image, audio, video,
