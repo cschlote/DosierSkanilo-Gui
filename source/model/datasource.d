@@ -644,8 +644,9 @@ NestedFileNode[] loadCatalogArchiveEntries(CatalogBackend backend,
     if (!referenceId.isValid)
         throw new Exception("The archive container no longer exists.");
     const container = backend.loadReference(referenceId);
-    const basePath = parseArchiveVirtualPath(containerPath).isVirtual
-        ? containerPath : escapeArchiveVirtualPath(containerPath);
+    /* Container paths are already in display grammar, so member identities
+     * append the escaped entry layer to the path as-is. */
+    const basePath = containerPath;
 
     const(CatalogArchiveEntry)[] entries;
     CatalogPageCursor cursor;
@@ -1436,6 +1437,80 @@ unittest
         torrentFile.relativePath, torrentPage.length, 251);
     assert(torrentContinuation.length == 1);
     assert(torrentContinuation[0].relativePath == "test/folder/entry-250.txt");
+}
+
+@("catalog archive ids cover escaping, duplicate occurrences, and unsafe paths")
+unittest
+{
+    import std.algorithm.searching : endsWith;
+    import std.file : exists, mkdirRecurse, readText, rmdirRecurse, tempDir;
+    import std.path : buildPath;
+    import std.process : execute;
+    import std.string : endsWith;
+    import std.uuid : randomUUID;
+
+    auto root = buildPath(tempDir(), "gui-catalog-member-ids-"
+        ~ randomUUID().toString());
+    mkdirRecurse(root);
+    scope (exit)
+    {
+        if (exists(root))
+            rmdirRecurse(root);
+    }
+
+    auto archivePath = buildPath(root, "name.zip");
+    const createArchive = "import sys, zipfile; "
+        ~ "z = zipfile.ZipFile(sys.argv[1], 'w'); "
+        ~ "z.writestr('dup.txt', 'first'); "
+        ~ "z.writestr('dup.txt', 'second'); "
+        ~ "z.writestr('bang!.txt', 'bang'); "
+        ~ "z.writestr('../escape.txt', 'bad'); z.close()";
+    assert(execute(["python3", "-c", createArchive, archivePath]).status == 0);
+
+    auto repository = Repository.initialize(root);
+    repository.scan();
+    MetadataScanOptions metadataOptions;
+    metadataOptions.scanArchives = true;
+    metadataOptions.deepArchiveScan = true;
+    repository.updateMetadata(metadataOptions);
+    repository.close();
+
+    const containerPath = escapeArchiveVirtualPath("name.zip");
+    auto entries = loadCatalogArchiveEntries(root, containerPath);
+    string[] duplicateIds;
+    bool sawBang;
+    foreach (entry; entries)
+    {
+        if (entry.name == "dup.txt")
+            duplicateIds ~= entry.id;
+        else if (entry.name == "bang!.txt")
+            sawBang = entry.id.endsWith("!/bang!!.txt");
+    }
+    assert(duplicateIds.length == 2);
+    bool sawFirst;
+    bool sawSecond;
+    foreach (id; duplicateIds)
+    {
+        sawFirst = sawFirst || id.endsWith("!/dup.txt!~0");
+        sawSecond = sawSecond || id.endsWith("!/dup.txt!~1");
+    }
+    assert(sawFirst && sawSecond);
+    assert(sawBang);
+    foreach (entry; entries)
+        assert(entry.id.length > 0);
+
+    auto memberTree = loadCatalogArchiveMemberTreePage(root, containerPath);
+    assert(memberTree.entries.length == 3);
+    string secondId;
+    foreach (entry; memberTree.entries)
+        if (entry.referenceId.endsWith("!/dup.txt!~1"))
+            secondId = entry.referenceId;
+    assert(secondId.length > 0);
+    auto preview = acquireCatalogArchiveMemberPreview(root, secondId);
+    scope (exit)
+        if (preview.lease !is null)
+            preview.lease.release();
+    assert(readText(preview.lease.path) == "second");
 }
 
 @("JSON archive scanning prompts once and persists the password mapping")

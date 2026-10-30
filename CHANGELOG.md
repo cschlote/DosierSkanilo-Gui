@@ -21,6 +21,8 @@ All notable changes to this project are documented in this file.
   catalog backend instead of storage-specific writers.
 - In-flight archive preview extractions are joined on exit before the shared
   member cache is removed.
+- Archive member identities keep `!` escapes and duplicate-occurrence suffixes,
+  so members with special characters or duplicate names preview correctly.
 
 - Selecting a leaf in the Archive Preview now extracts that member through the
   backend's shared leased cache and sends it to the normal image, audio, video,

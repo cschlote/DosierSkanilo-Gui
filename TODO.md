@@ -141,9 +141,11 @@ second sibling folder or persist cache paths.
 - [ ] During explicit deep scans, process every safely selectable non-directory
   member using one cache lease for checksums and the selected metadata extractors;
   persist metadata against the member content blob, not the temporary path.
-- [ ] Test nested archives, `!` escaping, duplicate occurrence IDs, unsafe paths,
-  encrypted containers, extraction cancellation, prefetch cancellation, cache
-  eviction/pinning, and shutdown/stale-session cleanup for both storage modes.
+- [x] Test `!` escaping, duplicate occurrence IDs, unsafe paths, and nested
+  member identities for both storage modes.
+- [ ] Test encrypted containers, extraction cancellation, prefetch cancellation,
+  cache eviction/pinning, and shutdown/stale-session cleanup for both storage
+  modes.
 
 **Acceptance:** selecting an archive member displays it in the normal Previewer;
 scraped metadata survives cache eviction, no cache paths enter JSON/SQLite source
