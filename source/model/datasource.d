@@ -31,7 +31,8 @@ import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob,
     DATA_CLASS_VERSION3, NamedBinaryBlobCatalog, deserializeDataClassJsonFile,
     updateArchives;
 import model.blobrow : BlobRow;
-import model.catalogsource : CatalogDirectorySource, openCatalogBackend;
+import model.catalogsource : CatalogDirectorySource, openCatalogBackend,
+    openJsonCatalogBackend;
 import dosierskanilo.service.storageio : writeStorageJsonFile;
 import dosierskanilo.operationlease : TargetCatalogReplacementLease,
     TargetReadLease, TargetWriteLease;
@@ -1217,50 +1218,11 @@ NamedBinaryBlob[] loadDocumentSource(string path)
 /** Store or remove one password after resolving the user's filename to a blob. */
 void setDocumentArchivePassword(string sourcePath, string fileName, string password)
 {
-    if (isRepositorySource(sourcePath))
-    {
-        auto repository = Repository.open(sourcePath);
-        scope (exit)
-            repository.close();
-        repository.setArchivePasswordForPath(fileName, password);
-        return;
-    }
-
-    auto targetLease = TargetWriteLease.acquire(
-        OperationTarget.jsonTarget(sourcePath));
+    auto backend = isRepositorySource(sourcePath)
+        ? openCatalogBackend(sourcePath) : openJsonCatalogBackend(sourcePath);
     scope (exit)
-        targetLease.release();
-    auto blobs = deserializeDataClassJsonFile(sourcePath);
-    auto requestedPath = resolveDocumentSourcePath(sourcePath, fileName);
-    size_t[] exactMatches;
-    size_t[] nameMatches;
-    foreach (index, blob; blobs)
-    {
-        foreach (spec; blob.fileSpecs)
-        {
-            if (spec is null)
-                continue;
-            auto knownPath = resolveDocumentSourcePath(sourcePath, spec.fileName);
-            if (knownPath == requestedPath || spec.fileName == fileName)
-            {
-                exactMatches ~= index;
-                break;
-            }
-            if (baseName(fileName) == fileName
-                && baseName(spec.fileName) == fileName)
-            {
-                nameMatches ~= index;
-                break;
-            }
-        }
-    }
-    auto matches = exactMatches.length > 0 ? exactMatches : nameMatches;
-    if (matches.length == 0)
-        throw new Exception("No catalog file matches: " ~ fileName);
-    if (matches.length > 1)
-        throw new Exception("Filename is ambiguous in this catalog: " ~ fileName);
-    blobs[matches[0]].archivePassword = password;
-    writeJsonCatalog(sourcePath, blobs, targetLease);
+        backend.close();
+    backend.setArchivePassword(fileName, password);
 }
 
 private shared ulong nextArchiveScanOperationId;

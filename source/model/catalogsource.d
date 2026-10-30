@@ -22,6 +22,13 @@ CatalogBackend openCatalogBackend(string repositoryPath)
         OperationTarget.repositoryTarget(repositoryPath));
 }
 
+/** Open the storage-neutral backend for one JSON catalog file. */
+CatalogBackend openJsonCatalogBackend(string catalogPath)
+{
+    return new DefaultCatalogBackendFactory().open(
+        OperationTarget.jsonTarget(catalogPath));
+}
+
 /**
  * Directory source backed by a catalog backend.
  *

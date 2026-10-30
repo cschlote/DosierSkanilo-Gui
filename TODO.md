@@ -165,8 +165,8 @@ backend is held per document so page cursors stay valid.
 - [x] Keep CLI/GUI operation parity covered when the source abstraction changes.
 - [x] Run repository archive rescans through `runOperation` instead of calling
   `Repository.updateMetadata` directly.
-- [ ] Store archive passwords without the concrete `Repository`; the catalog
-  contract has no write operation for that yet.
+- [x] Store archive passwords through `CatalogBackend.setArchivePassword`, so
+  JSON and repository documents no longer need storage-specific writers.
 
 ## P2 — Stabilize GTK layout and video preview
 

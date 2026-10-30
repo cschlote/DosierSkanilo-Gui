@@ -17,6 +17,8 @@ All notable changes to this project are documented in this file.
 - Archive rescans of repository documents now run through the shared operation
   pipeline, so they use the same leases, cancellation, and progress reporting as
   other operations.
+- Archive passwords for JSON and repository documents are stored through the
+  catalog backend instead of storage-specific writers.
 
 - Selecting a leaf in the Archive Preview now extracts that member through the
   backend's shared leased cache and sends it to the normal image, audio, video,
