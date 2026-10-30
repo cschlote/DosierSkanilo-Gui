@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## Release 0.10.0 - 2026-10-30
 
 - Operation task-state coverage now checks foreign events, invalid transitions,
   and refresh decisions for failed and cancelled work.
