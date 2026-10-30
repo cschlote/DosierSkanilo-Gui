@@ -162,9 +162,11 @@ backend is held per document so page cursors stay valid.
 - [x] Load content rows via `listContents` and details via `loadContent`.
 - [x] Route archive member previews through `acquireMemberContent` and drop the
   GUI-owned repository extraction path.
-- [ ] Keep CLI/GUI operation parity covered when the source abstraction changes.
-- [ ] Move remaining write paths (`scan`, archive-password updates) from the
-  concrete `Repository` to catalog operations; keep read paths backend-only.
+- [x] Keep CLI/GUI operation parity covered when the source abstraction changes.
+- [x] Run repository archive rescans through `runOperation` instead of calling
+  `Repository.updateMetadata` directly.
+- [ ] Store archive passwords without the concrete `Repository`; the catalog
+  contract has no write operation for that yet.
 
 ## P2 — Stabilize GTK layout and video preview
 

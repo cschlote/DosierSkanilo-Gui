@@ -1,6 +1,7 @@
 /** Shared data-source adapter for JSON files and SQLite repositories. */
 module model.datasource;
 
+import core.atomic : atomicOp;
 import std.algorithm.searching : canFind;
 import std.base64 : Base64;
 import std.file : exists, isDir;
@@ -34,7 +35,9 @@ import model.catalogsource : CatalogDirectorySource, openCatalogBackend;
 import dosierskanilo.service.storageio : writeStorageJsonFile;
 import dosierskanilo.operationlease : TargetCatalogReplacementLease,
     TargetReadLease, TargetWriteLease;
-import dosierskanilo.operations : OperationTarget;
+import dosierskanilo.operationrunner : runOperation;
+import dosierskanilo.operations : MetadataOperationRequest, OperationControl,
+    OperationState, OperationTarget;
 import ui.contextpaths : resolveDocumentSourcePath;
 import model.treeprojection : DirectoryNode, DirectorySource, FileCursor, FileFilter, FileInput, FileNode,
     FilePage, FileSortOrder, NestedFileNode, DirectoryTree, ProjectedDirectorySource,
@@ -1260,22 +1263,35 @@ void setDocumentArchivePassword(string sourcePath, string fileName, string passw
     writeJsonCatalog(sourcePath, blobs, targetLease);
 }
 
+private shared ulong nextArchiveScanOperationId;
+
+/** Run an archive rescan against a repository through the operation API. */
+private MetadataSummary runRepositoryArchiveScan(string sourcePath,
+    string filePath, ArchivePasswordCallback passwordCallback)
+{
+    MetadataScanOptions options;
+    options.scanArchives = true;
+    options.deepArchiveScan = true;
+    options.rescan = true;
+    options.archivePasswordCallback = passwordCallback;
+    options.filePath = filePath;
+    MetadataOperationRequest request;
+    request.operationId = atomicOp!"+="(nextArchiveScanOperationId, 1UL) + 1;
+    request.target = OperationTarget.repositoryTarget(sourcePath);
+    request.options = options;
+    auto result = runOperation(request, new OperationControl());
+    if (result.state != OperationState.completed)
+        throw new Exception(result.error.length > 0
+            ? result.error : "Repository archive scan did not complete.");
+    return result.metadataSummary;
+}
+
 /** Scan archive entries in a JSON catalog or SQLite repository. */
 MetadataSummary scanDocumentArchives(string sourcePath,
     ArchivePasswordCallback passwordCallback)
 {
     if (isRepositorySource(sourcePath))
-    {
-        auto repository = Repository.open(sourcePath);
-        scope (exit)
-            repository.close();
-        MetadataScanOptions options;
-        options.scanArchives = true;
-        options.deepArchiveScan = true;
-        options.rescan = true;
-        options.archivePasswordCallback = passwordCallback;
-        return repository.updateMetadata(options);
-    }
+        return runRepositoryArchiveScan(sourcePath, "", passwordCallback);
 
     auto targetLease = TargetWriteLease.acquire(
         OperationTarget.jsonTarget(sourcePath));
@@ -1330,16 +1346,8 @@ MetadataSummary scanDocumentArchive(string sourcePath, string filePath,
 {
     if (isRepositorySource(sourcePath))
     {
-        auto repository = Repository.open(sourcePath);
-        scope (exit)
-            repository.close();
-        MetadataScanOptions options;
-        options.scanArchives = true;
-        options.deepArchiveScan = true;
-        options.rescan = true;
-        options.archivePasswordCallback = passwordCallback;
-        options.filePath = filePath;
-        auto summary = repository.updateMetadata(options);
+        auto summary = runRepositoryArchiveScan(sourcePath, filePath,
+            passwordCallback);
         if (summary.blobsVisited == 0)
             throw new Exception("No repository file matches: " ~ filePath);
         return summary;
@@ -1768,6 +1776,40 @@ unittest
         2, filter, FileSortOrder.sizeAscending);
     assertSameFiles(jsonFirst.files, jsonPrevious.files);
     assertSameFiles(jsonPrevious.files, repositoryPrevious.files);
+}
+
+@("repository archive scans run through the shared operation API")
+unittest
+{
+    import std.file : exists, mkdirRecurse, rmdirRecurse, tempDir, write;
+    import std.path : buildPath;
+    import std.process : Config, execute;
+    import std.uuid : randomUUID;
+
+    auto root = buildPath(tempDir(), "gui-scan-operation-"
+        ~ randomUUID().toString());
+    mkdirRecurse(root);
+    scope (exit)
+    {
+        if (exists(root))
+            rmdirRecurse(root);
+    }
+    write(buildPath(root, "payload.txt"), "archive payload\n");
+    assert(execute(["zip", "-q", "-j", "payload.zip", "payload.txt"], null,
+        Config.none, size_t.max, root).status == 0);
+
+    auto repository = Repository.initialize(root);
+    repository.scan();
+    repository.close();
+
+    auto summary = scanDocumentArchives(root, null);
+    assert(summary.blobsVisited == 2, "visited=" ~ summary.blobsVisited.to!string);
+    assert(summary.archivesUpdated == 1,
+        "updated=" ~ summary.archivesUpdated.to!string
+        ~ " failed=" ~ summary.failed.to!string);
+    auto single = scanDocumentArchive(root, "payload.zip", null);
+    assert(single.blobsVisited == 1);
+    assert(single.archivesUpdated == 1);
 }
 
 @("repository detail adapter keeps archive and torrent entries lazy")

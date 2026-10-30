@@ -14,6 +14,9 @@ All notable changes to this project are documented in this file.
   and its session directory is removed on normal exit.
 - Operation completion status handles the backend's catalog import/export
   operation kinds instead of failing to build against the current catalog API.
+- Archive rescans of repository documents now run through the shared operation
+  pipeline, so they use the same leases, cancellation, and progress reporting as
+  other operations.
 
 - Selecting a leaf in the Archive Preview now extracts that member through the
   backend's shared leased cache and sends it to the normal image, audio, video,
