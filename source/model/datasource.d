@@ -1458,7 +1458,8 @@ unittest
             rmdirRecurse(root);
     }
 
-    auto archivePath = buildPath(root, "name.zip");
+    auto archivePath = buildPath(root, "weird!/name.zip");
+    mkdirRecurse(buildPath(root, "weird!"));
     const createArchive = "import sys, zipfile; "
         ~ "z = zipfile.ZipFile(sys.argv[1], 'w'); "
         ~ "z.writestr('dup.txt', 'first'); "
@@ -1475,7 +1476,7 @@ unittest
     repository.updateMetadata(metadataOptions);
     repository.close();
 
-    const containerPath = escapeArchiveVirtualPath("name.zip");
+    const containerPath = escapeArchiveVirtualPath("weird!/name.zip");
     auto entries = loadCatalogArchiveEntries(root, containerPath);
     string[] duplicateIds;
     bool sawBang;
