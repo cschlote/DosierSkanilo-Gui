@@ -22,6 +22,7 @@ struct CliOptions
     bool argVerboseOutputs;
     bool showHelp;
     bool selfTestMode;
+    string selfTestOperation;
     int selfTestDelayMs = 3000;
 }
 
@@ -42,6 +43,7 @@ Startup options:
             --case-sensitive    Use case-sensitive text matching
             --no-auto-filter    Disable auto-apply after load/reload
             --self-test         Start, load queued files, then quit after a short delay
+            --self-test-operation  Run scan, metadata, or analyze before the self-test quits
             --self-test-delay   Delay in milliseconds before quitting in self-test mode
     -h, --help              Print this help and exit
 
@@ -66,6 +68,7 @@ void parseCliOptions(ref string[] args)
         "case-sensitive", &argsArray.caseSensitiveFilter,
         "no-auto-filter", &argsArray.disableAutoFilter,
         "self-test", &argsArray.selfTestMode,
+        "self-test-operation", &argsArray.selfTestOperation,
         "self-test-delay", &argsArray.selfTestDelayMs,
         "h|help", &argsArray.showHelp
     );
@@ -84,9 +87,11 @@ unittest
 
     string[] testArgs = [
         "appname", "-q", "test query", "--case-sensitive", "file1.json",
-        "file2.json"
+        "file2.json", "--self-test", "--self-test-operation", "metadata"
     ];
     parseCliOptions(testArgs);
+    assert(argsArray.selfTestMode);
+    assert(argsArray.selfTestOperation == "metadata");
     assert(argsArray.filterOnStart == "test query");
     assert(argsArray.caseSensitiveFilter == true);
     assert(argsArray.jsonPaths.length == 2);
@@ -95,7 +100,8 @@ unittest
 
     foreach (option; ["<file.json>", "<repository-directory>", "-q, --query",
             "-v, --verbose", "--case-sensitive", "--no-auto-filter",
-            "--self-test", "--self-test-delay", "-h, --help"])
+            "--self-test", "--self-test-operation", "--self-test-delay",
+            "-h, --help"])
         assert(cliUsageText.canFind(option), "CLI help omits " ~ option);
 
     argsArray = CliOptions.init;

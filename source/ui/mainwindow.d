@@ -153,7 +153,8 @@ import dosierarkivo.archive : ArchivePasswordCallback, appendArchiveVirtualPath,
     escapeArchiveVirtualPath, ParsedArchiveVirtualPath, parseArchiveVirtualPath;
 import dosierarkivo.factory : fileArchive;
 import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, NamedBinaryBlob;
-import dosierskanilo.repository.types : MetadataSummary, RepositoryBlobFlags;
+import dosierskanilo.repository.types : MetadataScanOptions, MetadataSummary,
+    RepositoryAnalysisOptions, RepositoryBlobFlags, RepositoryScanOptions;
 import dosierskanilo.repository.repository : Repository;
 import dosierskanilo.catalogbackend : CatalogPageCursor;
 import dosierskanilo.operations : AnalysisOperationRequest, MetadataOperationRequest,
@@ -1903,6 +1904,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
     bool isSyncingToolbarState;
     bool startupFilterPending = cli.filterOnStart.length > 0;
     bool selfTestQuitScheduled;
+    bool selfTestOperationFailed;
+    void delegate(DocumentTab) startSelfTestOperation;
     int splitPositionHorizontal = loadedState.splitPositionHorizontal;
     int splitPositionVertical = loadedState.splitPositionVertical;
     int splitPositionPreview = loadedState.hasSplitPositionPreview ? loadedState.splitPositionPreview : 0;
@@ -5567,12 +5570,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 else if (cli.selfTestMode && pendingStartupPaths.length == 0 && !selfTestQuitScheduled)
                 {
                     selfTestQuitScheduled = true;
-                    logLine("[self-test] scheduling quit in ", cli.selfTestDelayMs, " ms");
-                    selfTestQuitTimer = scheduleUiTimeout(cast(uint) cli.selfTestDelayMs, {
-                        logLine("[self-test] quitting after startup delay");
-                        Main.quit();
-                        return false;
-                    });
+                    if (cli.selfTestOperation.length > 0 && startSelfTestOperation !is null)
+                    {
+                        startSelfTestOperation(document);
+                    }
+                    else
+                    {
+                        logLine("[self-test] scheduling quit in ", cli.selfTestDelayMs, " ms");
+                        selfTestQuitTimer = scheduleUiTimeout(cast(uint) cli.selfTestDelayMs, {
+                            logLine("[self-test] quitting after startup delay");
+                            Main.quit();
+                            return false;
+                        });
+                    }
                 }
                 return false;
             });
@@ -5748,6 +5758,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 if (currentDocument() is document)
                     progressBar.setFraction(0.0);
                 syncToolbarSensitivity();
+                if (cli.selfTestMode && cli.selfTestOperation.length > 0)
+                {
+                    if (completedResult.state != OperationState.completed)
+                        selfTestOperationFailed = true;
+                    logLine("[self-test] operation ", completedResult.operation,
+                        " state=", completedResult.state,
+                        " error=", completedResult.error);
+                    scheduleUiTimeout(400, {
+                        Main.quit();
+                        return false;
+                    });
+                }
                 bool operationsRemain;
                 foreach (activeDocument; documents)
                     operationsRemain = operationsRemain || activeDocument.operationRunning;
@@ -5902,6 +5924,57 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 return runOperation(request, control);
             });
     }
+
+    startSelfTestOperation = (DocumentTab document) {
+        if (document is null || !document.directorySourceRemote)
+        {
+            logLine("[self-test] operation requires a repository document");
+            selfTestOperationFailed = true;
+            Main.quit();
+            return;
+        }
+        const auto root = Repository.findRoot(document.filePath);
+        if (cli.selfTestOperation == "scan")
+        {
+            RepositoryScanOptions scanOptions;
+            scanOptions.recursive = true;
+            startDocumentOperation(document, OperationKind.scan,
+                (OperationControl control, ulong operationId) {
+                    auto request = buildScanOperationRequest(operationId, root,
+                        true, root, scanOptions, MetadataScanOptions.init);
+                    return runOperation(request, control);
+                });
+        }
+        else if (cli.selfTestOperation == "metadata")
+        {
+            MetadataScanOptions metadata;
+            metadata.calculateChecksums = true;
+            metadata.detectFileTypes = true;
+            startDocumentOperation(document, OperationKind.metadata,
+                (OperationControl control, ulong operationId) {
+                    auto request = buildMetadataOperationRequest(operationId, root,
+                        metadata);
+                    return runOperation(request, control);
+                });
+        }
+        else if (cli.selfTestOperation == "analyze")
+        {
+            RepositoryAnalysisOptions analysis;
+            analysis.mergeDuplicates = true;
+            startDocumentOperation(document, OperationKind.analyze,
+                (OperationControl control, ulong operationId) {
+                    auto request = buildAnalysisOperationRequest(operationId, root,
+                        true, analysis, MetadataScanOptions.init);
+                    return runOperation(request, control);
+                });
+        }
+        else
+        {
+            logLine("[self-test] unknown operation: ", cli.selfTestOperation);
+            selfTestOperationFailed = true;
+            Main.quit();
+        }
+    };
 
     void pauseCurrentOperation()
     {
@@ -6401,7 +6474,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         logLine("Archive member cache still has leased members; ",
             "the session is removed on process exit.");
     }
-    return 0;
+    return selfTestOperationFailed ? 1 : 0;
 }
 
 @("expanded directory refresh removes stale placeholders and upserts rows by ID")
