@@ -82,8 +82,11 @@ and remaining process/display checks are in the backend's `docs/OPERATION-PARITY
 - [x] Add an Xvfb-backed display test job that runs the GUI unit suite with the
   display-gated scroll test and startup/self-test runs for JSON and repository
   documents.
-- [ ] Extend the display suite to Tools wiring, progress, pause/resume,
-  cancellation, and refresh.
+- [x] Extend the display suite to start scan, metadata, and analyze through the
+  Tools path and verify progress/status handling plus the post-operation refresh
+  trigger before quitting.
+- [ ] Exercise pause/resume, cancellation, and refresh completion in the display
+  suite.
 - [ ] Complete WP-09.5 CLI/GUI result, progress, cancellation, error, refresh, and
   explicit storage-mode parity coverage.
 

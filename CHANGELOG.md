@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+- The GUI self-test can run a scan, metadata, or analyze operation on a
+  repository before exiting (`--self-test-operation`); CI exercises those paths
+  under Xvfb.
+
 ## Release 0.10.0 - 2026-10-30
 
 - Operation task-state coverage now checks foreign events, invalid transitions,
