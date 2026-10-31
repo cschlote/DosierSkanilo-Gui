@@ -214,16 +214,17 @@ verbose diagnostics make future allocation/sink failures understandable.
 These are lower-priority cleanup packages; start them only when they have a
 specific visual or compatibility outcome to verify.
 
-- [ ] Replace `overrideFont` monospace styling with reusable CSS classes and a
-  shared `CssProvider`; verify all detail/report text remains legible.
-- [ ] Remove obsolete `double-buffered` Builder properties and confirm preview
+- [x] Replace `overrideFont` monospace styling with reusable CSS classes and a
+  shared `CssProvider` (`source/ui/styles.d`); digest, status, title, and preview
+  summary styling now come from application CSS classes.
+- [x] Remove obsolete `double-buffered` Builder properties and confirm preview
   rendering remains correct on the supported GTK baseline.
 - [ ] Evaluate `gtksink` preference with an `ximagesink` fallback for embedded
   video, including Wayland and X11 behavior; keep sink selection isolated behind
   the existing fallback path.
-- [ ] Move repeated static widget styling/defaults into Builder files only where
-  this removes runtime duplication without moving behavior or signal logic out of
-  D.
+- [x] Audit builder files for static styling duplication: widget properties are
+  already declared in the `.ui` files and no runtime duplication worth moving
+  remains.
 
 ## P4 — Deferred product and delivery work
 
