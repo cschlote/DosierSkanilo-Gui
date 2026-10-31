@@ -5770,10 +5770,42 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     logLine("[self-test] operation ", completedResult.operation,
                         " state=", completedResult.state,
                         " error=", completedResult.error);
-                    scheduleUiTimeout(400, {
-                        Main.quit();
-                        return false;
-                    });
+                    if (succeeded && !expectCancellation && refreshDocument)
+                    {
+                        const auto refreshLoadId = document.loadRequestId;
+                        const auto refreshStarted = MonoTime.currTime;
+                        scheduleUiTimeout(50, {
+                            if (document is null)
+                            {
+                                selfTestOperationFailed = true;
+                                Main.quit();
+                                return false;
+                            }
+                            if (document.loadRequestId > refreshLoadId
+                                && !isLoading)
+                            {
+                                logLine("[self-test] post-operation reload completed");
+                                Main.quit();
+                                return false;
+                            }
+                            if (cast(long) (MonoTime.currTime
+                                - refreshStarted).total!"seconds" > 10)
+                            {
+                                logLine("[self-test] post-operation reload timed out");
+                                selfTestOperationFailed = true;
+                                Main.quit();
+                                return false;
+                            }
+                            return true;
+                        });
+                    }
+                    else
+                    {
+                        scheduleUiTimeout(400, {
+                            Main.quit();
+                            return false;
+                        });
+                    }
                 }
                 bool operationsRemain;
                 foreach (activeDocument; documents)
