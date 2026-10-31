@@ -520,4 +520,14 @@ unittest
             assert(model.chunks.length <= 4);
         }
     }
+
+    /* Let any in-flight chunk load finish before the backend is closed. */
+    size_t drainMs;
+    while (model.requestActive && drainMs < 10_000)
+    {
+        context.iteration(false);
+        Thread.sleep(dur!"msecs"(2));
+        drainMs += 2;
+    }
+    assert(!model.requestActive, "A chunk load outlived the scroll test.");
 }
