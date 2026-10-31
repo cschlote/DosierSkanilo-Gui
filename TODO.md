@@ -80,7 +80,8 @@ and remaining process/display checks are in the backend's `docs/OPERATION-PARITY
 - [x] Add GTK-independent task-manager lifecycle tests for stale/foreign events,
   invalid transitions, terminal results, and refresh decisions.
 - [x] Add an Xvfb-backed display test job that runs the GUI unit suite with the
-  display-gated scroll test and a startup/self-test smoke run.
+  display-gated scroll test and startup/self-test runs for JSON and repository
+  documents.
 - [ ] Extend the display suite to Tools wiring, progress, pause/resume,
   cancellation, and refresh.
 - [ ] Complete WP-09.5 CLI/GUI result, progress, cancellation, error, refresh, and
