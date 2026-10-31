@@ -65,7 +65,7 @@ import gdk.c.types : GdkModifierType;
 import gdk.Event;
 
 import core.thread : Thread;
-import core.time : MonoTime;
+import core.time : MonoTime, dur;
 import core.sync.condition : Condition;
 import core.sync.mutex : Mutex;
 import std.algorithm : canFind, sort;
@@ -5760,7 +5760,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 syncToolbarSensitivity();
                 if (cli.selfTestMode && cli.selfTestOperation.length > 0)
                 {
-                    if (completedResult.state != OperationState.completed)
+                    const expectCancellation = cli.selfTestOperation
+                        == "synthetic-cancel";
+                    const succeeded = expectCancellation
+                        ? completedResult.state == OperationState.cancelled
+                        : completedResult.state == OperationState.completed;
+                    if (!succeeded)
                         selfTestOperationFailed = true;
                     logLine("[self-test] operation ", completedResult.operation,
                         " state=", completedResult.state,
@@ -5926,6 +5931,63 @@ int runMainWindow(string[] args, ref CliOptions cli)
     }
 
     startSelfTestOperation = (DocumentTab document) {
+        if (cli.selfTestOperation == "synthetic-pause"
+            || cli.selfTestOperation == "synthetic-cancel")
+        {
+            const expectCancellation = cli.selfTestOperation == "synthetic-cancel";
+            startDocumentOperation(document, OperationKind.metadata,
+                (OperationControl control, ulong operationId) {
+                    OperationProgress progress;
+                    progress.operationId = operationId;
+                    progress.operation = OperationKind.metadata;
+                    progress.state = OperationState.running;
+                    progress.total = 10;
+                    progress.totalKnown = true;
+                    progress.pauseAvailable = true;
+                    control.setPauseAvailable(true);
+                    foreach (step; 0 .. 10)
+                    {
+                        progress.completed = step;
+                        control.report(progress);
+                        if (!control.pauseAtCheckpoint(progress))
+                        {
+                            OperationResult cancelled;
+                            cancelled.operationId = operationId;
+                            cancelled.operation = OperationKind.metadata;
+                            cancelled.state = OperationState.cancelled;
+                            return cancelled;
+                        }
+                        Thread.sleep(100.dur!"msecs");
+                    }
+                    OperationResult completed;
+                    completed.operationId = operationId;
+                    completed.operation = OperationKind.metadata;
+                    completed.state = OperationState.completed;
+                    return completed;
+                });
+            if (expectCancellation)
+            {
+                scheduleUiTimeout(200, {
+                    if (document !is null && document.operationControl !is null)
+                        document.operationControl.requestCancellation();
+                    return false;
+                });
+            }
+            else
+            {
+                scheduleUiTimeout(200, {
+                    if (document !is null && document.operationControl !is null)
+                        document.operationControl.requestPause();
+                    return false;
+                });
+                scheduleUiTimeout(900, {
+                    if (document !is null && document.operationControl !is null)
+                        document.operationControl.requestResume();
+                    return false;
+                });
+            }
+            return;
+        }
         if (document is null || !document.directorySourceRemote)
         {
             logLine("[self-test] operation requires a repository document");

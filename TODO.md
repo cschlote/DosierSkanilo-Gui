@@ -85,8 +85,10 @@ and remaining process/display checks are in the backend's `docs/OPERATION-PARITY
 - [x] Extend the display suite to start scan, metadata, and analyze through the
   Tools path and verify progress/status handling plus the post-operation refresh
   trigger before quitting.
-- [ ] Exercise pause/resume, cancellation, and refresh completion in the display
-  suite.
+- [x] Exercise pause/resume and cancellation in the display suite through a
+  synthetic operation that reports progress and honors control checkpoints.
+- [ ] Verify that the post-operation reload completes in the owning tab before
+  the self-test exits.
 - [ ] Complete WP-09.5 CLI/GUI result, progress, cancellation, error, refresh, and
   explicit storage-mode parity coverage.
 

@@ -6,7 +6,7 @@ All notable changes to this project are documented in this file.
 
 - The GUI self-test can run a scan, metadata, or analyze operation on a
   repository before exiting (`--self-test-operation`); CI exercises those paths
-  under Xvfb.
+  under Xvfb, including a synthetic pause/resume and cancellation run.
 
 ## Release 0.10.0 - 2026-10-30
 
