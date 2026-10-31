@@ -67,6 +67,13 @@ if [ -d "${backend_dir}" ]; then
 	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
 		./build/bin/dosierskanilo-gui \
 		--self-test --self-test-delay 1200 "${repository_dir}"
+	for operation in scan metadata analyze; do
+		printf '%s\n' "[display-test] running Tools ${operation} operation"
+		run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
+			./build/bin/dosierskanilo-gui \
+			--self-test --self-test-operation "${operation}" \
+			--self-test-delay 1200 "${repository_dir}"
+	done
 else
 	printf '%s\n' "[display-test] backend checkout not found; skipping repository smoke test."
 fi
