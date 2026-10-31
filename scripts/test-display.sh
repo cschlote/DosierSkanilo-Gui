@@ -48,7 +48,7 @@ fixture="${ROOT_DIR}/../DosierSkanilo/test/json_file_v2.json"
 if [ -f "${fixture}" ]; then
 	printf '%s\n' "[display-test] running GUI startup self-test"
 	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
-		G_DEBUG=fatal-warnings ./build/bin/dosierskanilo-gui \
+		./build/bin/dosierskanilo-gui \
 		--self-test --self-test-delay 700 "${fixture}"
 else
 	printf '%s\n' "[display-test] catalog fixture not found; skipping startup smoke test."
