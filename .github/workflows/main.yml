@@ -131,7 +131,7 @@ jobs:
       - lint
     steps:
       - name: Install base tools
-        run: apk add --no-cache git bash tar zstd xvfb xauth
+        run: apk add --no-cache git bash tar zstd xvfb
 
       - name: Checkout
         uses: actions/checkout@v4

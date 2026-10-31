@@ -6,18 +6,34 @@ cd "${ROOT_DIR}"
 
 DC=${DC:-ldc2}
 LOGIN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dosierskanilo-gui-display.XXXXXX")
-trap 'rm -rf "${LOGIN_DIR}"' EXIT
+XVFB_PID=""
+cleanup() {
+	if [ -n "${XVFB_PID}" ]; then
+		kill "${XVFB_PID}" >/dev/null 2>&1 || true
+	fi
+	rm -rf "${LOGIN_DIR}"
+}
+trap cleanup EXIT
 
 if command -v xvfb-run >/dev/null 2>&1; then
 	run_with_display() {
 		xvfb-run -a -s "-screen 0 1280x1024x24" "$@"
+	}
+elif command -v Xvfb >/dev/null 2>&1; then
+	DISPLAY_NUMBER=99
+	Xvfb ":${DISPLAY_NUMBER}" -screen 0 1280x1024x24 >"${LOGIN_DIR}/xvfb.log" 2>&1 &
+	XVFB_PID=$!
+	export DISPLAY=":${DISPLAY_NUMBER}"
+	sleep 1
+	run_with_display() {
+		"$@"
 	}
 elif [ -n "${DISPLAY:-}" ]; then
 	run_with_display() {
 		"$@"
 	}
 else
-	printf '%s\n' "[display-test] no DISPLAY and xvfb-run is unavailable; skipping."
+	printf '%s\n' "[display-test] no DISPLAY and no X server is available; skipping."
 	exit 0
 fi
 
