@@ -44,14 +44,31 @@ run_with_display env DOSIER_GUI_TABLE_SCROLL_TEST=1 DC="${DC}" \
 printf '%s\n' "[display-test] building the GUI for the startup smoke test"
 DC="${DC}" dub build --compiler="${DC}"
 
-fixture="${ROOT_DIR}/../DosierSkanilo/test/json_file_v2.json"
+backend_dir="${ROOT_DIR}/../DosierSkanilo"
+fixture="${backend_dir}/test/json_file_v2.json"
 if [ -f "${fixture}" ]; then
-	printf '%s\n' "[display-test] running GUI startup self-test"
+	printf '%s\n' "[display-test] running GUI startup self-test on a JSON catalog"
 	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
 		./build/bin/dosierskanilo-gui \
 		--self-test --self-test-delay 700 "${fixture}"
 else
-	printf '%s\n' "[display-test] catalog fixture not found; skipping startup smoke test."
+	printf '%s\n' "[display-test] catalog fixture not found; skipping JSON smoke test."
+fi
+
+if [ -d "${backend_dir}" ]; then
+	printf '%s\n' "[display-test] building the backend CLI for a repository fixture"
+	(cd "${backend_dir}" && DC="${DC}" dub build --compiler="${DC}")
+	repository_dir="${LOGIN_DIR}/repository"
+	mkdir -p "${repository_dir}"
+	printf 'payload\n' > "${repository_dir}/sample.txt"
+	"${backend_dir}/build/bin/dosierskanilo" init "${repository_dir}" >/dev/null
+	"${backend_dir}/build/bin/dosierskanilo" scan "${repository_dir}" >/dev/null
+	printf '%s\n' "[display-test] running GUI startup self-test on a repository"
+	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
+		./build/bin/dosierskanilo-gui \
+		--self-test --self-test-delay 1200 "${repository_dir}"
+else
+	printf '%s\n' "[display-test] backend checkout not found; skipping repository smoke test."
 fi
 
 printf '%s\n' "[display-test] passed"
