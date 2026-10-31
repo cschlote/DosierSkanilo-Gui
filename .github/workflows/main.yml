@@ -121,3 +121,42 @@ jobs:
 
       - name: Run tests
         run: ./scripts/test.sh
+
+  display-test:
+    name: Display test
+    runs-on: ubuntu-24.04
+    container:
+      image: alpine:3.20
+    needs:
+      - lint
+    steps:
+      - name: Install base tools
+        run: apk add --no-cache git bash tar zstd xvfb xauth
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout backend dependency
+        run: |
+          git clone --depth 1 https://github.com/cschlote/DosierSkanilo.git ../DosierSkanilo
+          if git -C ../DosierSkanilo fetch --depth 1 origin "$GITHUB_REF_NAME"; then
+            git -C ../DosierSkanilo checkout --detach FETCH_HEAD
+          fi
+
+      - name: Cache DUB
+        uses: actions/cache@v4
+        with:
+          path: |
+            .dub
+            /root/.dub
+          key: ${{ runner.os }}-dub-${{ hashFiles('dub.json', 'dub.selections.json') }}
+          restore-keys: |
+            ${{ runner.os }}-dub-
+
+      - name: Install build dependencies
+        run: |
+          sh ./scripts/install-dependencies.sh build
+          apk add --no-cache mediainfo mediainfo-dev
+
+      - name: Run display-backed tests
+        run: ./scripts/test-display.sh
