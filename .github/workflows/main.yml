@@ -154,9 +154,7 @@ jobs:
             ${{ runner.os }}-dub-
 
       - name: Install build dependencies
-        run: |
-          sh ./scripts/install-dependencies.sh build
-          apk add --no-cache mediainfo mediainfo-dev
+        run: sh ./scripts/install-dependencies.sh build
 
       - name: Run display-backed tests
         run: ./scripts/test-display.sh
