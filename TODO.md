@@ -87,8 +87,8 @@ and remaining process/display checks are in the backend's `docs/OPERATION-PARITY
   trigger before quitting.
 - [x] Exercise pause/resume and cancellation in the display suite through a
   synthetic operation that reports progress and honors control checkpoints.
-- [ ] Verify that the post-operation reload completes in the owning tab before
-  the self-test exits.
+- [x] Verify that the post-operation reload completes in the owning tab before
+  the self-test exits (10s timeout fails the run).
 - [ ] Complete WP-09.5 CLI/GUI result, progress, cancellation, error, refresh, and
   explicit storage-mode parity coverage.
 
