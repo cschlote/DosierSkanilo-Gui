@@ -1,0 +1,82 @@
+/** Headless filter and tree-projection benchmark for representative row counts. */
+module bench.filterbench;
+
+import core.memory : GC;
+import std.datetime.stopwatch : StopWatch, AutoStart;
+import std.format : format;
+import std.stdio : writefln, writeln;
+import std.conv : to;
+
+import model.blobrow : BlobRow;
+import model.treeprojection : FileInput, buildDirectoryTree;
+import view.textreport : filterRowsByText;
+
+private BlobRow[] syntheticRows(size_t count)
+{
+    BlobRow[] rows;
+    rows.reserve(count);
+    foreach (index; 0 .. count)
+    {
+        BlobRow row;
+        row.primaryFileName = format("track-%06d.flac", index);
+        row.fileSize = (index % 4096) + 1;
+        row.sha1 = format("sha1-%08d", index);
+        row.hasSummaryFlags = true;
+        row.summaryHasAudio = (index % 3) == 0;
+        row.summaryHasMedia = row.summaryHasAudio;
+        rows ~= row;
+    }
+    return rows;
+}
+
+private FileInput[] syntheticInputs(size_t count)
+{
+    FileInput[] inputs;
+    inputs.reserve(count);
+    foreach (index; 0 .. count)
+    {
+        FileInput input;
+        input.path = format("media/album-%02d/track-%06d.flac", index % 100,
+            index);
+        input.size = (index % 4096) + 1;
+        input.hasAudio = (index % 3) == 0;
+        input.hasMedia = input.hasAudio;
+        inputs ~= input;
+    }
+    return inputs;
+}
+
+int main(string[] args)
+{
+    size_t[] sizes = [1_000, 10_000, 100_000];
+    if (args.length > 1)
+    {
+        sizes.length = 0;
+        foreach (argument; args[1 .. $])
+            sizes ~= argument.to!size_t;
+    }
+
+    writeln("count\tfilter_ms\ttree_ms\tpeak_mib");
+    foreach (count; sizes)
+    {
+        auto rows = syntheticRows(count);
+        auto inputs = syntheticInputs(count);
+
+        auto filterWatch = StopWatch(AutoStart.yes);
+        const filtered = filterRowsByText(rows, "track-0007", false);
+        filterWatch.stop();
+        const filterMs = filterWatch.peek.total!"usecs" / 1000.0;
+
+        auto treeWatch = StopWatch(AutoStart.yes);
+        const tree = buildDirectoryTree(inputs);
+        treeWatch.stop();
+        const treeMs = treeWatch.peek.total!"usecs" / 1000.0;
+
+        GC.collect();
+        const peakMiB = GC.stats.usedSize / (1024.0 * 1024.0);
+        writefln("%d\t%.1f\t%.1f\t%.1f\tfiltered=%d\tdirs=%d\tfiles=%d",
+            count, filterMs, treeMs, peakMiB, filtered.length,
+            tree.directories.length, tree.files.length);
+    }
+    return 0;
+}

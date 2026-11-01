@@ -112,9 +112,12 @@ retains its per-document store behind `GtkTreeModelFilter`. See
 - [x] Preserve selection, expansion, sort, placeholder/loading states, and exact
   text/media/presence/negation semantics through apply/change/clear cycles.
 - [x] Add GTK model tests for underlying node retention and result parity.
-- [ ] Measure repeated filter latency and peak memory on representative JSON and
-  SQLite catalogs; profile Blob-table rendering at 95,001 JSON rows, including
-  GC allocation behavior and batch time.
+- [x] Add `scripts/benchmark-filters.sh` (headless release benchmark) and record
+  filter/tree projection latency plus used heap: 1k rows 0.2/0.6 ms/0.2 MiB,
+  10k 2.4/5.4 ms/1.8 MiB, 100k 22.1/51.6 ms/15.3 MiB.
+- [ ] Profile Blob-table rendering at 95,001 rows on a supported display,
+  including GC allocation behavior and batch time; repeat against a SQLite
+  catalog.
 
 **Acceptance:** filter changes update the visible projection without clearing or
 recreating existing source nodes; matching descendants keep their ancestor paths
