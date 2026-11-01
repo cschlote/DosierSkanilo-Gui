@@ -188,13 +188,14 @@ is held per document so page cursors stay valid.
 Status: **design clarified**. JSON tabs follow load → modify → store on an
 in-memory document; SQLite tabs commit directly and have no dirty state.
 
-- [ ] Track a modified flag for JSON document tabs after in-memory mutations and
-  show it in the tab/status.
-- [ ] Offer save/discard/cancel when closing, reloading, or quitting a modified
-  JSON document; keep the document modified when saving fails.
-- [ ] Compare a load-time file fingerprint before saving so external edits are
+- [x] Track a modified flag for JSON document tabs after in-memory mutations and
+  show it in the tab label.
+- [x] Offer save/discard/cancel when closing a modified JSON document or the
+  window; keep the document modified when saving fails.
+- [ ] Prompt on reload/revert and add an explicit discard action in the UI.
+- [x] Compare a load-time file fingerprint before saving so external edits are
   reported instead of overwritten.
-- [ ] Do not show a dirty marker for SQLite tabs; a future long-transaction
+- [x] Do not show a dirty marker for SQLite tabs; a future long-transaction
   indicator is a separate concept.
 
 ## P2 — Stabilize GTK layout and video preview

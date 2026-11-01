@@ -8,6 +8,11 @@ All notable changes to this project are documented in this file.
   repository before exiting (`--self-test-operation`); CI exercises those paths
   under Xvfb, including a synthetic pause/resume and cancellation run, and it
   waits for the post-operation reload before exiting.
+- JSON document tabs now use an in-memory catalog session: Tools operations
+  modify the tab, the label marks unsaved changes, and Save (Ctrl+S), close, and
+  window close offer save/discard/cancel. Saves detect external file changes
+  instead of overwriting them; SQLite tabs remain transactional without a dirty
+  marker.
 
 ## Release 0.10.0 - 2026-10-30
 

@@ -10,6 +10,7 @@ module ui.mainwindow;
 
 import gdk.c.types : GdkEventConfigure;
 import gdk.Display;
+import gdk.Event : Event;
 import gobject.Value;
 import gobject.Type : GType;
 import gobject.ObjectG : ObjectG;
@@ -29,6 +30,7 @@ import gtk.Entry;
 import gtk.Expander;
 import gtk.Image;
 import gtk.FileChooserDialog;
+import gtk.MessageDialog;
 import gtk.Grid;
 import gtk.Label;
 import gtk.ListStore;
@@ -60,7 +62,8 @@ import gtk.Widget;
 import gtk.Window;
 import gtk.c.types : GtkAlign, GtkIconSize, GtkReliefStyle, GtkShadowType,
     GtkSortType, GtkTreeViewColumnSizing;
-import gtk.c.types : FileChooserAction, ResponseType;
+import gtk.c.types : ButtonsType, DialogFlags, FileChooserAction, MessageType,
+    ResponseType;
 import gdk.c.types : GdkModifierType;
 import gdk.Event;
 
@@ -83,7 +86,7 @@ import gstreamer.c.types : GstState, GstStateChangeReturn;
 
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
-import model.catalogsource : openCatalogBackend;
+import model.catalogsource : openCatalogBackend, openJsonCatalogBackend;
 import model.datasource : SourceQuery, isRepositorySource,
     AcquiredArchiveMemberPreview, ArchiveMemberTreeEntry, ArchiveMemberTreePage,
     acquireJsonArchiveMemberPreview, acquireJsonVirtualArchiveMemberPreview,
@@ -157,7 +160,8 @@ import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, NamedBinaryBlo
 import dosierskanilo.repository.types : MetadataScanOptions, MetadataSummary,
     RepositoryAnalysisOptions, RepositoryBlobFlags, RepositoryScanOptions;
 import dosierskanilo.repository.repository : Repository;
-import dosierskanilo.catalogbackend : CatalogPageCursor;
+import dosierskanilo.catalogbackend : CatalogBackend, CatalogDocument,
+    CatalogPageCursor;
 import dosierskanilo.operations : AnalysisOperationRequest, MetadataOperationRequest,
     OperationControl, OperationKind, OperationProgress, OperationResult,
     OperationState, OperationTarget, ScanOperationRequest;
@@ -1169,6 +1173,8 @@ struct AsyncLoadResult
     bool pagedSource;
     CatalogPageCursor nextContentCursor;
     bool hasMore;
+    CatalogBackend jsonBackend;
+    CatalogDocument jsonDocument;
 }
 
 struct AsyncDirectoryResult
@@ -1989,14 +1995,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
     void delegate(DocumentTab) closeDocumentTab;
 
     /** Build a compact mode-aware notebook tab label with a useful tooltip. */
-    Widget createDocumentTabLabel(string filePath)
+    Widget createDocumentTabLabel(string filePath, bool modified = false)
     {
         auto labelBox = new Box(Orientation.HORIZONTAL, 4);
         auto repositorySource = isRepositorySource(filePath);
         auto displayPath = repositorySource ? Repository.findRoot(filePath) : filePath;
         auto icon = new Image(repositorySource ? "folder" : "text-x-generic",
             GtkIconSize.MENU);
-        auto label = new Label(baseName(displayPath));
+        auto label = new Label((modified ? "*" : "") ~ baseName(displayPath));
+        label.setTooltipText(modified ? "Unsaved changes" : displayPath);
         auto closeButton = new Button();
         closeButton.setLabel("x");
         closeButton.setTooltipText("Close tab");
@@ -2017,6 +2024,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
             ~ displayPath);
         labelBox.showAll();
         return labelBox;
+    }
+
+    /** Update the modified marker and tab label for one document. */
+    void setDocumentModified(DocumentTab document, bool modified)
+    {
+        if (document is null || document.modified == modified)
+            return;
+        document.modified = modified;
+        notebook.setTabLabel(document.pageRoot,
+            createDocumentTabLabel(document.filePath, modified));
     }
 
     /** Find an already open document tab by JSON file path. */
@@ -4685,6 +4702,58 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     advanceStartupQueue = () { loadNextPendingStartupPath(); };
 
+    /** Offer to save, discard, or cancel closing one modified document. */
+    bool confirmDocumentClose(DocumentTab document)
+    {
+        if (document is null || !document.modified
+            || document.catalogDocument is null)
+            return true;
+        auto dialog = new MessageDialog(window, DialogFlags.MODAL,
+            MessageType.WARNING, ButtonsType.NONE,
+            "Save changes to '" ~ baseName(document.filePath) ~ "' before closing?");
+        dialog.setTitle("Unsaved changes");
+        dialog.addButton("_Cancel", ResponseType.CANCEL);
+        dialog.addButton("_Discard", ResponseType.REJECT);
+        dialog.addButton("_Save", ResponseType.ACCEPT);
+        const response = dialog.run();
+        dialog.destroy();
+        if (response == cast(int) ResponseType.ACCEPT)
+        {
+            try
+            {
+                document.catalogDocument.save();
+                setDocumentModified(document, false);
+                document.status.setText("Catalog saved.");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                document.status.setText("Could not save the catalog: " ~ ex.msg);
+                return false;
+            }
+        }
+        return response == cast(int) ResponseType.REJECT;
+    }
+
+    /** Save the active JSON document if it has unsaved changes. */
+    void saveCurrentDocument()
+    {
+        auto document = currentDocument();
+        if (document is null || document.catalogDocument is null
+            || !document.modified)
+            return;
+        try
+        {
+            document.catalogDocument.save();
+            setDocumentModified(document, false);
+            document.status.setText("Catalog saved.");
+        }
+        catch (Exception ex)
+        {
+            document.status.setText("Could not save the catalog: " ~ ex.msg);
+        }
+    }
+
     closeDocumentTab = (DocumentTab document) {
         if (document.operationRunning)
         {
@@ -4703,6 +4772,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto pageIndex = notebook.pageNum(document.pageRoot);
         if (pageIndex < 0)
             return;
+        if (!confirmDocumentClose(document))
+            return;
         ++document.archiveMemberPreviewRequestId;
         stopVideoPreview(document);
         if (document.selectedArchiveMemberLease !is null)
@@ -4712,6 +4783,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
         if (document.directorySource !is null)
             document.directorySource.close();
+        if (document.catalogDocument !is null)
+        {
+            document.catalogDocument.close();
+            document.catalogDocument = null;
+        }
         if (document.catalogBackend !is null)
         {
             document.catalogBackend.close();
@@ -4722,6 +4798,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
         syncToolbarFromCurrentDocument();
         persistCurrentState(clearSavedWindowGeometryOnExit);
     };
+
+    auto saveMenuItem = new MenuItem("_Save");
+    saveMenuItem.addOnActivate((MenuItem _) { saveCurrentDocument(); });
+    fileMenu.append(saveMenuItem);
+    attachMenuAccelerator(saveMenuItem, 's');
 
     /** Open a document in a tab, selecting it optionally, without forcing a reload. */
     openDocumentFromPath = (string filePath, bool selectTab, bool addToRecent) {
@@ -5240,9 +5321,17 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     }
                     result.pagedSource = true;
                 }
+                else if (document.reloadFromDocument
+                    && document.catalogDocument !is null)
+                {
+                    blobs = document.catalogDocument.documentBlobs();
+                }
                 else
                 {
                     blobs = loadDocumentSource(document.filePath);
+                    result.jsonBackend = openJsonCatalogBackend(document.filePath);
+                    if (result.jsonBackend !is null)
+                        result.jsonDocument = result.jsonBackend.document();
                 }
                 if (isRepositorySource(document.filePath))
                 {
@@ -5352,6 +5441,17 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 }
 
                 document.sourceLoaded = true;
+                if (!result.pagedSource && result.jsonDocument !is null)
+                {
+                    if (document.catalogDocument !is null)
+                        document.catalogDocument.close();
+                    if (document.catalogBackend !is null
+                        && !isRepositorySource(document.filePath))
+                        document.catalogBackend.close();
+                    document.catalogDocument = result.jsonDocument;
+                    document.catalogBackend = result.jsonBackend;
+                }
+                document.reloadFromDocument = false;
                 if (result.pagedSource && document.drainRepositoryPages)
                 {
                     document.repositoryRowsLoaded = result.pageOffset + result.allRows.length;
@@ -5736,6 +5836,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         document.status.setText("Operation failed: "
                             ~ completedResult.error);
                     }
+                    if ((kind == OperationKind.scan
+                        || kind == OperationKind.analyze)
+                        && !document.directorySourceRemote
+                        && document.catalogDocument !is null)
+                    {
+                        setDocumentModified(document, true);
+                        document.reloadFromDocument = true;
+                    }
                     if (refreshDocument && !quitWhenOperationsFinish)
                         refreshDocumentAfterOperation(document);
                 }
@@ -5890,6 +5998,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     repositorySource ? sourceDescription : document.filePath,
                     repositorySource, filesystemRoot, options.scanOptions,
                     options.metadataOptions);
+                if (document.catalogDocument !is null)
+                    return document.catalogDocument.applyScan(request, control);
                 return runOperation(request, control);
             });
     }
@@ -5942,6 +6052,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 auto request = buildAnalysisOperationRequest(operationId,
                     repositorySource ? sourceDescription : document.filePath,
                     repositorySource, options.analysisOptions, metadata);
+                if (document.catalogDocument !is null)
+                    return document.catalogDocument.applyAnalysis(request, control);
                 return runOperation(request, control);
             });
     }
@@ -6004,27 +6116,41 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
             return;
         }
-        if (document is null || !document.directorySourceRemote)
+        if (document is null)
         {
-            logLine("[self-test] operation requires a repository document");
+            logLine("[self-test] operation requires an open document");
             selfTestOperationFailed = true;
             Main.quit();
             return;
         }
-        const auto root = Repository.findRoot(document.filePath);
+        const bool repositorySource = document.directorySourceRemote;
+        const auto root = repositorySource
+            ? Repository.findRoot(document.filePath) : dirName(document.filePath);
         if (cli.selfTestOperation == "scan")
         {
             RepositoryScanOptions scanOptions;
             scanOptions.recursive = true;
             startDocumentOperation(document, OperationKind.scan,
                 (OperationControl control, ulong operationId) {
-                    auto request = buildScanOperationRequest(operationId, root,
-                        true, root, scanOptions, MetadataScanOptions.init);
+                    auto request = buildScanOperationRequest(operationId,
+                        repositorySource ? root : document.filePath,
+                        repositorySource, root, scanOptions,
+                        MetadataScanOptions.init);
+                    if (document.catalogDocument !is null)
+                        return document.catalogDocument.applyScan(request,
+                            control);
                     return runOperation(request, control);
                 });
         }
         else if (cli.selfTestOperation == "metadata")
         {
+            if (!repositorySource)
+            {
+                logLine("[self-test] metadata requires a repository document");
+                selfTestOperationFailed = true;
+                Main.quit();
+                return;
+            }
             MetadataScanOptions metadata;
             metadata.calculateChecksums = true;
             metadata.detectFileTypes = true;
@@ -6041,8 +6167,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
             analysis.mergeDuplicates = true;
             startDocumentOperation(document, OperationKind.analyze,
                 (OperationControl control, ulong operationId) {
-                    auto request = buildAnalysisOperationRequest(operationId, root,
-                        true, analysis, MetadataScanOptions.init);
+                    auto request = buildAnalysisOperationRequest(operationId,
+                        repositorySource ? root : document.filePath,
+                        repositorySource, analysis, MetadataScanOptions.init);
+                    if (document.catalogDocument !is null)
+                        return document.catalogDocument.applyAnalysis(request,
+                            control);
                     return runOperation(request, control);
                 });
         }
@@ -6267,7 +6397,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             () { return notebook.getCurrentPage(); },
             () { return cast(int) documents.length; },
             (int pageIndex) { return documents[pageIndex]; },
-            (int pageIndex) { if (documents[pageIndex].directorySource !is null) documents[pageIndex].directorySource.close(); if (documents[pageIndex].catalogBackend !is null) documents[pageIndex].catalogBackend.close(); notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
+            (int pageIndex) { if (pageIndex >= 0 && pageIndex < documents.length) closeDocumentTab(documents[pageIndex]); },
             () { syncToolbarFromCurrentDocument(); },
             (bool clearGeometry) { persistCurrentState(clearGeometry); },
             () {
@@ -6399,7 +6529,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     () { return notebook.getCurrentPage(); },
                     () { return cast(int) documents.length; },
                     (int pageIndex) { return documents[pageIndex]; },
-                    (int pageIndex) { if (documents[pageIndex].directorySource !is null) documents[pageIndex].directorySource.close(); if (documents[pageIndex].catalogBackend !is null) documents[pageIndex].catalogBackend.close(); notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
+                    (int pageIndex) { if (pageIndex >= 0 && pageIndex < documents.length) closeDocumentTab(documents[pageIndex]); },
                     () { syncToolbarFromCurrentDocument(); },
                     (bool clearGeometry) { persistCurrentState(clearGeometry); },
                     () { return isLoading; },
@@ -6542,6 +6672,20 @@ int runMainWindow(string[] args, ref CliOptions cli)
         () { loadNextPendingStartupPath(); },
         () { Main.quit(); }
     );
+
+    window.addOnDelete((Event _, Widget __) {
+        foreach (document; documents)
+        {
+            if (!document.modified || document.catalogDocument is null)
+                continue;
+            auto pageIndex = notebook.pageNum(document.pageRoot);
+            if (pageIndex >= 0)
+                notebook.setCurrentPage(pageIndex);
+            if (!confirmDocumentClose(document))
+                return true;
+        }
+        return false;
+    });
 
     Main.run();
     cancelAndJoinDocumentOperations();
