@@ -108,6 +108,7 @@ if [ -d "${backend_dir}" ]; then
 	printf '%s\n' "[display-test] JSON table smoke: $(( $(date +%s) - start_seconds ))s"
 
 	bench_repository="${LOGIN_DIR}/bench-repository"
+	mkdir -p "${bench_repository}"
 	"${backend_dir}/build/bin/dosierskanilo" init "${bench_repository}" >/dev/null
 	"${backend_dir}/build/bin/dosierskanilo" import "${bench_repository}" \
 		"${bench_catalog}" >/dev/null
