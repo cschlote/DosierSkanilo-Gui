@@ -279,8 +279,9 @@ specific visual or compatibility outcome to verify.
 - [x] Add archive password prompting and filename-based persistence for JSON
   catalogs and repositories, including the archive scan retry flow (Release
   0.8.0).
-- [ ] Define and implement a release packaging/tagging workflow for supported
-  distributions, including version source, build artifacts, and installation
-  smoke checks.
+- [x] Tag-driven release workflow: validate tag/VERSION/CHANGELOG, run the test
+  suite, and publish the GitHub release when the tag is pushed.
+- [ ] Extend the release workflow with distribution artifacts and installation
+  smoke checks for the supported packages.
 - [ ] Investigate the previously noted CLI stdout/stderr ordering concern around
   `argsArray`; only add synchronization if a reproducible interleaving is found.
