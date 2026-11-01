@@ -1176,6 +1176,7 @@ struct AsyncLoadResult
     bool hasMore;
     CatalogBackend jsonBackend;
     CatalogDocument jsonDocument;
+    string sourceRoot;
 }
 
 struct AsyncDirectoryResult
@@ -2054,10 +2055,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
     /** Resolve a known-file entry path relative to the owning JSON file. */
     string resolveKnownFilePath(DocumentTab document, string knownFileName)
     {
-        auto repositoryRoot = document.directorySourceRemote
-            ? Repository.findRoot(document.filePath) : "";
+        const auto sourceRoot = document.repositoryStorage
+            ? Repository.findRoot(document.filePath) : document.sourceRoot;
         return resolveDocumentSourcePath(document.filePath, knownFileName,
-            repositoryRoot);
+            sourceRoot);
     }
 
     void launchExternalPath(DocumentTab document, string resolvedPath,
@@ -2166,7 +2167,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         recentFilesMenuItem.setSensitive(!isLoading && recentFilePaths.length > 0);
         toolsScanMenuItem.setSensitive(operationIdle && hasCurrentDocument);
         toolsMetadataMenuItem.setSensitive(operationIdle && hasCurrentDocument
-            && activeDocument.directorySourceRemote);
+            && activeDocument.repositoryStorage);
         toolsAnalyzeMenuItem.setSensitive(operationIdle && hasCurrentDocument);
         toolsPauseMenuItem.setSensitive(operationRunning
             && activeDocument.operationPauseAvailable && !activeDocument.operationPaused);
@@ -2965,7 +2966,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 ? model.getValueString(parent, 4)
                 : model.getValueString(parent, 6);
             const auto containerVirtualPath = model.getValueString(parent, 5);
-            const auto repositorySource = document.directorySourceRemote;
+            const auto repositorySource = document.repositoryStorage;
             const auto sourcePath = document.filePath;
             const auto loadingKind = offset == 0
                 ? "ArchiveLoading" : "ArchiveLoadingPage";
@@ -3556,12 +3557,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 string error;
                 try
                 {
-                    DirectorySource source = document.directorySourceRemote
-                        ? openRepositoryDirectorySource(sourcePath) : document.directorySource;
+                    DirectorySource source = document.repositoryStorage
+                        ? openRepositoryDirectorySource(sourcePath)
+                        : document.directorySource;
                     page = forward
                         ? source.listFilteredFilesPage(directoryId, cursor, 1, filter, order)
                         : source.listPreviousFilteredFilesPage(directoryId, cursor, 1, filter, order);
-                    if (document.directorySourceRemote)
+                    if (document.repositoryStorage)
                         source.close();
                 }
                 catch (Exception ex)
@@ -5452,7 +5454,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     blobs = loadDocumentSource(document.filePath);
                     result.jsonBackend = openJsonCatalogBackend(document.filePath);
                     if (result.jsonBackend !is null)
+                    {
                         result.jsonDocument = result.jsonBackend.document();
+                        if (result.jsonDocument !is null)
+                        {
+                            result.sourceRoot =
+                                result.jsonDocument.suggestedFilesystemRoot();
+                            result.jsonDocument.bindFilesystemRoot(
+                                result.sourceRoot);
+                        }
+                    }
                 }
                 if (isRepositorySource(document.filePath))
                 {
@@ -5562,6 +5573,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 }
 
                 document.sourceLoaded = true;
+                document.repositoryStorage = isRepositorySource(document.filePath);
+                document.sourceRoot = document.repositoryStorage
+                    ? Repository.findRoot(document.filePath) : result.sourceRoot;
                 if (!result.pagedSource && result.jsonDocument !is null)
                 {
                     if (document.catalogDocument !is null)
@@ -5959,7 +5973,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     }
                     if ((kind == OperationKind.scan
                         || kind == OperationKind.analyze)
-                        && !document.directorySourceRemote
+                        && !document.repositoryStorage
                         && document.catalogDocument !is null)
                     {
                         setDocumentModified(document, true);
@@ -6120,7 +6134,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto document = currentDocument();
         if (document is null)
             return;
-        auto repositorySource = document.directorySourceRemote;
+        const auto repositorySource = document.repositoryStorage;
         auto sourceDescription = repositorySource
             ? Repository.findRoot(document.filePath) : document.filePath;
         auto filesystemRoot = repositorySource ? sourceDescription : chooseJsonScanRoot();
@@ -6145,7 +6159,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     void startMetadataForCurrentDocument()
     {
         auto document = currentDocument();
-        if (document is null || !document.directorySourceRemote)
+        if (document is null || !document.repositoryStorage)
             return;
         auto root = Repository.findRoot(document.filePath);
         auto options = showOperationOptions(window, "Metadata options", root,
@@ -6175,7 +6189,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto document = currentDocument();
         if (document is null)
             return;
-        auto repositorySource = document.directorySourceRemote;
+        const auto repositorySource = document.repositoryStorage;
         auto sourceDescription = repositorySource
             ? Repository.findRoot(document.filePath) : document.filePath;
         auto options = showOperationOptions(window, "Analysis options",
@@ -6261,7 +6275,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             Main.quit();
             return;
         }
-        const bool repositorySource = document.directorySourceRemote;
+        const bool repositorySource = document.repositoryStorage;
         const auto root = repositorySource
             ? Repository.findRoot(document.filePath) : dirName(document.filePath);
         if (cli.selfTestOperation == "scan")

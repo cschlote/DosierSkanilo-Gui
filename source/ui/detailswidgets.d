@@ -585,8 +585,8 @@ private string resolvePreviewPath(DocumentTab document, const(BlobRow) row)
         return "";
     }
 
-    auto repositoryRoot = document.directorySourceRemote
-        ? Repository.findRoot(document.filePath) : "";
+    const auto repositoryRoot = document.repositoryStorage
+        ? Repository.findRoot(document.filePath) : document.sourceRoot;
     auto selectedTreePath = document.selectedTreeCursor.relativePath;
     if (selectedTreePath.length > 0)
     {

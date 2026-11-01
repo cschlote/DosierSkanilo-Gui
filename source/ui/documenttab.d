@@ -323,6 +323,10 @@ class DocumentTab
     CatalogBackend catalogBackend;
     /// JSON document session; null for transactional SQLite documents.
     CatalogDocument catalogDocument;
+    /// Whether the document is backed by a repository instead of a JSON file.
+    bool repositoryStorage;
+    /// Filesystem root used by backend tree/preview queries.
+    string sourceRoot;
     /// Whether the JSON document buffer differs from its stored catalog.
     bool modified;
     /// Reload the JSON view from the document buffer instead of the file.
