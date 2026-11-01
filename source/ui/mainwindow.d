@@ -5841,17 +5841,49 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     if (cli.selfTestCheckSplitter && document !is null
                         && document.split !is null)
                     {
-                        const position = document.split.getPosition();
-                        const extent = document.split.getOrientation()
-                            == Orientation.VERTICAL
-                            ? document.split.getAllocatedHeight()
-                            : document.split.getAllocatedWidth();
-                        logLine("[self-test] splitter position=", position,
-                            " extent=", extent);
-                        if (position <= 0 || extent <= 0 || position >= extent)
+                        size_t attempts;
+                        void delegate() verifySplitter;
+                        verifySplitter = {
+                            auto active = currentDocument();
+                            if (active !is null && active.split !is null)
+                            {
+                                const position = active.split.getPosition();
+                                const extent = active.split.getOrientation()
+                                    == Orientation.VERTICAL
+                                    ? active.split.getAllocatedHeight()
+                                    : active.split.getAllocatedWidth();
+                                if (extent > 1)
+                                {
+                                    logLine("[self-test] splitter position=",
+                                        position, " extent=", extent);
+                                    if (position <= 0 || position >= extent)
+                                        selfTestOperationFailed = true;
+                                    scheduleUiTimeout(50, {
+                                        Main.quit();
+                                        return false;
+                                    });
+                                    return;
+                                }
+                            }
+                            if (++attempts < 40)
+                            {
+                                scheduleUiTimeout(50, {
+                                    verifySplitter();
+                                    return false;
+                                });
+                                return;
+                            }
+                            logLine("[self-test] splitter was not allocated");
                             selfTestOperationFailed = true;
+                            Main.quit();
+                        };
+                        scheduleUiTimeout(50, {
+                            verifySplitter();
+                            return false;
+                        });
                     }
-                    if (cli.selfTestOperation.length > 0 && startSelfTestOperation !is null)
+                    else if (cli.selfTestOperation.length > 0
+                        && startSelfTestOperation !is null)
                     {
                         startSelfTestOperation(document);
                     }
