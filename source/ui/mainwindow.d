@@ -5404,23 +5404,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.catalogBackend = openCatalogBackend(document.filePath);
             document.sourceRoot = Repository.findRoot(document.filePath);
         }
-        else
+        else if (document.catalogBackend !is null
+            && document.catalogDocument !is null)
         {
-            if (document.catalogBackend is null)
-                document.catalogBackend = openJsonCatalogBackend(
-                    document.filePath);
-            if (document.catalogBackend !is null)
-            {
-                if (document.catalogDocument is null)
-                    document.catalogDocument = document.catalogBackend.document();
-                if (document.catalogDocument !is null)
-                {
-                    document.sourceRoot =
-                        document.catalogDocument.suggestedFilesystemRoot();
-                    document.catalogDocument.bindFilesystemRoot(
-                        document.sourceRoot);
-                }
-            }
+            document.sourceRoot =
+                document.catalogDocument.suggestedFilesystemRoot();
+            document.catalogDocument.bindFilesystemRoot(document.sourceRoot);
         }
         auto catalogBackendSnapshot = document.catalogBackend;
         auto worker = new Thread({
@@ -5436,12 +5425,29 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     : "Loading scanner data via library ...");
                 logLineVerbose("[load-worker] parsing ", document.filePath);
                 NamedBinaryBlob[] blobs;
-                if (catalogBackendSnapshot !is null)
+                auto backend = catalogBackendSnapshot;
+                if (backend is null && !isRepositorySource(document.filePath))
+                {
+                    backend = openJsonCatalogBackend(document.filePath);
+                    result.jsonBackend = backend;
+                    if (backend !is null)
+                    {
+                        result.jsonDocument = backend.document();
+                        if (result.jsonDocument !is null)
+                        {
+                            result.sourceRoot =
+                                result.jsonDocument.suggestedFilesystemRoot();
+                            result.jsonDocument.bindFilesystemRoot(
+                                result.sourceRoot);
+                        }
+                    }
+                }
+                if (backend !is null)
                 {
                     if (document.drainRepositoryPages)
                     {
                         result.pageOffset = document.repositoryRowsLoaded;
-                        auto page = loadCatalogRowPage(catalogBackendSnapshot,
+                        auto page = loadCatalogRowPage(backend,
                             document.repositoryContentCursor, document.pageSize,
                             sourceQuerySnapshot);
                         result.allRows = page.rows;
@@ -5451,7 +5457,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     }
                     else if (document.loadAllRows)
                     {
-                        auto page = loadCatalogRowOffsetPage(catalogBackendSnapshot, 0,
+                        auto page = loadCatalogRowOffsetPage(backend, 0,
                             size_t.max, sourceQuerySnapshot);
                         result.allRows = page.rows;
                         result.pageOffset = 0;
@@ -5459,7 +5465,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     }
                     else
                     {
-                        auto page = loadCatalogRowOffsetPage(catalogBackendSnapshot,
+                        auto page = loadCatalogRowOffsetPage(backend,
                             document.pageOffset, document.pageSize,
                             sourceQuerySnapshot);
                         result.allRows = page.rows;
@@ -5486,16 +5492,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 }
 
                 setLoadingPhase(document, requestId, "Projecting blob rows for GUI ...");
-                if (catalogBackendSnapshot is null)
+                if (backend is null)
                     result.allRows = extractRowsFromBlobs(blobs);
-                if (catalogBackendSnapshot !is null)
+                if (backend !is null)
                 {
                     result.directoryTree = DirectoryTree();
                     if (hasTreeFilterSnapshot || preserveTreeNodes)
                     {
                         DirectorySource treeSource =
-                            openCatalogDirectorySource(catalogBackendSnapshot,
-                                false);
+                            openCatalogDirectorySource(backend, false);
                         scope (exit)
                             treeSource.close();
                         if (hasTreeFilterSnapshot)
@@ -5582,8 +5587,20 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
                 document.sourceLoaded = true;
                 document.repositoryStorage = isRepositorySource(document.filePath);
-                document.sourceRoot = document.repositoryStorage
-                    ? Repository.findRoot(document.filePath) : result.sourceRoot;
+                if (result.jsonBackend !is null)
+                {
+                    if (document.catalogDocument !is null)
+                        document.catalogDocument.close();
+                    if (document.catalogBackend !is null
+                        && !document.repositoryStorage)
+                        document.catalogBackend.close();
+                    document.catalogBackend = result.jsonBackend;
+                    document.catalogDocument = result.jsonDocument;
+                }
+                if (document.repositoryStorage)
+                    document.sourceRoot = Repository.findRoot(document.filePath);
+                else if (result.sourceRoot.length > 0)
+                    document.sourceRoot = result.sourceRoot;
                     if (result.pagedSource && document.drainRepositoryPages)
                 {
                     document.repositoryRowsLoaded = result.pageOffset + result.allRows.length;
