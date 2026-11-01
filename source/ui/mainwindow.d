@@ -6941,8 +6941,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.directorySource.close();
         if (document.catalogDocument !is null)
             document.catalogDocument.close();
-        if (document.catalogBackend !is null)
-            document.catalogBackend.close();
+        /* Backend connections are left to process exit: background load,
+         * directory, and virtual-table workers may still hold statements. */
     }
     stopAllUiSources();
     if (!closeSharedMemberContentCache())
