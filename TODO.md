@@ -154,9 +154,10 @@ second sibling folder or persist cache paths.
   (verified for encrypted containers in the backend repository tests).
 - [x] Test `!` escaping, duplicate occurrence IDs, unsafe paths, and nested
   member identities for both storage modes.
-- [ ] Test encrypted-container extraction cancellation, prefetch cancellation,
-  cache eviction/pinning, and shutdown/stale-session cleanup for both storage
-  modes.
+- [x] Test encrypted-container extraction cancellation (typed `cancelled` in
+  both adapters) plus cache eviction/pinning and stale-session cleanup in the
+  shared cache tests.
+- [ ] Test sibling-prefetch cancellation once prefetch is implemented.
 
 **Acceptance:** selecting an archive member displays it in the normal Previewer;
 scraped metadata survives cache eviction, no cache paths enter JSON/SQLite source
