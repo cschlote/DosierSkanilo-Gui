@@ -23,6 +23,9 @@ struct CliOptions
     bool showHelp;
     bool selfTestMode;
     string selfTestOperation;
+    bool selfTestSave;
+    bool selfTestCheckSplitter;
+    bool selfTestCheckVideoSinks;
     int selfTestDelayMs = 3000;
 }
 
@@ -44,6 +47,9 @@ Startup options:
             --no-auto-filter    Disable auto-apply after load/reload
             --self-test         Start, load queued files, then quit after a short delay
             --self-test-operation  Run scan, metadata, or analyze before the self-test quits
+            --self-test-save    Save modified JSON documents before the self-test quits
+            --self-test-check-splitter  Verify restored splitter positions are usable
+            --self-test-check-video-sinks  Verify an embedded video sink is available
             --self-test-delay   Delay in milliseconds before quitting in self-test mode
     -h, --help              Print this help and exit
 
@@ -69,6 +75,9 @@ void parseCliOptions(ref string[] args)
         "no-auto-filter", &argsArray.disableAutoFilter,
         "self-test", &argsArray.selfTestMode,
         "self-test-operation", &argsArray.selfTestOperation,
+        "self-test-save", &argsArray.selfTestSave,
+        "self-test-check-splitter", &argsArray.selfTestCheckSplitter,
+        "self-test-check-video-sinks", &argsArray.selfTestCheckVideoSinks,
         "self-test-delay", &argsArray.selfTestDelayMs,
         "h|help", &argsArray.showHelp
     );
@@ -100,8 +109,9 @@ unittest
 
     foreach (option; ["<file.json>", "<repository-directory>", "-q, --query",
             "-v, --verbose", "--case-sensitive", "--no-auto-filter",
-            "--self-test", "--self-test-operation", "--self-test-delay",
-            "-h, --help"])
+            "--self-test", "--self-test-operation", "--self-test-save",
+            "--self-test-check-splitter", "--self-test-check-video-sinks",
+            "--self-test-delay", "-h, --help"])
         assert(cliUsageText.canFind(option), "CLI help omits " ~ option);
 
     argsArray = CliOptions.init;

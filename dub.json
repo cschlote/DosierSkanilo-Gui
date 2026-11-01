@@ -1,27 +1,41 @@
 {
-  "targetType": "executable",
-  "name": "dosierskanilo-gui",
-  "targetPath": "build/bin",
-  "description": "GTKD GUI for browsing DosierSkanilo JSON files and SQLite repositories.",
-  "authors": [
-    "Carsten Schlote"
-  ],
-  "copyright": "Created 2026, Carsten Schlote",
-  "license": "GPL-3.0-only",
-  "dependencies": {
-    "silly": "~>1.2.0-dev.2",
-    "gtk-d:gstreamer": "*",
-    "gtk-d:gtkd": "~>3.11.0",
-    "va_toolbox": "~>0.4.1",
-    "dosierskanilo": {
-      "path": "../DosierSkanilo"
-    }
-  },
-  "dflags": [
-    "-J.", "-J../DosierSkanilo"
-  ],
-  "mainSourceFile": "source/app.d",
-  "sourcePaths": [
-    "source"
-  ]
+    "targetType": "executable",
+    "name": "dosierskanilo-gui",
+    "targetPath": "build/bin",
+    "description": "GTKD GUI for browsing DosierSkanilo JSON files and SQLite repositories.",
+    "authors": [
+        "Carsten Schlote"
+    ],
+    "copyright": "Created 2026, Carsten Schlote",
+    "license": "GPL-3.0-only",
+    "dependencies": {
+        "silly": "~>1.2.0-dev.2",
+        "gtk-d:gstreamer": "*",
+        "gtk-d:gtkd": "~>3.11.0",
+        "va_toolbox": "~>0.4.1",
+        "dosierskanilo": {
+            "path": "../DosierSkanilo"
+        }
+    },
+    "dflags": [
+        "-J.",
+        "-J../DosierSkanilo"
+    ],
+    "mainSourceFile": "source/app.d",
+    "sourcePaths": [
+        "source"
+    ],
+    "configurations": [
+        {
+            "name": "application",
+            "targetType": "executable",
+            "mainSourceFile": "source/app.d"
+        },
+        {
+            "name": "benchmark",
+            "targetType": "executable",
+            "mainSourceFile": "source/bench/filterbench.d",
+            "targetName": "filterbench"
+        }
+    ]
 }

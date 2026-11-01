@@ -51,6 +51,27 @@ if [ -f "${fixture}" ]; then
 	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
 		./build/bin/dosierskanilo-gui \
 		--self-test --self-test-delay 700 "${fixture}"
+	mkdir -p "${LOGIN_DIR}/.config/dosierskanilo-gui"
+	cat > "${LOGIN_DIR}/.config/dosierskanilo-gui/state.json" <<'JSON'
+{"windowWidth":1200,"windowHeight":800,"splitPositionHorizontal":5000,"splitPositionVertical":5000,"splitPositionPreview":5000,"hasSplitPositionPreview":true}
+JSON
+	printf '%s\n' "[display-test] verifying restored splitter positions are usable"
+	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
+		./build/bin/dosierskanilo-gui \
+		--self-test --self-test-check-splitter \
+		--self-test-delay 700 "${fixture}"
+
+	printf '%s\n' "[display-test] verifying an embedded video sink is available"
+	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
+		./build/bin/dosierskanilo-gui \
+		--self-test --self-test-check-video-sinks \
+		--self-test-delay 700 "${fixture}"
+
+	printf '%s\n' "[display-test] running a JSON analyze operation in memory"
+	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
+		./build/bin/dosierskanilo-gui \
+		--self-test --self-test-operation analyze --self-test-save \
+		--self-test-delay 1200 "${fixture}"
 else
 	printf '%s\n' "[display-test] catalog fixture not found; skipping JSON smoke test."
 fi
@@ -74,6 +95,28 @@ if [ -d "${backend_dir}" ]; then
 			--self-test --self-test-operation "${operation}" \
 			--self-test-delay 1200 "${repository_dir}"
 	done
+
+	bench_catalog="${LOGIN_DIR}/bench-95001.json"
+	printf '%s\n' "[display-test] generating a 95001-record catalog"
+	DC="${DC}" dub run --config=benchmark --compiler="${DC}" -b=release -- \
+		--write-catalog "${bench_catalog}" 95001
+	start_seconds=$(date +%s)
+	printf '%s\n' "[display-test] loading 95001 records from JSON"
+	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
+		./build/bin/dosierskanilo-gui \
+		--self-test --self-test-delay 1200 "${bench_catalog}"
+	printf '%s\n' "[display-test] JSON table smoke: $(( $(date +%s) - start_seconds ))s"
+
+	bench_repository="${LOGIN_DIR}/bench-repository"
+	"${backend_dir}/build/bin/dosierskanilo" init "${bench_repository}" >/dev/null
+	"${backend_dir}/build/bin/dosierskanilo" import "${bench_repository}" \
+		"${bench_catalog}" >/dev/null
+	start_seconds=$(date +%s)
+	printf '%s\n' "[display-test] loading 95001 records from SQLite"
+	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
+		./build/bin/dosierskanilo-gui \
+		--self-test --self-test-delay 1200 "${bench_repository}"
+	printf '%s\n' "[display-test] SQLite table smoke: $(( $(date +%s) - start_seconds ))s"
 else
 	printf '%s\n' "[display-test] backend checkout not found; skipping repository smoke test."
 fi

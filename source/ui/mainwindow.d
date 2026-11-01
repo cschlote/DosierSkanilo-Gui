@@ -10,11 +10,13 @@ module ui.mainwindow;
 
 import gdk.c.types : GdkEventConfigure;
 import gdk.Display;
+import gdk.Event : Event;
 import gobject.Value;
 import gobject.Type : GType;
 import gobject.ObjectG : ObjectG;
 import gobject.ParamSpec : ParamSpec;
 import gtk.Builder;
+import gstreamer.ElementFactory : ElementFactory;
 import gtk.AccelGroup;
 import gtk.Box;
 import gtk.Button;
@@ -29,6 +31,7 @@ import gtk.Entry;
 import gtk.Expander;
 import gtk.Image;
 import gtk.FileChooserDialog;
+import gtk.MessageDialog;
 import gtk.Grid;
 import gtk.Label;
 import gtk.ListStore;
@@ -60,7 +63,8 @@ import gtk.Widget;
 import gtk.Window;
 import gtk.c.types : GtkAlign, GtkIconSize, GtkReliefStyle, GtkShadowType,
     GtkSortType, GtkTreeViewColumnSizing;
-import gtk.c.types : FileChooserAction, ResponseType;
+import gtk.c.types : ButtonsType, DialogFlags, FileChooserAction, MessageType,
+    ResponseType;
 import gdk.c.types : GdkModifierType;
 import gdk.Event;
 
@@ -83,7 +87,8 @@ import gstreamer.c.types : GstState, GstStateChangeReturn;
 
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
-import model.catalogsource : openCatalogBackend;
+import model.catalogsource : openCatalogBackend, openCatalogDirectorySource,
+    openJsonCatalogBackend;
 import model.datasource : SourceQuery, isRepositorySource,
     AcquiredArchiveMemberPreview, ArchiveMemberTreeEntry, ArchiveMemberTreePage,
     acquireJsonArchiveMemberPreview, acquireJsonVirtualArchiveMemberPreview,
@@ -148,6 +153,7 @@ import ui.mainsources : UiMainSource, scheduleUiIdle, scheduleUiTimeout,
 import ui.virtualblobtable : VirtualBlobTableModel;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : filterRowsByText;
+import dosierskanilo.service.storageio : CatalogWriteException;
 import dosierskanilo.membercontentcache : closeSharedMemberContentCache,
     configureSharedMemberContentCache, defaultMemberCacheByteLimit;
 import dosierarkivo.archive : ArchivePasswordCallback, appendArchiveVirtualPath,
@@ -157,7 +163,8 @@ import dosierskanilo.model.namedbinaryblob : DATA_CLASS_VERSION2, NamedBinaryBlo
 import dosierskanilo.repository.types : MetadataScanOptions, MetadataSummary,
     RepositoryAnalysisOptions, RepositoryBlobFlags, RepositoryScanOptions;
 import dosierskanilo.repository.repository : Repository;
-import dosierskanilo.catalogbackend : CatalogPageCursor;
+import dosierskanilo.catalogbackend : CatalogBackend, CatalogDocument,
+    CatalogPageCursor;
 import dosierskanilo.operations : AnalysisOperationRequest, MetadataOperationRequest,
     OperationControl, OperationKind, OperationProgress, OperationResult,
     OperationState, OperationTarget, ScanOperationRequest;
@@ -1169,6 +1176,9 @@ struct AsyncLoadResult
     bool pagedSource;
     CatalogPageCursor nextContentCursor;
     bool hasMore;
+    CatalogBackend jsonBackend;
+    CatalogDocument jsonDocument;
+    string sourceRoot;
 }
 
 struct AsyncDirectoryResult
@@ -1989,14 +1999,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
     void delegate(DocumentTab) closeDocumentTab;
 
     /** Build a compact mode-aware notebook tab label with a useful tooltip. */
-    Widget createDocumentTabLabel(string filePath)
+    Widget createDocumentTabLabel(string filePath, bool modified = false)
     {
         auto labelBox = new Box(Orientation.HORIZONTAL, 4);
         auto repositorySource = isRepositorySource(filePath);
         auto displayPath = repositorySource ? Repository.findRoot(filePath) : filePath;
         auto icon = new Image(repositorySource ? "folder" : "text-x-generic",
             GtkIconSize.MENU);
-        auto label = new Label(baseName(displayPath));
+        auto label = new Label((modified ? "*" : "") ~ baseName(displayPath));
+        label.setTooltipText(modified ? "Unsaved changes" : displayPath);
         auto closeButton = new Button();
         closeButton.setLabel("x");
         closeButton.setTooltipText("Close tab");
@@ -2019,6 +2030,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
         return labelBox;
     }
 
+    /** Update the modified marker and tab label for one document. */
+    void setDocumentModified(DocumentTab document, bool modified)
+    {
+        if (document is null || document.modified == modified)
+            return;
+        document.modified = modified;
+        notebook.setTabLabel(document.pageRoot,
+            createDocumentTabLabel(document.filePath, modified));
+    }
+
     /** Find an already open document tab by JSON file path. */
     DocumentTab findDocumentByPath(string filePath)
     {
@@ -2036,10 +2057,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
     /** Resolve a known-file entry path relative to the owning JSON file. */
     string resolveKnownFilePath(DocumentTab document, string knownFileName)
     {
-        auto repositoryRoot = document.directorySourceRemote
-            ? Repository.findRoot(document.filePath) : "";
+        const auto sourceRoot = document.repositoryStorage
+            ? Repository.findRoot(document.filePath) : document.sourceRoot;
         return resolveDocumentSourcePath(document.filePath, knownFileName,
-            repositoryRoot);
+            sourceRoot);
     }
 
     void launchExternalPath(DocumentTab document, string resolvedPath,
@@ -2148,7 +2169,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         recentFilesMenuItem.setSensitive(!isLoading && recentFilePaths.length > 0);
         toolsScanMenuItem.setSensitive(operationIdle && hasCurrentDocument);
         toolsMetadataMenuItem.setSensitive(operationIdle && hasCurrentDocument
-            && activeDocument.directorySourceRemote);
+            && activeDocument.repositoryStorage);
         toolsAnalyzeMenuItem.setSensitive(operationIdle && hasCurrentDocument);
         toolsPauseMenuItem.setSensitive(operationRunning
             && activeDocument.operationPauseAvailable && !activeDocument.operationPaused);
@@ -2804,7 +2825,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 string[] path;
                 try
                 {
-                    auto source = openRepositoryDirectorySource(sourcePath);
+                    auto source = target.catalogBackend !is null
+                        ? openCatalogDirectorySource(target.catalogBackend, false)
+                        : openRepositoryDirectorySource(sourcePath);
                     path = findDirectoryPathForFile(source, "root", fileId);
                     source.close();
                 }
@@ -2849,7 +2872,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 result.sortOrder = treeSortOrder;
                 try
                 {
-                    auto source = openRepositoryDirectorySource(filePath);
+                    auto source = document.catalogBackend !is null
+                        ? openCatalogDirectorySource(document.catalogBackend,
+                            false)
+                        : openRepositoryDirectorySource(filePath);
                     result.directories = source.listDirectories(directoryId, fileFilter);
                     auto page = source.listFilteredFilesPage(directoryId, cursor, 251,
                         fileFilter, fileSortOrder);
@@ -2947,7 +2973,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 ? model.getValueString(parent, 4)
                 : model.getValueString(parent, 6);
             const auto containerVirtualPath = model.getValueString(parent, 5);
-            const auto repositorySource = document.directorySourceRemote;
+            const auto repositorySource = document.repositoryStorage;
             const auto sourcePath = document.filePath;
             const auto loadingKind = offset == 0
                 ? "ArchiveLoading" : "ArchiveLoadingPage";
@@ -3538,12 +3564,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 string error;
                 try
                 {
-                    DirectorySource source = document.directorySourceRemote
-                        ? openRepositoryDirectorySource(sourcePath) : document.directorySource;
+                    DirectorySource source = document.repositoryStorage
+                        ? openRepositoryDirectorySource(sourcePath)
+                        : document.directorySource;
                     page = forward
                         ? source.listFilteredFilesPage(directoryId, cursor, 1, filter, order)
                         : source.listPreviousFilteredFilesPage(directoryId, cursor, 1, filter, order);
-                    if (document.directorySourceRemote)
+                    if (document.repositoryStorage)
                         source.close();
                 }
                 catch (Exception ex)
@@ -4685,6 +4712,173 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     advanceStartupQueue = () { loadNextPendingStartupPath(); };
 
+    /** Save a document, offering retry or a recovery copy when writing fails. */
+    bool saveDocumentWithRecovery(DocumentTab document)
+    {
+        while (true)
+        {
+            try
+            {
+                document.catalogDocument.save();
+                setDocumentModified(document, false);
+                document.status.setText("Catalog saved.");
+                return true;
+            }
+            catch (CatalogWriteException failure)
+            {
+                const result = failure.writeResult;
+                if (result.writtenPath.length == 0)
+                {
+                    document.status.setText(
+                        "Could not save the catalog: " ~ failure.msg);
+                    return false;
+                }
+                auto dialog = new MessageDialog(window, DialogFlags.MODAL,
+                    MessageType.ERROR, ButtonsType.NONE,
+                    "Could not save '" ~ baseName(document.filePath)
+                    ~ "'.\n\nA recovery file was written to:\n"
+                    ~ result.writtenPath);
+                dialog.setTitle("Catalog save failed");
+                dialog.addButton("_Cancel", ResponseType.CANCEL);
+                dialog.addButton("_Save Copy...", ResponseType.REJECT);
+                dialog.addButton("_Retry", ResponseType.ACCEPT);
+                const response = dialog.run();
+                dialog.destroy();
+                if (response == cast(int) ResponseType.ACCEPT)
+                    continue;
+                if (response == cast(int) ResponseType.REJECT)
+                {
+                    auto chooser = new FileChooserDialog(
+                        "Save catalog copy", window, FileChooserAction.SAVE,
+                        ["_Cancel", "_Save"], [ResponseType.CANCEL,
+                            ResponseType.ACCEPT]);
+                    chooser.setCurrentName(baseName(result.writtenPath));
+                    if (chooser.run() == cast(int) ResponseType.ACCEPT)
+                    {
+                        auto destination = chooser.getFilename();
+                        if (destination.length > 0)
+                        {
+                            try
+                            {
+                                import std.file : copy;
+                                copy(result.writtenPath, destination);
+                                document.status.setText(
+                                    "Saved a copy to " ~ destination
+                                    ~ "; the document remains modified.");
+                            }
+                            catch (Exception copyFailure)
+                            {
+                                document.status.setText(
+                                    "Could not save a copy: "
+                                    ~ copyFailure.msg);
+                            }
+                        }
+                    }
+                    chooser.destroy();
+                }
+                return false;
+            }
+            catch (Exception ex)
+            {
+                document.status.setText("Could not save the catalog: " ~ ex.msg);
+                return false;
+            }
+        }
+    }
+
+    /** Offer to save, discard, or cancel closing one modified document. */
+    bool confirmDocumentClose(DocumentTab document)
+    {
+        if (document is null || !document.modified
+            || document.catalogDocument is null)
+            return true;
+        auto dialog = new MessageDialog(window, DialogFlags.MODAL,
+            MessageType.WARNING, ButtonsType.NONE,
+            "Save changes to '" ~ baseName(document.filePath) ~ "' before closing?");
+        dialog.setTitle("Unsaved changes");
+        dialog.addButton("_Cancel", ResponseType.CANCEL);
+        dialog.addButton("_Discard", ResponseType.REJECT);
+        dialog.addButton("_Save", ResponseType.ACCEPT);
+        const response = dialog.run();
+        dialog.destroy();
+        if (response == cast(int) ResponseType.ACCEPT)
+        {
+            return saveDocumentWithRecovery(document);
+        }
+        return response == cast(int) ResponseType.REJECT;
+    }
+
+    /** Save the active JSON document if it has unsaved changes. */
+    void saveCurrentDocument()
+    {
+        auto document = currentDocument();
+        if (document is null || document.catalogDocument is null
+            || !document.modified)
+            return;
+        saveDocumentWithRecovery(document);
+    }
+
+    /** Offer save/discard/cancel before reloading a modified document from disk. */
+    bool confirmDocumentReload(DocumentTab document)
+    {
+        if (document is null || !document.modified
+            || document.catalogDocument is null)
+            return true;
+        auto dialog = new MessageDialog(window, DialogFlags.MODAL,
+            MessageType.WARNING, ButtonsType.NONE,
+            "Save changes to '" ~ baseName(document.filePath) ~ "' before reloading?");
+        dialog.setTitle("Unsaved changes");
+        dialog.addButton("_Cancel", ResponseType.CANCEL);
+        dialog.addButton("_Discard", ResponseType.REJECT);
+        dialog.addButton("_Save", ResponseType.ACCEPT);
+        const response = dialog.run();
+        dialog.destroy();
+        if (response == cast(int) ResponseType.ACCEPT)
+        {
+            return saveDocumentWithRecovery(document);
+        }
+        if (response == cast(int) ResponseType.REJECT)
+        {
+            document.catalogDocument.discard();
+            setDocumentModified(document, false);
+            return true;
+        }
+        return false;
+    }
+
+    /** Discard in-memory changes and show the stored catalog again. */
+    void revertCurrentDocument()
+    {
+        auto document = currentDocument();
+        if (document is null || document.catalogDocument is null)
+            return;
+        if (document.modified)
+        {
+            auto dialog = new MessageDialog(window, DialogFlags.MODAL,
+                MessageType.WARNING, ButtonsType.NONE,
+                "Discard unsaved changes to '"
+                ~ baseName(document.filePath) ~ "'?");
+            dialog.setTitle("Revert catalog");
+            dialog.addButton("_Cancel", ResponseType.CANCEL);
+            dialog.addButton("_Revert", ResponseType.ACCEPT);
+            const response = dialog.run();
+            dialog.destroy();
+            if (response != cast(int) ResponseType.ACCEPT)
+                return;
+        }
+        try
+        {
+            document.catalogDocument.discard();
+            setDocumentModified(document, false);
+            document.status.setText("Reverted to the stored catalog.");
+            loadDocument(document, false);
+        }
+        catch (Exception ex)
+        {
+            document.status.setText("Could not revert the catalog: " ~ ex.msg);
+        }
+    }
+
     closeDocumentTab = (DocumentTab document) {
         if (document.operationRunning)
         {
@@ -4703,6 +4897,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto pageIndex = notebook.pageNum(document.pageRoot);
         if (pageIndex < 0)
             return;
+        if (!confirmDocumentClose(document))
+            return;
         ++document.archiveMemberPreviewRequestId;
         stopVideoPreview(document);
         if (document.selectedArchiveMemberLease !is null)
@@ -4712,6 +4908,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
         if (document.directorySource !is null)
             document.directorySource.close();
+        if (document.catalogDocument !is null)
+        {
+            document.catalogDocument.close();
+            document.catalogDocument = null;
+        }
         if (document.catalogBackend !is null)
         {
             document.catalogBackend.close();
@@ -4722,6 +4923,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
         syncToolbarFromCurrentDocument();
         persistCurrentState(clearSavedWindowGeometryOnExit);
     };
+
+    auto saveMenuItem = new MenuItem("_Save");
+    saveMenuItem.addOnActivate((MenuItem _) { saveCurrentDocument(); });
+    fileMenu.append(saveMenuItem);
+    attachMenuAccelerator(saveMenuItem, 's');
+
+    auto revertMenuItem = new MenuItem("_Revert to Stored");
+    revertMenuItem.addOnActivate((MenuItem _) { revertCurrentDocument(); });
+    fileMenu.append(revertMenuItem);
 
     /** Open a document in a tab, selecting it optionally, without forcing a reload. */
     openDocumentFromPath = (string filePath, bool selectTab, bool addToRecent) {
@@ -5159,18 +5369,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.preserveDirectoryTreeNodesOnNextLoad = false;
         if (!preserveTreeNodes)
             document.reuseDirectoryTreeNodes = false;
-        if (repositorySource)
+        if (!document.drainPageRequest)
         {
-            if (!document.drainPageRequest)
-            {
-                document.drainRepositoryPages = true;
-                document.pageOffset = 0;
-                document.repositoryRowsLoaded = 0;
-                document.repositoryContentCursor = CatalogPageCursor.init;
-                document.loadedRows = [];
-            }
-            document.drainPageRequest = false;
+            document.drainRepositoryPages = true;
+            document.pageOffset = 0;
+            document.repositoryRowsLoaded = 0;
+            document.repositoryContentCursor = CatalogPageCursor.init;
+            document.loadedRows = [];
         }
+        document.drainPageRequest = false;
         document.tableNaturalWidth = -1;
         document.tableMinimumWidth = -1;
         document.fitHorizontalSplitAfterLoad = fitHorizontalSplitAfterLoad;
@@ -5192,8 +5399,38 @@ int runMainWindow(string[] args, ref CliOptions cli)
             treeFilterSnapshot.fileType, treeFilterSnapshot.archive,
             treeFilterSnapshot.torrent);
 
-        if (isRepositorySource(document.filePath) && document.catalogBackend is null)
-            document.catalogBackend = openCatalogBackend(document.filePath);
+        if (isRepositorySource(document.filePath))
+        {
+            if (document.catalogBackend is null)
+                document.catalogBackend = openCatalogBackend(document.filePath);
+            document.sourceRoot = Repository.findRoot(document.filePath);
+        }
+        else if (document.catalogBackend !is null
+            && document.catalogDocument !is null)
+        {
+            if (!document.modified)
+            {
+                /* An explicit reload must observe the file again. */
+                if (document.directorySource !is null)
+                    document.directorySource.close();
+                document.directorySource = null;
+                if (document.unfilteredDirectorySource !is null)
+                    document.unfilteredDirectorySource.close();
+                document.unfilteredDirectorySource = null;
+                document.catalogDocument.close();
+                document.catalogBackend.close();
+                document.catalogDocument = null;
+                document.catalogBackend = null;
+                document.sourceRoot = "";
+            }
+            else
+            {
+                document.sourceRoot =
+                    document.catalogDocument.suggestedFilesystemRoot();
+                document.catalogDocument.bindFilesystemRoot(
+                    document.sourceRoot);
+            }
+        }
         auto catalogBackendSnapshot = document.catalogBackend;
         auto worker = new Thread({
             MonoTime started = MonoTime.currTime;
@@ -5208,12 +5445,29 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     : "Loading scanner data via library ...");
                 logLineVerbose("[load-worker] parsing ", document.filePath);
                 NamedBinaryBlob[] blobs;
-                if (isRepositorySource(document.filePath))
+                auto backend = catalogBackendSnapshot;
+                if (backend is null && !isRepositorySource(document.filePath))
+                {
+                    backend = openJsonCatalogBackend(document.filePath);
+                    result.jsonBackend = backend;
+                    if (backend !is null)
+                    {
+                        result.jsonDocument = backend.document();
+                        if (result.jsonDocument !is null)
+                        {
+                            result.sourceRoot =
+                                result.jsonDocument.suggestedFilesystemRoot();
+                            result.jsonDocument.bindFilesystemRoot(
+                                result.sourceRoot);
+                        }
+                    }
+                }
+                if (backend !is null)
                 {
                     if (document.drainRepositoryPages)
                     {
                         result.pageOffset = document.repositoryRowsLoaded;
-                        auto page = loadCatalogRowPage(catalogBackendSnapshot,
+                        auto page = loadCatalogRowPage(backend,
                             document.repositoryContentCursor, document.pageSize,
                             sourceQuerySnapshot);
                         result.allRows = page.rows;
@@ -5223,7 +5477,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     }
                     else if (document.loadAllRows)
                     {
-                        auto page = loadCatalogRowOffsetPage(catalogBackendSnapshot, 0,
+                        auto page = loadCatalogRowOffsetPage(backend, 0,
                             size_t.max, sourceQuerySnapshot);
                         result.allRows = page.rows;
                         result.pageOffset = 0;
@@ -5231,7 +5485,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     }
                     else
                     {
-                        auto page = loadCatalogRowOffsetPage(catalogBackendSnapshot,
+                        auto page = loadCatalogRowOffsetPage(backend,
                             document.pageOffset, document.pageSize,
                             sourceQuerySnapshot);
                         result.allRows = page.rows;
@@ -5258,15 +5512,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 }
 
                 setLoadingPhase(document, requestId, "Projecting blob rows for GUI ...");
-                if (!isRepositorySource(document.filePath))
+                if (backend is null)
                     result.allRows = extractRowsFromBlobs(blobs);
-                if (isRepositorySource(document.filePath))
+                if (backend !is null)
                 {
                     result.directoryTree = DirectoryTree();
                     if (hasTreeFilterSnapshot || preserveTreeNodes)
                     {
-                        auto treeSource = openRepositoryDirectorySource(
-                            document.filePath);
+                        DirectorySource treeSource =
+                            openCatalogDirectorySource(backend, false);
                         scope (exit)
                             treeSource.close();
                         if (hasTreeFilterSnapshot)
@@ -5352,7 +5606,22 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 }
 
                 document.sourceLoaded = true;
-                if (result.pagedSource && document.drainRepositoryPages)
+                document.repositoryStorage = isRepositorySource(document.filePath);
+                if (result.jsonBackend !is null)
+                {
+                    if (document.catalogDocument !is null)
+                        document.catalogDocument.close();
+                    if (document.catalogBackend !is null
+                        && !document.repositoryStorage)
+                        document.catalogBackend.close();
+                    document.catalogBackend = result.jsonBackend;
+                    document.catalogDocument = result.jsonDocument;
+                }
+                if (document.repositoryStorage)
+                    document.sourceRoot = Repository.findRoot(document.filePath);
+                else if (result.sourceRoot.length > 0)
+                    document.sourceRoot = result.sourceRoot;
+                    if (result.pagedSource && document.drainRepositoryPages)
                 {
                     document.repositoryRowsLoaded = result.pageOffset + result.allRows.length;
                     document.repositoryContentCursor = result.nextContentCursor;
@@ -5363,12 +5632,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     document.repositoryRowsLoaded = 0;
                     document.loadedRows = result.allRows;
                 }
-                document.directorySourceRemote = isRepositorySource(document.filePath);
+                document.directorySourceRemote = document.catalogBackend !is null;
                 if (document.directorySourceRemote)
                 {
                     document.directoryTree = result.directoryTree;
                     document.unfilteredDirectoryTree = DirectoryTree();
-                    document.directorySource = openRepositoryDirectorySource(document.filePath);
+                    document.directorySource = openCatalogDirectorySource(
+                        document.catalogBackend, false);
                     document.unfilteredDirectorySource = null;
                     document.directorySourceFiltered = documentFilterHasCriteria(
                         document.filterQuery, document.filterVideo,
@@ -5554,6 +5824,33 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 else if (cli.selfTestMode && pendingStartupPaths.length == 0 && !selfTestQuitScheduled)
                 {
                     selfTestQuitScheduled = true;
+                    if (cli.selfTestCheckVideoSinks)
+                    {
+                        bool sinkAvailable;
+                        foreach (candidate; ["gtksink", "ximagesink"])
+                        {
+                            auto sink = ElementFactory.make(candidate,
+                                "preview-sink-check");
+                            logLine("[self-test] video sink ", candidate, ": ",
+                                sink !is null ? "available" : "missing");
+                            sinkAvailable = sinkAvailable || sink !is null;
+                        }
+                        if (!sinkAvailable)
+                            selfTestOperationFailed = true;
+                    }
+                    if (cli.selfTestCheckSplitter && document !is null
+                        && document.split !is null)
+                    {
+                        const position = document.split.getPosition();
+                        const extent = document.split.getOrientation()
+                            == Orientation.VERTICAL
+                            ? document.split.getAllocatedHeight()
+                            : document.split.getAllocatedWidth();
+                        logLine("[self-test] splitter position=", position,
+                            " extent=", extent);
+                        if (position <= 0 || extent <= 0 || position >= extent)
+                            selfTestOperationFailed = true;
+                    }
                     if (cli.selfTestOperation.length > 0 && startSelfTestOperation !is null)
                     {
                         startSelfTestOperation(document);
@@ -5736,6 +6033,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         document.status.setText("Operation failed: "
                             ~ completedResult.error);
                     }
+                    if ((kind == OperationKind.scan
+                        || kind == OperationKind.analyze)
+                        && !document.repositoryStorage
+                        && document.catalogDocument !is null)
+                    {
+                        setDocumentModified(document, true);
+                    }
                     if (refreshDocument && !quitWhenOperationsFinish)
                         refreshDocumentAfterOperation(document);
                 }
@@ -5754,6 +6058,23 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     logLine("[self-test] operation ", completedResult.operation,
                         " state=", completedResult.state,
                         " error=", completedResult.error);
+                    if (succeeded && cli.selfTestSave
+                        && document !is null && document.catalogDocument !is null
+                        && document.modified)
+                    {
+                        try
+                        {
+                            document.catalogDocument.save();
+                            setDocumentModified(document, false);
+                            logLine("[self-test] saved the modified document");
+                        }
+                        catch (Exception ex)
+                        {
+                            logLine("[self-test] saving the document failed: ",
+                                ex.msg);
+                            selfTestOperationFailed = true;
+                        }
+                    }
                     if (succeeded && !expectCancellation && refreshDocument)
                     {
                         const auto refreshLoadId = document.loadRequestId;
@@ -5874,7 +6195,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto document = currentDocument();
         if (document is null)
             return;
-        auto repositorySource = document.directorySourceRemote;
+        const auto repositorySource = document.repositoryStorage;
         auto sourceDescription = repositorySource
             ? Repository.findRoot(document.filePath) : document.filePath;
         auto filesystemRoot = repositorySource ? sourceDescription : chooseJsonScanRoot();
@@ -5890,6 +6211,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     repositorySource ? sourceDescription : document.filePath,
                     repositorySource, filesystemRoot, options.scanOptions,
                     options.metadataOptions);
+                if (document.catalogDocument !is null)
+                    return document.catalogDocument.applyScan(request, control);
                 return runOperation(request, control);
             });
     }
@@ -5897,7 +6220,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     void startMetadataForCurrentDocument()
     {
         auto document = currentDocument();
-        if (document is null || !document.directorySourceRemote)
+        if (document is null || !document.repositoryStorage)
             return;
         auto root = Repository.findRoot(document.filePath);
         auto options = showOperationOptions(window, "Metadata options", root,
@@ -5927,7 +6250,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto document = currentDocument();
         if (document is null)
             return;
-        auto repositorySource = document.directorySourceRemote;
+        const auto repositorySource = document.repositoryStorage;
         auto sourceDescription = repositorySource
             ? Repository.findRoot(document.filePath) : document.filePath;
         auto options = showOperationOptions(window, "Analysis options",
@@ -5942,6 +6265,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 auto request = buildAnalysisOperationRequest(operationId,
                     repositorySource ? sourceDescription : document.filePath,
                     repositorySource, options.analysisOptions, metadata);
+                if (document.catalogDocument !is null)
+                    return document.catalogDocument.applyAnalysis(request, control);
                 return runOperation(request, control);
             });
     }
@@ -6004,27 +6329,41 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
             return;
         }
-        if (document is null || !document.directorySourceRemote)
+        if (document is null)
         {
-            logLine("[self-test] operation requires a repository document");
+            logLine("[self-test] operation requires an open document");
             selfTestOperationFailed = true;
             Main.quit();
             return;
         }
-        const auto root = Repository.findRoot(document.filePath);
+        const bool repositorySource = document.repositoryStorage;
+        const auto root = repositorySource
+            ? Repository.findRoot(document.filePath) : dirName(document.filePath);
         if (cli.selfTestOperation == "scan")
         {
             RepositoryScanOptions scanOptions;
             scanOptions.recursive = true;
             startDocumentOperation(document, OperationKind.scan,
                 (OperationControl control, ulong operationId) {
-                    auto request = buildScanOperationRequest(operationId, root,
-                        true, root, scanOptions, MetadataScanOptions.init);
+                    auto request = buildScanOperationRequest(operationId,
+                        repositorySource ? root : document.filePath,
+                        repositorySource, root, scanOptions,
+                        MetadataScanOptions.init);
+                    if (document.catalogDocument !is null)
+                        return document.catalogDocument.applyScan(request,
+                            control);
                     return runOperation(request, control);
                 });
         }
         else if (cli.selfTestOperation == "metadata")
         {
+            if (!repositorySource)
+            {
+                logLine("[self-test] metadata requires a repository document");
+                selfTestOperationFailed = true;
+                Main.quit();
+                return;
+            }
             MetadataScanOptions metadata;
             metadata.calculateChecksums = true;
             metadata.detectFileTypes = true;
@@ -6041,8 +6380,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
             analysis.mergeDuplicates = true;
             startDocumentOperation(document, OperationKind.analyze,
                 (OperationControl control, ulong operationId) {
-                    auto request = buildAnalysisOperationRequest(operationId, root,
-                        true, analysis, MetadataScanOptions.init);
+                    auto request = buildAnalysisOperationRequest(operationId,
+                        repositorySource ? root : document.filePath,
+                        repositorySource, analysis, MetadataScanOptions.init);
+                    if (document.catalogDocument !is null)
+                        return document.catalogDocument.applyAnalysis(request,
+                            control);
                     return runOperation(request, control);
                 });
         }
@@ -6257,7 +6600,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             },
             () { return busyDocument; },
             () { return clearSavedWindowGeometryOnExit; },
-            (DocumentTab document, bool fitHorizontalSplitAfterLoad) { loadDocument(document, fitHorizontalSplitAfterLoad); }
+            (DocumentTab document, bool fitHorizontalSplitAfterLoad) { if (confirmDocumentReload(document)) loadDocument(document, fitHorizontalSplitAfterLoad); }
         ));
     });
 
@@ -6267,7 +6610,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             () { return notebook.getCurrentPage(); },
             () { return cast(int) documents.length; },
             (int pageIndex) { return documents[pageIndex]; },
-            (int pageIndex) { if (documents[pageIndex].directorySource !is null) documents[pageIndex].directorySource.close(); if (documents[pageIndex].catalogBackend !is null) documents[pageIndex].catalogBackend.close(); notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
+            (int pageIndex) { if (pageIndex >= 0 && pageIndex < documents.length) closeDocumentTab(documents[pageIndex]); },
             () { syncToolbarFromCurrentDocument(); },
             (bool clearGeometry) { persistCurrentState(clearGeometry); },
             () {
@@ -6399,13 +6742,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     () { return notebook.getCurrentPage(); },
                     () { return cast(int) documents.length; },
                     (int pageIndex) { return documents[pageIndex]; },
-                    (int pageIndex) { if (documents[pageIndex].directorySource !is null) documents[pageIndex].directorySource.close(); if (documents[pageIndex].catalogBackend !is null) documents[pageIndex].catalogBackend.close(); notebook.removePage(pageIndex); documents = documents[0 .. pageIndex] ~ documents[pageIndex + 1 .. $]; },
+                    (int pageIndex) { if (pageIndex >= 0 && pageIndex < documents.length) closeDocumentTab(documents[pageIndex]); },
                     () { syncToolbarFromCurrentDocument(); },
                     (bool clearGeometry) { persistCurrentState(clearGeometry); },
                     () { return isLoading; },
                     () { return busyDocument; },
                     () { return clearSavedWindowGeometryOnExit; },
-                    (DocumentTab document, bool fitHorizontalSplitAfterLoad) { loadDocument(document, fitHorizontalSplitAfterLoad); }
+                    (DocumentTab document, bool fitHorizontalSplitAfterLoad) { if (confirmDocumentReload(document)) loadDocument(document, fitHorizontalSplitAfterLoad); }
                 ));
             },
             () { relayoutCurrentDocument(); },
@@ -6543,9 +6886,32 @@ int runMainWindow(string[] args, ref CliOptions cli)
         () { Main.quit(); }
     );
 
+    window.addOnDelete((Event _, Widget __) {
+        foreach (document; documents)
+        {
+            if (!document.modified || document.catalogDocument is null)
+                continue;
+            auto pageIndex = notebook.pageNum(document.pageRoot);
+            if (pageIndex >= 0)
+                notebook.setCurrentPage(pageIndex);
+            if (!confirmDocumentClose(document))
+                return true;
+        }
+        return false;
+    });
+
     Main.run();
     cancelAndJoinDocumentOperations();
     joinArchivePreviewWorkers();
+    foreach (document; documents)
+    {
+        if (document.directorySource !is null)
+            document.directorySource.close();
+        if (document.catalogDocument !is null)
+            document.catalogDocument.close();
+        if (document.catalogBackend !is null)
+            document.catalogBackend.close();
+    }
     stopAllUiSources();
     if (!closeSharedMemberContentCache())
     {

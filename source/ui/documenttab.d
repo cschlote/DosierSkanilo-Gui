@@ -6,7 +6,8 @@
  */
 module ui.documenttab;
 
-import dosierskanilo.catalogbackend : CatalogBackend, CatalogPageCursor;
+import dosierskanilo.catalogbackend : CatalogBackend, CatalogDocument,
+    CatalogPageCursor;
 import gtk.AspectFrame;
 import gtk.Box;
 import gtk.Button;
@@ -320,6 +321,14 @@ class DocumentTab
     size_t repositoryRowsLoaded;
     CatalogPageCursor repositoryContentCursor;
     CatalogBackend catalogBackend;
+    /// JSON document session; null for transactional SQLite documents.
+    CatalogDocument catalogDocument;
+    /// Whether the document is backed by a repository instead of a JSON file.
+    bool repositoryStorage;
+    /// Filesystem root used by backend tree/preview queries.
+    string sourceRoot;
+    /// Whether the JSON document buffer differs from its stored catalog.
+    bool modified;
     size_t pageSize = 250;
     bool loadAllRows;
     bool drainRepositoryPages;

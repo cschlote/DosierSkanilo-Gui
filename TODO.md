@@ -112,9 +112,15 @@ retains its per-document store behind `GtkTreeModelFilter`. See
 - [x] Preserve selection, expansion, sort, placeholder/loading states, and exact
   text/media/presence/negation semantics through apply/change/clear cycles.
 - [x] Add GTK model tests for underlying node retention and result parity.
-- [ ] Measure repeated filter latency and peak memory on representative JSON and
-  SQLite catalogs; profile Blob-table rendering at 95,001 JSON rows, including
-  GC allocation behavior and batch time.
+- [x] Add `scripts/benchmark-filters.sh` (headless release benchmark) and record
+  filter/tree projection latency plus used heap: 1k rows 0.2/0.6 ms/0.2 MiB,
+  10k 2.4/5.4 ms/1.8 MiB, 100k 22.1/51.6 ms/15.3 MiB.
+- [x] Smoke-load a 95,001-record Blob table from JSON and from an imported
+  SQLite catalog under Xvfb and log the wall time.
+- [x] Benchmark GC allocation/collection behavior headlessly: at 100k rows the
+  filter takes 21.3 ms, tree projection 49.7 ms, one GC cycle 4.1 ms, and 19.9
+  MiB are allocated (22.9 MiB peak heap).
+- [ ] Profile per-batch rendering times of the 95,001-row table on a display.
 
 **Acceptance:** filter changes update the visible projection without clearing or
 recreating existing source nodes; matching descendants keep their ancestor paths
@@ -148,14 +154,16 @@ second sibling folder or persist cache paths.
 - [ ] Keep same-directory sibling prefetch disabled by default. When enabled,
   make it cancellable, bounded, and use the same cache leases as foreground
   preview/extraction.
-- [ ] During explicit deep scans, process every safely selectable non-directory
+- [x] During explicit deep scans, process every safely selectable non-directory
   member using one cache lease for checksums and the selected metadata extractors;
-  persist metadata against the member content blob, not the temporary path.
+  persist metadata against the member content blob, not the temporary path
+  (verified for encrypted containers in the backend repository tests).
 - [x] Test `!` escaping, duplicate occurrence IDs, unsafe paths, and nested
   member identities for both storage modes.
-- [ ] Test encrypted containers, extraction cancellation, prefetch cancellation,
-  cache eviction/pinning, and shutdown/stale-session cleanup for both storage
-  modes.
+- [x] Test encrypted-container extraction cancellation (typed `cancelled` in
+  both adapters) plus cache eviction/pinning and stale-session cleanup in the
+  shared cache tests.
+- [ ] Test sibling-prefetch cancellation once prefetch is implemented.
 
 **Acceptance:** selecting an archive member displays it in the normal Previewer;
 scraped metadata survives cache eviction, no cache paths enter JSON/SQLite source
@@ -182,6 +190,36 @@ is held per document so page cursors stay valid.
   JSON and repository documents no longer need storage-specific writers.
 - [x] Remove the unused repository-specific GUI load helpers; tests exercise the
   backend loaders instead.
+
+## P1 — JSON document save semantics
+
+Status: **design clarified**. JSON tabs follow load → modify → store on an
+in-memory document; SQLite tabs commit directly and have no dirty state.
+
+- [x] Track a modified flag for JSON document tabs after in-memory mutations and
+  show it in the tab label.
+- [x] Offer save/discard/cancel when closing a modified JSON document or the
+  window; keep the document modified when saving fails.
+- [x] Prompt on reload and add an explicit revert-to-stored action in the File
+  menu.
+- [x] Compare a load-time file fingerprint before saving so external edits are
+  reported instead of overwritten.
+- [x] Do not show a dirty marker for SQLite tabs; a future long-transaction
+  indicator is a separate concept.
+
+## P2 — Backend-backed JSON views
+
+Status: **complete**. JSON tabs are backend-backed after binding a derived tree
+root, so rows, tree, details, archive/torrent pages, and previews use the same
+`CatalogBackend` paths as repository tabs.
+
+- [x] Split the GUI's `directorySourceRemote` meaning into storage mode
+  (`repositoryStorage`) and backend-backed views; JSON becomes backend-backed
+  once a tree root is bound.
+- [x] Load JSON rows, tree, details, archive/torrent pages, and previews through
+  `CatalogBackend` like repository tabs.
+- [x] Remove the `documentBlobs()` snapshot bridge and the duplicate JSON load.
+- [x] Keep the CLI/GUI operation parity and modified/save semantics unchanged.
 
 ## P2 — Stabilize GTK layout and video preview
 
@@ -228,9 +266,10 @@ specific visual or compatibility outcome to verify.
   summary styling now come from application CSS classes.
 - [x] Remove obsolete `double-buffered` Builder properties and confirm preview
   rendering remains correct on the supported GTK baseline.
-- [ ] Evaluate `gtksink` preference with an `ximagesink` fallback for embedded
-  video, including Wayland and X11 behavior; keep sink selection isolated behind
-  the existing fallback path.
+- [x] Isolate the `gtksink` → `ximagesink` fallback order in `ui.videooutput`,
+  unit-test it, and add a display self-test that verifies at least one embedded
+  sink is available on the Xvfb/X11 CI display.
+- [ ] Manually verify the same preference on a Wayland session.
 - [x] Audit builder files for static styling duplication: widget properties are
   already declared in the `.ui` files and no runtime duplication worth moving
   remains.
@@ -240,8 +279,9 @@ specific visual or compatibility outcome to verify.
 - [x] Add archive password prompting and filename-based persistence for JSON
   catalogs and repositories, including the archive scan retry flow (Release
   0.8.0).
-- [ ] Define and implement a release packaging/tagging workflow for supported
-  distributions, including version source, build artifacts, and installation
-  smoke checks.
+- [x] Tag-driven release workflow: validate tag/VERSION/CHANGELOG, run the test
+  suite, and publish the GitHub release when the tag is pushed.
+- [ ] Extend the release workflow with distribution artifacts and installation
+  smoke checks for the supported packages.
 - [ ] Investigate the previously noted CLI stdout/stderr ordering concern around
   `argsArray`; only add synchronization if a reproducible interleaving is found.

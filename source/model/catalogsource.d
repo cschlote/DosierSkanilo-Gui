@@ -29,6 +29,13 @@ CatalogBackend openJsonCatalogBackend(string catalogPath)
         OperationTarget.jsonTarget(catalogPath));
 }
 
+/** Wrap an already opened backend for tree queries without owning it. */
+DirectorySource openCatalogDirectorySource(CatalogBackend backend,
+    bool ownBackend = false)
+{
+    return new CatalogDirectorySource(backend, ownBackend);
+}
+
 /**
  * Directory source backed by a catalog backend.
  *
@@ -39,11 +46,13 @@ CatalogBackend openJsonCatalogBackend(string catalogPath)
 final class CatalogDirectorySource : DirectorySource
 {
     private CatalogBackend backend;
+    private bool ownBackend;
     private DirectoryNode rootNode;
 
-    this(CatalogBackend backend)
+    this(CatalogBackend backend, bool ownBackend = true)
     {
         this.backend = backend;
+        this.ownBackend = ownBackend;
         const info = backend.sourceInfo();
         const summary = backend.rootSummary();
         rootNode = DirectoryNode("root", "", info.displayName.length > 0
@@ -174,7 +183,7 @@ final class CatalogDirectorySource : DirectorySource
 
     override void close()
     {
-        if (backend !is null)
+        if (ownBackend && backend !is null)
             backend.close();
         backend = null;
     }
