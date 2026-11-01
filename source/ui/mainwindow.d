@@ -2958,7 +2958,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 || !model.getIter(marker, markerPath))
                 return;
             const auto parentKind = model.getValueString(parent, 1);
-            if (parentKind != "File" && parentKind != "ArchiveMember")
+            if (parentKind != "File" && parentKind != "ArchiveMember"
+                && parentKind != "ArchiveDirectory")
                 return;
             const auto markerKind = model.getValueString(marker, 1);
             if (offset == 0
@@ -3070,11 +3071,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         TreeIter member;
                         document.directoryTreeStore.append(member,
                             currentParentStore);
-                        auto memberNodeId = "ArchiveMember:" ~ entry.virtualPath;
+                        const kind = entry.isDirectory
+                            ? "ArchiveDirectory" : "ArchiveMember";
+                        auto memberNodeId = kind ~ ":" ~ entry.virtualPath;
                         document.directoryTreeStore.setValue(member, 0,
                             entry.relativePath);
-                        document.directoryTreeStore.setValue(member, 1,
-                            "ArchiveMember");
+                        document.directoryTreeStore.setValue(member, 1, kind);
                         document.directoryTreeStore.setValue(member, 2,
                             format("%s bytes", entry.size));
                         document.directoryTreeStore.setValue(member, 3,
@@ -3098,7 +3100,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         document.directoryTreeStore.setValue(member,
                             TREE_COL_SORT_SIZE, format("%020d", entry.size));
                         setTreeNodeVisible(document.directoryTreeStore, member, true);
-                        if (entry.hasArchive)
+                        if (entry.hasArchive || entry.isDirectory)
                         {
                             TreeIter childPlaceholder;
                             document.directoryTreeStore.append(childPlaceholder, member);
@@ -3191,7 +3193,38 @@ int runMainWindow(string[] args, ref CliOptions cli)
             TreeModelIF model = document.directoryTreeView.getModel();
             TreeIter child;
             if (!model.iterChildren(child, iter))
+            {
+                const parentKind = model.getValueString(iter, 1);
+                if (parentKind == "File" || parentKind == "ArchiveMember"
+                    || parentKind == "ArchiveDirectory")
+                {
+                    const parentNodeId = model.getValueString(iter,
+                        TREE_COL_NODE_ID);
+                    auto parentStore = treeStoreIter(document, iter);
+                    TreeIter placeholder;
+                    document.directoryTreeStore.append(placeholder,
+                        parentStore);
+                    document.directoryTreeStore.setValue(placeholder, 0,
+                        "Load archive members...");
+                    document.directoryTreeStore.setValue(placeholder, 1,
+                        "ArchivePlaceholder");
+                    document.directoryTreeStore.setValue(placeholder, 3,
+                        parentNodeId);
+                    document.directoryTreeStore.setValue(placeholder,
+                        TREE_COL_NODE_ID, "ArchivePlaceholder:" ~ parentNodeId);
+                    document.directoryTreeStore.setValue(placeholder,
+                        TREE_COL_PROJECTION_INDEX,
+                        document.directoryTreeStore.getValueString(iter,
+                            TREE_COL_PROJECTION_INDEX));
+                    document.directoryTreeStore.setValue(placeholder,
+                        TREE_COL_SORT_SIZE, "");
+                    setTreeNodeVisible(document.directoryTreeStore, placeholder,
+                        true);
+                    loadArchiveTreePage(model.getPath(iter), 0,
+                        document.directoryTreeStore.getPath(placeholder));
+                }
                 return;
+            }
             auto childKind = model.getValueString(child, 1);
             if (childKind == "ArchivePlaceholder")
             {
@@ -3318,6 +3351,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
             if (document.syncingTreeSelection)
                 return;
             const auto kind = model.getValueString(treeIter, 1);
+            if (kind == "ArchiveDirectory")
+            {
+                document.directoryTreeView.expandRow(model.getPath(treeIter),
+                    false);
+                return;
+            }
             if (kind == "ArchiveMember")
             {
                 auto memberPath = model.getValueString(treeIter, 0);
