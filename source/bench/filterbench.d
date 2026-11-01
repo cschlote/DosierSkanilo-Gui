@@ -59,7 +59,6 @@ private void writeBenchmarkCatalog(string path, size_t count)
         auto blob = new NamedBinaryBlob(
             format("bench/album-%02d/track-%06d.flac", index % 100, index),
             (index % 4096) + 1, Clock.currTime);
-        blob.fileSpecs ~= new FileSpec(blob.getFirstFileName, "");
         blobs ~= blob;
     }
     NamedBinaryBlobCatalog catalog = NamedBinaryBlobCatalog(
