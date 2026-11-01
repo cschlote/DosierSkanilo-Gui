@@ -151,6 +151,7 @@ import ui.mainsources : UiMainSource, scheduleUiIdle, scheduleUiTimeout,
 import ui.virtualblobtable : VirtualBlobTableModel;
 import ui.tablecolumns : MAIN_TABLE_FIXED_COLUMN_WIDTH, setTableColumnsResizable, configureTableColumns, configureKnownFilesColumns;
 import view.textreport : filterRowsByText;
+import dosierskanilo.service.storageio : CatalogWriteException;
 import dosierskanilo.membercontentcache : closeSharedMemberContentCache,
     configureSharedMemberContentCache, defaultMemberCacheByteLimit;
 import dosierarkivo.archive : ArchivePasswordCallback, appendArchiveVirtualPath,
@@ -4702,6 +4703,80 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     advanceStartupQueue = () { loadNextPendingStartupPath(); };
 
+    /** Save a document, offering retry or a recovery copy when writing fails. */
+    bool saveDocumentWithRecovery(DocumentTab document)
+    {
+        while (true)
+        {
+            try
+            {
+                document.catalogDocument.save();
+                setDocumentModified(document, false);
+                document.status.setText("Catalog saved.");
+                return true;
+            }
+            catch (CatalogWriteException failure)
+            {
+                const result = failure.writeResult;
+                if (result.writtenPath.length == 0)
+                {
+                    document.status.setText(
+                        "Could not save the catalog: " ~ failure.msg);
+                    return false;
+                }
+                auto dialog = new MessageDialog(window, DialogFlags.MODAL,
+                    MessageType.ERROR, ButtonsType.NONE,
+                    "Could not save '" ~ baseName(document.filePath)
+                    ~ "'.\n\nA recovery file was written to:\n"
+                    ~ result.writtenPath);
+                dialog.setTitle("Catalog save failed");
+                dialog.addButton("_Cancel", ResponseType.CANCEL);
+                dialog.addButton("_Save Copy...", ResponseType.REJECT);
+                dialog.addButton("_Retry", ResponseType.ACCEPT);
+                const response = dialog.run();
+                dialog.destroy();
+                if (response == cast(int) ResponseType.ACCEPT)
+                    continue;
+                if (response == cast(int) ResponseType.REJECT)
+                {
+                    auto chooser = new FileChooserDialog(
+                        "Save catalog copy", window, FileChooserAction.SAVE,
+                        ["_Cancel", "_Save"], [ResponseType.CANCEL,
+                            ResponseType.ACCEPT]);
+                    chooser.setCurrentName(baseName(result.writtenPath));
+                    if (chooser.run() == cast(int) ResponseType.ACCEPT)
+                    {
+                        auto destination = chooser.getFilename();
+                        if (destination.length > 0)
+                        {
+                            try
+                            {
+                                import std.file : copy;
+                                copy(result.writtenPath, destination);
+                                document.status.setText(
+                                    "Saved a copy to " ~ destination
+                                    ~ "; the document remains modified.");
+                            }
+                            catch (Exception copyFailure)
+                            {
+                                document.status.setText(
+                                    "Could not save a copy: "
+                                    ~ copyFailure.msg);
+                            }
+                        }
+                    }
+                    chooser.destroy();
+                }
+                return false;
+            }
+            catch (Exception ex)
+            {
+                document.status.setText("Could not save the catalog: " ~ ex.msg);
+                return false;
+            }
+        }
+    }
+
     /** Offer to save, discard, or cancel closing one modified document. */
     bool confirmDocumentClose(DocumentTab document)
     {
@@ -4719,18 +4794,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         dialog.destroy();
         if (response == cast(int) ResponseType.ACCEPT)
         {
-            try
-            {
-                document.catalogDocument.save();
-                setDocumentModified(document, false);
-                document.status.setText("Catalog saved.");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                document.status.setText("Could not save the catalog: " ~ ex.msg);
-                return false;
-            }
+            return saveDocumentWithRecovery(document);
         }
         return response == cast(int) ResponseType.REJECT;
     }
@@ -4742,16 +4806,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         if (document is null || document.catalogDocument is null
             || !document.modified)
             return;
-        try
-        {
-            document.catalogDocument.save();
-            setDocumentModified(document, false);
-            document.status.setText("Catalog saved.");
-        }
-        catch (Exception ex)
-        {
-            document.status.setText("Could not save the catalog: " ~ ex.msg);
-        }
+        saveDocumentWithRecovery(document);
     }
 
     /** Offer save/discard/cancel before reloading a modified document from disk. */
@@ -4771,17 +4826,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         dialog.destroy();
         if (response == cast(int) ResponseType.ACCEPT)
         {
-            try
-            {
-                document.catalogDocument.save();
-                setDocumentModified(document, false);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                document.status.setText("Could not save the catalog: " ~ ex.msg);
-                return false;
-            }
+            return saveDocumentWithRecovery(document);
         }
         if (response == cast(int) ResponseType.REJECT)
         {
