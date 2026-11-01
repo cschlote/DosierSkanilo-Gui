@@ -183,6 +183,20 @@ is held per document so page cursors stay valid.
 - [x] Remove the unused repository-specific GUI load helpers; tests exercise the
   backend loaders instead.
 
+## P1 — JSON document save semantics
+
+Status: **design clarified**. JSON tabs follow load → modify → store on an
+in-memory document; SQLite tabs commit directly and have no dirty state.
+
+- [ ] Track a modified flag for JSON document tabs after in-memory mutations and
+  show it in the tab/status.
+- [ ] Offer save/discard/cancel when closing, reloading, or quitting a modified
+  JSON document; keep the document modified when saving fails.
+- [ ] Compare a load-time file fingerprint before saving so external edits are
+  reported instead of overwritten.
+- [ ] Do not show a dirty marker for SQLite tabs; a future long-transaction
+  indicator is a separate concept.
+
 ## P2 — Stabilize GTK layout and video preview
 
 The following are separate user-visible issues. Reproduce and log each before
