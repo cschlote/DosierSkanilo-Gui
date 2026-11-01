@@ -5407,9 +5407,28 @@ int runMainWindow(string[] args, ref CliOptions cli)
         else if (document.catalogBackend !is null
             && document.catalogDocument !is null)
         {
-            document.sourceRoot =
-                document.catalogDocument.suggestedFilesystemRoot();
-            document.catalogDocument.bindFilesystemRoot(document.sourceRoot);
+            if (!document.modified)
+            {
+                /* An explicit reload must observe the file again. */
+                if (document.directorySource !is null)
+                    document.directorySource.close();
+                document.directorySource = null;
+                if (document.unfilteredDirectorySource !is null)
+                    document.unfilteredDirectorySource.close();
+                document.unfilteredDirectorySource = null;
+                document.catalogDocument.close();
+                document.catalogBackend.close();
+                document.catalogDocument = null;
+                document.catalogBackend = null;
+                document.sourceRoot = "";
+            }
+            else
+            {
+                document.sourceRoot =
+                    document.catalogDocument.suggestedFilesystemRoot();
+                document.catalogDocument.bindFilesystemRoot(
+                    document.sourceRoot);
+            }
         }
         auto catalogBackendSnapshot = document.catalogBackend;
         auto worker = new Thread({
