@@ -61,6 +61,12 @@ JSON
 		--self-test --self-test-check-splitter \
 		--self-test-delay 700 "${fixture}"
 
+	printf '%s\n' "[display-test] verifying an embedded video sink is available"
+	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
+		./build/bin/dosierskanilo-gui \
+		--self-test --self-test-check-video-sinks \
+		--self-test-delay 700 "${fixture}"
+
 	printf '%s\n' "[display-test] running a JSON analyze operation in memory"
 	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
 		./build/bin/dosierskanilo-gui \

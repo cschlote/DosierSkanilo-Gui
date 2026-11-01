@@ -16,6 +16,7 @@ import gobject.Type : GType;
 import gobject.ObjectG : ObjectG;
 import gobject.ParamSpec : ParamSpec;
 import gtk.Builder;
+import gstreamer.ElementFactory : ElementFactory;
 import gtk.AccelGroup;
 import gtk.Box;
 import gtk.Button;
@@ -5823,6 +5824,20 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 else if (cli.selfTestMode && pendingStartupPaths.length == 0 && !selfTestQuitScheduled)
                 {
                     selfTestQuitScheduled = true;
+                    if (cli.selfTestCheckVideoSinks)
+                    {
+                        bool sinkAvailable;
+                        foreach (candidate; ["gtksink", "ximagesink"])
+                        {
+                            auto sink = ElementFactory.make(candidate,
+                                "preview-sink-check");
+                            logLine("[self-test] video sink ", candidate, ": ",
+                                sink !is null ? "available" : "missing");
+                            sinkAvailable = sinkAvailable || sink !is null;
+                        }
+                        if (!sinkAvailable)
+                            selfTestOperationFailed = true;
+                    }
                     if (cli.selfTestCheckSplitter && document !is null
                         && document.split !is null)
                     {

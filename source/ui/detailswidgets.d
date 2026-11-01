@@ -264,6 +264,7 @@ import ui.documenttab : DocumentTab, PreviewScaleMode;
 import ui.contextpaths : resolveDocumentSourcePath;
 import ui.fallbackrenderer : fallbackDetailRows;
 import ui.mediainforenderer : mediaInfoStreamRows;
+import ui.videooutput : videoSinkCandidates;
 
 /** Normalize empty field values in the details form.
  *
@@ -1183,30 +1184,29 @@ private bool ensureVideoPreviewPlayer(DocumentTab document)
     }
 
     Element sink;
-    if (audioOnly)
+    foreach (candidate; videoSinkCandidates(audioOnly))
     {
-        sink = ElementFactory.make("fakesink", "preview-audio-video-sink");
+        sink = ElementFactory.make(candidate, candidate == "fakesink"
+            ? "preview-audio-video-sink" : "preview-videosink");
         if (sink is null)
+            continue;
+        if (candidate == "gtksink")
         {
-            return false;
+            if (attachGtkVideoSinkWidget(document, sink))
+                break;
+            sink = null;
+            continue;
         }
-    }
-    else
-    {
-        sink = ElementFactory.make("gtksink", "preview-videosink");
-        if (sink is null || !attachGtkVideoSinkWidget(document, sink))
+        if (candidate == "ximagesink")
         {
-            sink = ElementFactory.make("ximagesink", "preview-videosink");
-            if (sink is null)
-            {
-                return false;
-            }
-
             restoreOverlayVideoArea(document);
             document.previewVideoOverlay = new VideoOverlay(sink);
             document.previewVideoOverlay.handleEvents(false);
         }
+        break;
     }
+    if (sink is null)
+        return false;
 
     player.setProperty("video-sink", new Value(sink));
     auto bus = player.getBus();

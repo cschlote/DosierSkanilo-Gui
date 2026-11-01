@@ -263,9 +263,10 @@ specific visual or compatibility outcome to verify.
   summary styling now come from application CSS classes.
 - [x] Remove obsolete `double-buffered` Builder properties and confirm preview
   rendering remains correct on the supported GTK baseline.
-- [ ] Evaluate `gtksink` preference with an `ximagesink` fallback for embedded
-  video, including Wayland and X11 behavior; keep sink selection isolated behind
-  the existing fallback path.
+- [x] Isolate the `gtksink` → `ximagesink` fallback order in `ui.videooutput`,
+  unit-test it, and add a display self-test that verifies at least one embedded
+  sink is available on the Xvfb/X11 CI display.
+- [ ] Manually verify the same preference on a Wayland session.
 - [x] Audit builder files for static styling duplication: widget properties are
   already declared in the `.ui` files and no runtime duplication worth moving
   remains.
