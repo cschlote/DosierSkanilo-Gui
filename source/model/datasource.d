@@ -15,7 +15,7 @@ import std.string : empty;
 import dosierarkivo.archive : ArchiveEntryDescriptor, ArchivePasswordCallback,
     ArchivePasswordCancelledException, appendArchiveVirtualPath,
     escapeArchiveVirtualPath, normalizeArchiveEntryPath,
-    ParsedArchiveVirtualPath,
+    ArchiveVirtualPathLayer, ParsedArchiveVirtualPath,
     parseArchiveVirtualPath;
 import dosierarkivo.factory : fileArchive;
 import dosierskanilo;
@@ -54,6 +54,7 @@ struct ArchiveMemberTreeEntry
     string virtualPath;
     ulong size;
     bool hasArchive;
+    bool isDirectory;
 }
 
 /** Bounded archive-member page and continuation position. */
@@ -746,23 +747,72 @@ ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(string path,
     return loadCatalogArchiveMemberTreePage(backend, containerPath, offset, limit);
 }
 
-/** Load direct archive members from an already opened catalog backend. */
+/** Decode one escaped virtual-layer path component for display. */
+private string decodedArchiveComponent(string component)
+{
+    try
+    {
+        const parsed = parseArchiveVirtualPath("x!/" ~ component);
+        if (parsed.entries.length == 1)
+            return parsed.entries[0].relativePath;
+    }
+    catch (Exception)
+    {
+    }
+    return component;
+}
+
+/** Load direct archive children (files and synthesized directories). */
 ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(CatalogBackend backend,
     string containerPath, size_t offset = 0, size_t limit = 250)
 {
+    import std.algorithm.searching : startsWith;
+    import std.algorithm.sorting : sort;
+    import std.array : split;
+    import std.string : indexOf, lastIndexOf;
+
     enforce(limit > 0, "Archive-member page size must be greater than zero.");
-    const referenceId = backend.resolveReference(containerPath);
+
+    /* `containerPath` names either an archive reference or a directory inside
+     * one. Resolve the containing archive by trimming path components. */
+    string rootPath = containerPath;
+    ReferenceId referenceId;
+    while (rootPath.length > 0)
+    {
+        referenceId = backend.resolveReference(rootPath);
+        if (referenceId.isValid)
+            break;
+        const bang = rootPath.lastIndexOf("!/");
+        const slash = rootPath.lastIndexOf('/');
+        const cut = bang != -1 ? bang : slash;
+        if (cut <= 0)
+        {
+            referenceId = ReferenceId.init;
+            break;
+        }
+        rootPath = rootPath[0 .. cut];
+    }
     if (!referenceId.isValid)
         return ArchiveMemberTreePage.init;
+
     const container = backend.loadReference(referenceId);
-    const containerLayers = parseArchiveVirtualPath(containerPath).entries.length;
+    string targetRelative;
+    if (containerPath.length > rootPath.length)
+        targetRelative = containerPath[rootPath.length .. $];
+    while (targetRelative.startsWith("!/"))
+        targetRelative = targetRelative[2 .. $];
+    while (targetRelative.startsWith("/"))
+        targetRelative = targetRelative[1 .. $];
+    string[] targetComponents = targetRelative.length > 0
+        ? targetRelative.split("/") : [];
 
     CatalogFileQuery query;
     query.directoryId = container.directoryId;
     query.filter.includeArchiveMembers = true;
-    query.filter.pathText = containerPath ~ "!/";
+    query.filter.pathText = rootPath ~ "!/";
 
     ArchiveMemberTreeEntry[] direct;
+    bool[string] seenDirectories;
     CatalogPageCursor cursor;
     while (true)
     {
@@ -772,19 +822,51 @@ ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(CatalogBackend backend,
         const page = backend.listFiles(query, request);
         foreach (file; page.files)
         {
-            ParsedArchiveVirtualPath parsed;
-            try
-                parsed = parseArchiveVirtualPath(file.relativePath);
-            catch (Exception)
+            const memberPath = file.relativePath;
+            if (!memberPath.startsWith(rootPath ~ "!/"))
                 continue;
-            if (!parsed.isVirtual
-                || parsed.entries.length != containerLayers + 1)
+            auto relative = memberPath[(rootPath.length + 2) .. $];
+            const nextLayer = relative.indexOf("!/");
+            if (nextLayer != -1)
+                relative = relative[0 .. nextLayer];
+            auto components = relative.split("/");
+            if (components.length < targetComponents.length)
                 continue;
+            bool matchesTarget = true;
+            foreach (index, component; targetComponents)
+                if (components[index] != component)
+                {
+                    matchesTarget = false;
+                    break;
+                }
+            if (!matchesTarget)
+                continue;
+            auto remaining = components[targetComponents.length .. $];
+            if (remaining.length == 0)
+                continue;
+            const childDisplay = remaining[0];
+            if (remaining.length > 1)
+            {
+                if (childDisplay in seenDirectories)
+                    continue;
+                seenDirectories[childDisplay] = true;
+                ArchiveMemberTreeEntry entry;
+                entry.isDirectory = true;
+                entry.relativePath = decodedArchiveComponent(childDisplay);
+                entry.name = entry.relativePath;
+                entry.virtualPath = containerPath
+                    ~ (targetComponents.length == 0 ? "!/" : "/")
+                    ~ childDisplay;
+                entry.referenceId = entry.virtualPath;
+                direct ~= entry;
+                continue;
+            }
+
             ArchiveMemberTreeEntry entry;
-            entry.referenceId = file.relativePath;
+            entry.referenceId = memberPath;
             entry.name = file.name;
             entry.relativePath = file.name;
-            entry.virtualPath = file.relativePath;
+            entry.virtualPath = memberPath;
             entry.size = file.size;
             entry.hasArchive = file.hasArchive
                 || isArchivePathCandidate(file.name);
@@ -794,6 +876,9 @@ ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(CatalogBackend backend,
             break;
         cursor = page.nextCursor;
     }
+
+    direct.sort!((left, right) => left.isDirectory != right.isDirectory
+        ? left.isDirectory : left.relativePath < right.relativePath);
 
     ArchiveMemberTreePage result;
     const start = offset < direct.length ? offset : direct.length;
@@ -1725,7 +1810,10 @@ unittest
 
     auto container = new NamedBinaryBlob("archives/test.zip", 14, SysTime(0));
     container.archiveSpecs = [
-        new ArchiveSpec("member.txt", 6, "", CheckSums("md5", "sha1", "xxh64"))
+        new ArchiveSpec("member.txt", 6, "", CheckSums("md5", "sha1", "xxh64")),
+        new ArchiveSpec("folder/a.txt", 1, "", CheckSums("md5", "sha1", "xxh64")),
+        new ArchiveSpec("folder/sub/b.txt", 1, "",
+            CheckSums("md5", "sha1", "xxh64"))
     ];
     NamedBinaryBlobCatalog catalog = NamedBinaryBlobCatalog(
         DATA_CLASS_VERSION5, [container]);
@@ -1739,7 +1827,23 @@ unittest
 
     const page = loadCatalogArchiveMemberTreePage(backend,
         "archives/test.zip", 0, 250);
-    assert(page.entries.length == 1);
-    assert(page.entries[0].referenceId.endsWith("!/member.txt"));
-    assert(page.entries[0].virtualPath.endsWith("!/member.txt"));
+    assert(page.entries.length == 2);
+    assert(page.entries[0].isDirectory);
+    assert(page.entries[0].relativePath == "folder");
+    assert(page.entries[1].referenceId.endsWith("!/member.txt"));
+    assert(page.entries[1].virtualPath.endsWith("!/member.txt"));
+
+    const folder = loadCatalogArchiveMemberTreePage(backend,
+        "archives/test.zip!/folder", 0, 250);
+    assert(folder.entries.length == 2);
+    assert(folder.entries[0].isDirectory);
+    assert(folder.entries[0].relativePath == "sub");
+    assert(folder.entries[1].relativePath == "a.txt");
+    assert(folder.entries[1].virtualPath.endsWith("!/folder/a.txt"));
+
+    const sub = loadCatalogArchiveMemberTreePage(backend,
+        "archives/test.zip!/folder/sub", 0, 250);
+    assert(sub.entries.length == 1);
+    assert(!sub.entries[0].isDirectory);
+    assert(sub.entries[0].relativePath == "b.txt");
 }
