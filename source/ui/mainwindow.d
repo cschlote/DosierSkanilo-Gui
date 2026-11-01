@@ -3359,6 +3359,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
             if (kind == "ArchiveMember")
             {
+                if (model.getValueString(treeIter, 14) == "1")
+                    document.directoryTreeView.expandRow(model.getPath(treeIter),
+                        false);
                 auto memberPath = model.getValueString(treeIter, 0);
                 auto memberIdentity = model.getValueString(treeIter, 4);
                 auto virtualPath = model.getValueString(treeIter, 5);
@@ -3428,6 +3431,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
             auto hasText = model.getValueString(treeIter, 13) == "1";
             auto hasArchive = model.getValueString(treeIter, 14) == "1";
             auto hasTorrent = model.getValueString(treeIter, 15) == "1";
+            if (hasArchive)
+                document.directoryTreeView.expandRow(model.getPath(treeIter),
+                    false);
             foreach (rowIndex, row; document.visibleRows)
             {
                 bool rowSelected;
