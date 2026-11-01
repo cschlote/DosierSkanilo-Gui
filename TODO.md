@@ -148,12 +148,13 @@ second sibling folder or persist cache paths.
 - [ ] Keep same-directory sibling prefetch disabled by default. When enabled,
   make it cancellable, bounded, and use the same cache leases as foreground
   preview/extraction.
-- [ ] During explicit deep scans, process every safely selectable non-directory
+- [x] During explicit deep scans, process every safely selectable non-directory
   member using one cache lease for checksums and the selected metadata extractors;
-  persist metadata against the member content blob, not the temporary path.
+  persist metadata against the member content blob, not the temporary path
+  (verified for encrypted containers in the backend repository tests).
 - [x] Test `!` escaping, duplicate occurrence IDs, unsafe paths, and nested
   member identities for both storage modes.
-- [ ] Test encrypted containers, extraction cancellation, prefetch cancellation,
+- [ ] Test encrypted-container extraction cancellation, prefetch cancellation,
   cache eviction/pinning, and shutdown/stale-session cleanup for both storage
   modes.
 
