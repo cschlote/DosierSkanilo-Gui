@@ -6828,6 +6828,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
     Main.run();
     cancelAndJoinDocumentOperations();
     joinArchivePreviewWorkers();
+    foreach (document; documents)
+    {
+        if (document.directorySource !is null)
+            document.directorySource.close();
+        if (document.catalogDocument !is null)
+            document.catalogDocument.close();
+        if (document.catalogBackend !is null)
+            document.catalogBackend.close();
+    }
     stopAllUiSources();
     if (!closeSharedMemberContentCache())
     {
