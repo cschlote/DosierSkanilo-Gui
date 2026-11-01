@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Archive directories and archive files in the main tree now expand on the
+  first selection click; the loaded children no longer leave the row collapsed
+  until a second click. Catalog rows without a legacy blob again resolve their
+  filesystem preview path from the backend reference.
+
 - The GUI self-test can run a scan, metadata, or analyze operation on a
   repository before exiting (`--self-test-operation`); CI exercises those paths
   under Xvfb, including a synthetic pause/resume and cancellation run, and it
