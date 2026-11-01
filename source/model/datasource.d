@@ -1696,3 +1696,50 @@ unittest
     assert(secondPage.entries[0].virtualPath
         == "archives/bundle!!.zip!/same.txt!~1");
 }
+
+@("JSON backend archive member pages feed the main tree")
+unittest
+{
+    import dosierskanilo.model.archivespec : ArchiveSpec;
+    import std.algorithm.searching : endsWith;
+    import dosierskanilo.model.checksums : CheckSums;
+    import dosierskanilo.model.namedbinaryblob : NamedBinaryBlobCatalog,
+        serializeDataClassWrapperFile;
+    import std.datetime.systime : SysTime;
+    import std.file : exists, mkdirRecurse, remove, rmdirRecurse, tempDir;
+    import std.path : buildPath;
+    import std.uuid : randomUUID;
+
+    const root = buildPath(tempDir(), "gui-json-archive-tree-"
+        ~ randomUUID().toString());
+    const catalogPath = buildPath(tempDir(), "gui-json-archive-tree-"
+        ~ randomUUID().toString() ~ ".json");
+    mkdirRecurse(root);
+    scope (exit)
+    {
+        if (exists(root))
+            rmdirRecurse(root);
+        if (exists(catalogPath))
+            remove(catalogPath);
+    }
+
+    auto container = new NamedBinaryBlob("archives/test.zip", 14, SysTime(0));
+    container.archiveSpecs = [
+        new ArchiveSpec("member.txt", 6, "", CheckSums("md5", "sha1", "xxh64"))
+    ];
+    NamedBinaryBlobCatalog catalog = NamedBinaryBlobCatalog(
+        DATA_CLASS_VERSION5, [container]);
+    serializeDataClassWrapperFile(catalogPath, catalog);
+
+    auto backend = openJsonCatalogBackend(catalogPath);
+    scope (exit)
+        backend.close();
+    auto document = backend.document();
+    document.bindFilesystemRoot(root);
+
+    const page = loadCatalogArchiveMemberTreePage(backend,
+        "archives/test.zip", 0, 250);
+    assert(page.entries.length == 1);
+    assert(page.entries[0].referenceId.endsWith("!/member.txt"));
+    assert(page.entries[0].virtualPath.endsWith("!/member.txt"));
+}
