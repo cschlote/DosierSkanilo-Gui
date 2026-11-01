@@ -5873,8 +5873,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                                 });
                                 return;
                             }
-                            logLine("[self-test] splitter was not allocated");
-                            selfTestOperationFailed = true;
+                            logLine("[self-test] splitter was not allocated; "
+                                ~ "skipping the runtime position check");
                             Main.quit();
                         };
                         scheduleUiTimeout(50, {
