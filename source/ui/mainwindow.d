@@ -2973,7 +2973,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 ? model.getValueString(parent, 4)
                 : model.getValueString(parent, 6);
             const auto containerVirtualPath = model.getValueString(parent, 5);
-            const auto repositorySource = document.repositoryStorage;
+            const auto backendSource = document.catalogBackend !is null;
             const auto sourcePath = document.filePath;
             const auto loadingKind = offset == 0
                 ? "ArchiveLoading" : "ArchiveLoadingPage";
@@ -2990,7 +2990,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             logLineVerbose("[archive-tree] request source=", sourcePath,
                 " parentKind=", parentKind, " parent=", parentNodeId,
                 " path=", containerVirtualPath, " offset=", offset,
-                " repository=", repositorySource);
+                " backend=", backendSource);
             auto catalogRows = document.loadedRows;
             new Thread({
                 ArchiveMemberTreePage page;
@@ -2998,7 +2998,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 auto started = MonoTime.currTime;
                 try
                 {
-                    if (repositorySource)
+                    if (backendSource)
                         page = loadCatalogArchiveMemberTreePage(
                             document.catalogBackend, containerVirtualPath, offset,
                             250);
