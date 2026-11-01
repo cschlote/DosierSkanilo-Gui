@@ -117,8 +117,10 @@ retains its per-document store behind `GtkTreeModelFilter`. See
   10k 2.4/5.4 ms/1.8 MiB, 100k 22.1/51.6 ms/15.3 MiB.
 - [x] Smoke-load a 95,001-record Blob table from JSON and from an imported
   SQLite catalog under Xvfb and log the wall time.
-- [ ] Profile detailed GC allocation behavior and per-batch rendering times for
-  the same 95,001-row datasets.
+- [x] Benchmark GC allocation/collection behavior headlessly: at 100k rows the
+  filter takes 21.3 ms, tree projection 49.7 ms, one GC cycle 4.1 ms, and 19.9
+  MiB are allocated (22.9 MiB peak heap).
+- [ ] Profile per-batch rendering times of the 95,001-row table on a display.
 
 **Acceptance:** filter changes update the visible projection without clearing or
 recreating existing source nodes; matching descendants keep their ancestor paths

@@ -84,11 +84,14 @@ int main(string[] args)
             sizes ~= argument.to!size_t;
     }
 
-    writeln("count\tfilter_ms\ttree_ms\tpeak_mib");
+    writeln("count\tfilter_ms\ttree_ms\tpeak_mib\tgc_ms\tgc_cycles\talloc_mib\tfiltered\tdirs\tfiles");
     foreach (count; sizes)
     {
+        GC.collect();
         auto rows = syntheticRows(count);
         auto inputs = syntheticInputs(count);
+        const profileBefore = GC.profileStats;
+        const allocatedBefore = GC.stats.allocatedInCurrentThread;
 
         auto filterWatch = StopWatch(AutoStart.yes);
         const filtered = filterRowsByText(rows, "track-0007", false);
@@ -100,10 +103,17 @@ int main(string[] args)
         treeWatch.stop();
         const treeMs = treeWatch.peek.total!"usecs" / 1000.0;
 
+        const profileAfter = GC.profileStats;
+        const allocatedBytes = GC.stats.allocatedInCurrentThread
+            - allocatedBefore;
         GC.collect();
         const peakMiB = GC.stats.usedSize / (1024.0 * 1024.0);
-        writefln("%d\t%.1f\t%.1f\t%.1f\tfiltered=%d\tdirs=%d\tfiles=%d",
-            count, filterMs, treeMs, peakMiB, filtered.length,
+        const gcMs = (profileAfter.totalCollectionTime
+            - profileBefore.totalCollectionTime).total!"usecs" / 1000.0;
+        writefln("%d\t%.1f\t%.1f\t%.1f\t%.1f\t%d\t%.1f\t%d\t%d\t%d",
+            count, filterMs, treeMs, peakMiB, gcMs,
+            profileAfter.numCollections - profileBefore.numCollections,
+            allocatedBytes / (1024.0 * 1024.0), filtered.length,
             tree.directories.length, tree.files.length);
     }
     return 0;
