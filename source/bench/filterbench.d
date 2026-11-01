@@ -7,6 +7,10 @@ import std.format : format;
 import std.stdio : writefln, writeln;
 import std.conv : to;
 
+import dosierskanilo.model.filespec : FileSpec;
+import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob,
+    NamedBinaryBlobCatalog, DATA_CLASS_VERSION5, serializeDataClassWrapperFile;
+import std.datetime.systime : Clock;
 import model.blobrow : BlobRow;
 import model.treeprojection : FileInput, buildDirectoryTree;
 import view.textreport : filterRowsByText;
@@ -46,8 +50,32 @@ private FileInput[] syntheticInputs(size_t count)
     return inputs;
 }
 
+private void writeBenchmarkCatalog(string path, size_t count)
+{
+    NamedBinaryBlob[] blobs;
+    blobs.reserve(count);
+    foreach (index; 0 .. count)
+    {
+        auto blob = new NamedBinaryBlob(
+            format("bench/album-%02d/track-%06d.flac", index % 100, index),
+            (index % 4096) + 1, Clock.currTime);
+        blob.fileSpecs ~= new FileSpec(blob.getFirstFileName, "");
+        blobs ~= blob;
+    }
+    NamedBinaryBlobCatalog catalog = NamedBinaryBlobCatalog(
+        DATA_CLASS_VERSION5, blobs);
+    serializeDataClassWrapperFile(path, catalog);
+    writeln("wrote ", count, " records to ", path);
+}
+
 int main(string[] args)
 {
+    if (args.length == 4 && args[1] == "--write-catalog")
+    {
+        writeBenchmarkCatalog(args[2], args[3].to!size_t);
+        return 0;
+    }
+
     size_t[] sizes = [1_000, 10_000, 100_000];
     if (args.length > 1)
     {

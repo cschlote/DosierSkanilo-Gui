@@ -95,6 +95,28 @@ if [ -d "${backend_dir}" ]; then
 			--self-test --self-test-operation "${operation}" \
 			--self-test-delay 1200 "${repository_dir}"
 	done
+
+	bench_catalog="${LOGIN_DIR}/bench-95001.json"
+	printf '%s\n' "[display-test] generating a 95001-record catalog"
+	DC="${DC}" dub run --config=benchmark --compiler="${DC}" -b=release -- \
+		--write-catalog "${bench_catalog}" 95001
+	start_seconds=$(date +%s)
+	printf '%s\n' "[display-test] loading 95001 records from JSON"
+	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
+		./build/bin/dosierskanilo-gui \
+		--self-test --self-test-delay 1200 "${bench_catalog}"
+	printf '%s\n' "[display-test] JSON table smoke: $(( $(date +%s) - start_seconds ))s"
+
+	bench_repository="${LOGIN_DIR}/bench-repository"
+	"${backend_dir}/build/bin/dosierskanilo" init "${bench_repository}" >/dev/null
+	"${backend_dir}/build/bin/dosierskanilo" import "${bench_repository}" \
+		"${bench_catalog}" >/dev/null
+	start_seconds=$(date +%s)
+	printf '%s\n' "[display-test] loading 95001 records from SQLite"
+	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
+		./build/bin/dosierskanilo-gui \
+		--self-test --self-test-delay 1200 "${bench_repository}"
+	printf '%s\n' "[display-test] SQLite table smoke: $(( $(date +%s) - start_seconds ))s"
 else
 	printf '%s\n' "[display-test] backend checkout not found; skipping repository smoke test."
 fi
