@@ -201,17 +201,17 @@ in-memory document; SQLite tabs commit directly and have no dirty state.
 
 ## P2 — Backend-backed JSON views
 
-Status: **backend enabler ready** (`CatalogDocument.suggestedFilesystemRoot`/
-`bindFilesystemRoot`). The view still uses the legacy blob projection.
+Status: **complete**. JSON tabs are backend-backed after binding a derived tree
+root, so rows, tree, details, archive/torrent pages, and previews use the same
+`CatalogBackend` paths as repository tabs.
 
-- [ ] Split the GUI's `directorySourceRemote` meaning into storage mode
-  (`isRepositorySource`) and backend-backed views; JSON becomes backend-backed
+- [x] Split the GUI's `directorySourceRemote` meaning into storage mode
+  (`repositoryStorage`) and backend-backed views; JSON becomes backend-backed
   once a tree root is bound.
-- [ ] Load JSON rows, tree, details, archive/torrent pages, and previews through
+- [x] Load JSON rows, tree, details, archive/torrent pages, and previews through
   `CatalogBackend` like repository tabs.
-- [ ] Remove the `documentBlobs()` snapshot bridge and the duplicate JSON load
-  when the backend-backed view is in place.
-- [ ] Keep the CLI/GUI operation parity and modified/save semantics unchanged.
+- [x] Remove the `documentBlobs()` snapshot bridge and the duplicate JSON load.
+- [x] Keep the CLI/GUI operation parity and modified/save semantics unchanged.
 
 ## P2 — Stabilize GTK layout and video preview
 

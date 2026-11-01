@@ -12,7 +12,9 @@ All notable changes to this project are documented in this file.
   modify the tab, the label marks unsaved changes, and Save (Ctrl+S), close, and
   window close offer save/discard/cancel. Saves detect external file changes
   instead of overwriting them; SQLite tabs remain transactional without a dirty
-  marker. Reloading a modified JSON tab asks to save or discard, and File →
+  marker. JSON tabs now read trees, content rows, details, entries, and previews
+  through the catalog backend after binding a derived filesystem root, replacing
+  the legacy blob projection and duplicate load. Reloading a modified JSON tab asks to save or discard, and File →
   Revert to Stored restores the catalog from disk. Failed saves keep the tab
   modified and offer Retry or saving the backend recovery file as a copy. The
   display self-test can save an in-memory JSON analyze result before exiting

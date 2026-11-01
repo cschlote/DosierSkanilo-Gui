@@ -86,7 +86,8 @@ import gstreamer.c.types : GstState, GstStateChangeReturn;
 
 import cli.commandline : CliOptions, cliUsageText, parseCliOptions;
 import model.blobrow : BlobRow, extractRowsFromBlobs;
-import model.catalogsource : openCatalogBackend, openJsonCatalogBackend;
+import model.catalogsource : openCatalogBackend, openCatalogDirectorySource,
+    openJsonCatalogBackend;
 import model.datasource : SourceQuery, isRepositorySource,
     AcquiredArchiveMemberPreview, ArchiveMemberTreeEntry, ArchiveMemberTreePage,
     acquireJsonArchiveMemberPreview, acquireJsonVirtualArchiveMemberPreview,
@@ -2823,7 +2824,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 string[] path;
                 try
                 {
-                    auto source = openRepositoryDirectorySource(sourcePath);
+                    auto source = target.catalogBackend !is null
+                        ? openCatalogDirectorySource(target.catalogBackend, false)
+                        : openRepositoryDirectorySource(sourcePath);
                     path = findDirectoryPathForFile(source, "root", fileId);
                     source.close();
                 }
@@ -2868,7 +2871,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 result.sortOrder = treeSortOrder;
                 try
                 {
-                    auto source = openRepositoryDirectorySource(filePath);
+                    auto source = document.catalogBackend !is null
+                        ? openCatalogDirectorySource(document.catalogBackend,
+                            false)
+                        : openRepositoryDirectorySource(filePath);
                     result.directories = source.listDirectories(directoryId, fileFilter);
                     auto page = source.listFilteredFilesPage(directoryId, cursor, 251,
                         fileFilter, fileSortOrder);
@@ -4863,7 +4869,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         {
             document.catalogDocument.discard();
             setDocumentModified(document, false);
-            document.reloadFromDocument = false;
             document.status.setText("Reverted to the stored catalog.");
             loadDocument(document, false);
         }
@@ -5363,18 +5368,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
         document.preserveDirectoryTreeNodesOnNextLoad = false;
         if (!preserveTreeNodes)
             document.reuseDirectoryTreeNodes = false;
-        if (repositorySource)
+        if (!document.drainPageRequest)
         {
-            if (!document.drainPageRequest)
-            {
-                document.drainRepositoryPages = true;
-                document.pageOffset = 0;
-                document.repositoryRowsLoaded = 0;
-                document.repositoryContentCursor = CatalogPageCursor.init;
-                document.loadedRows = [];
-            }
-            document.drainPageRequest = false;
+            document.drainRepositoryPages = true;
+            document.pageOffset = 0;
+            document.repositoryRowsLoaded = 0;
+            document.repositoryContentCursor = CatalogPageCursor.init;
+            document.loadedRows = [];
         }
+        document.drainPageRequest = false;
         document.tableNaturalWidth = -1;
         document.tableMinimumWidth = -1;
         document.fitHorizontalSplitAfterLoad = fitHorizontalSplitAfterLoad;
@@ -5396,8 +5398,30 @@ int runMainWindow(string[] args, ref CliOptions cli)
             treeFilterSnapshot.fileType, treeFilterSnapshot.archive,
             treeFilterSnapshot.torrent);
 
-        if (isRepositorySource(document.filePath) && document.catalogBackend is null)
-            document.catalogBackend = openCatalogBackend(document.filePath);
+        if (isRepositorySource(document.filePath))
+        {
+            if (document.catalogBackend is null)
+                document.catalogBackend = openCatalogBackend(document.filePath);
+            document.sourceRoot = Repository.findRoot(document.filePath);
+        }
+        else
+        {
+            if (document.catalogBackend is null)
+                document.catalogBackend = openJsonCatalogBackend(
+                    document.filePath);
+            if (document.catalogBackend !is null)
+            {
+                if (document.catalogDocument is null)
+                    document.catalogDocument = document.catalogBackend.document();
+                if (document.catalogDocument !is null)
+                {
+                    document.sourceRoot =
+                        document.catalogDocument.suggestedFilesystemRoot();
+                    document.catalogDocument.bindFilesystemRoot(
+                        document.sourceRoot);
+                }
+            }
+        }
         auto catalogBackendSnapshot = document.catalogBackend;
         auto worker = new Thread({
             MonoTime started = MonoTime.currTime;
@@ -5412,7 +5436,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     : "Loading scanner data via library ...");
                 logLineVerbose("[load-worker] parsing ", document.filePath);
                 NamedBinaryBlob[] blobs;
-                if (isRepositorySource(document.filePath))
+                if (catalogBackendSnapshot !is null)
                 {
                     if (document.drainRepositoryPages)
                     {
@@ -5444,26 +5468,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     }
                     result.pagedSource = true;
                 }
-                else if (document.reloadFromDocument
-                    && document.catalogDocument !is null)
-                {
-                    blobs = document.catalogDocument.documentBlobs();
-                }
                 else
                 {
                     blobs = loadDocumentSource(document.filePath);
-                    result.jsonBackend = openJsonCatalogBackend(document.filePath);
-                    if (result.jsonBackend !is null)
-                    {
-                        result.jsonDocument = result.jsonBackend.document();
-                        if (result.jsonDocument !is null)
-                        {
-                            result.sourceRoot =
-                                result.jsonDocument.suggestedFilesystemRoot();
-                            result.jsonDocument.bindFilesystemRoot(
-                                result.sourceRoot);
-                        }
-                    }
                 }
                 if (isRepositorySource(document.filePath))
                 {
@@ -5479,15 +5486,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 }
 
                 setLoadingPhase(document, requestId, "Projecting blob rows for GUI ...");
-                if (!isRepositorySource(document.filePath))
+                if (catalogBackendSnapshot is null)
                     result.allRows = extractRowsFromBlobs(blobs);
-                if (isRepositorySource(document.filePath))
+                if (catalogBackendSnapshot !is null)
                 {
                     result.directoryTree = DirectoryTree();
                     if (hasTreeFilterSnapshot || preserveTreeNodes)
                     {
-                        auto treeSource = openRepositoryDirectorySource(
-                            document.filePath);
+                        DirectorySource treeSource =
+                            openCatalogDirectorySource(catalogBackendSnapshot,
+                                false);
                         scope (exit)
                             treeSource.close();
                         if (hasTreeFilterSnapshot)
@@ -5576,18 +5584,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.repositoryStorage = isRepositorySource(document.filePath);
                 document.sourceRoot = document.repositoryStorage
                     ? Repository.findRoot(document.filePath) : result.sourceRoot;
-                if (!result.pagedSource && result.jsonDocument !is null)
-                {
-                    if (document.catalogDocument !is null)
-                        document.catalogDocument.close();
-                    if (document.catalogBackend !is null
-                        && !isRepositorySource(document.filePath))
-                        document.catalogBackend.close();
-                    document.catalogDocument = result.jsonDocument;
-                    document.catalogBackend = result.jsonBackend;
-                }
-                document.reloadFromDocument = false;
-                if (result.pagedSource && document.drainRepositoryPages)
+                    if (result.pagedSource && document.drainRepositoryPages)
                 {
                     document.repositoryRowsLoaded = result.pageOffset + result.allRows.length;
                     document.repositoryContentCursor = result.nextContentCursor;
@@ -5598,12 +5595,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     document.repositoryRowsLoaded = 0;
                     document.loadedRows = result.allRows;
                 }
-                document.directorySourceRemote = isRepositorySource(document.filePath);
+                document.directorySourceRemote = document.catalogBackend !is null;
                 if (document.directorySourceRemote)
                 {
                     document.directoryTree = result.directoryTree;
                     document.unfilteredDirectoryTree = DirectoryTree();
-                    document.directorySource = openRepositoryDirectorySource(document.filePath);
+                    document.directorySource = openCatalogDirectorySource(
+                        document.catalogBackend, false);
                     document.unfilteredDirectorySource = null;
                     document.directorySourceFiltered = documentFilterHasCriteria(
                         document.filterQuery, document.filterVideo,
@@ -5977,7 +5975,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         && document.catalogDocument !is null)
                     {
                         setDocumentModified(document, true);
-                        document.reloadFromDocument = true;
                     }
                     if (refreshDocument && !quitWhenOperationsFinish)
                         refreshDocumentAfterOperation(document);

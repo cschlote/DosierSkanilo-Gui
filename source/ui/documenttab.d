@@ -329,8 +329,6 @@ class DocumentTab
     string sourceRoot;
     /// Whether the JSON document buffer differs from its stored catalog.
     bool modified;
-    /// Reload the JSON view from the document buffer instead of the file.
-    bool reloadFromDocument;
     size_t pageSize = 250;
     bool loadAllRows;
     bool drainRepositoryPages;
