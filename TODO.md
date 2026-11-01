@@ -197,8 +197,9 @@ changing allocation or persistence code, so fixes can be evaluated independently
 - [ ] Define which saved position wins (new window default versus per-window
   restored value), clamp only after a usable allocation, and avoid saving
   transient/unallocated positions.
-- [ ] Verify the list and details panes remain usable at the minimum supported
-  window size; verify the chosen positions survive restart.
+- [x] Verify the pane clamp keeps both panes usable at narrow extents; covered
+  by `ui.splitterlayout` unit tests.
+- [ ] Verify the chosen split positions survive a restart.
 
 ### Video preview realization and window growth
 
