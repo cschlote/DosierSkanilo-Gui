@@ -51,6 +51,16 @@ if [ -f "${fixture}" ]; then
 	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
 		./build/bin/dosierskanilo-gui \
 		--self-test --self-test-delay 700 "${fixture}"
+	mkdir -p "${LOGIN_DIR}/.config/dosierskanilo-gui"
+	cat > "${LOGIN_DIR}/.config/dosierskanilo-gui/state.json" <<'JSON'
+{"windowWidth":1200,"windowHeight":800,"splitPositionHorizontal":5000,"splitPositionVertical":5000,"splitPositionPreview":5000,"hasSplitPositionPreview":true}
+JSON
+	printf '%s\n' "[display-test] verifying restored splitter positions are usable"
+	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
+		./build/bin/dosierskanilo-gui \
+		--self-test --self-test-check-splitter \
+		--self-test-delay 700 "${fixture}"
+
 	printf '%s\n' "[display-test] running a JSON analyze operation in memory"
 	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
 		./build/bin/dosierskanilo-gui \

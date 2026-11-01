@@ -5823,6 +5823,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 else if (cli.selfTestMode && pendingStartupPaths.length == 0 && !selfTestQuitScheduled)
                 {
                     selfTestQuitScheduled = true;
+                    if (cli.selfTestCheckSplitter && document !is null
+                        && document.split !is null)
+                    {
+                        const position = document.split.getPosition();
+                        const extent = document.split.getOrientation()
+                            == Orientation.VERTICAL
+                            ? document.split.getAllocatedHeight()
+                            : document.split.getAllocatedWidth();
+                        logLine("[self-test] splitter position=", position,
+                            " extent=", extent);
+                        if (position <= 0 || extent <= 0 || position >= extent)
+                            selfTestOperationFailed = true;
+                    }
                     if (cli.selfTestOperation.length > 0 && startSelfTestOperation !is null)
                     {
                         startSelfTestOperation(document);
