@@ -581,13 +581,21 @@ private void populateTorrentFileTree(DocumentTab document, const(BlobRow) row)
 /** Return the most likely filesystem path for preview loading. */
 private string resolvePreviewPath(DocumentTab document, const(BlobRow) row)
 {
-    if (row.sourceBlob is null)
-    {
-        return "";
-    }
-
     const auto repositoryRoot = document.repositoryStorage
         ? Repository.findRoot(document.filePath) : document.sourceRoot;
+
+    if (row.sourceBlob is null)
+    {
+        /* Backend rows carry the reference path instead of a legacy blob.
+         * Prefer the exact tree selection while the tree drives the
+         * selection; otherwise use the content row's representative path. */
+        auto relativePath = document.syncingTreeSelection
+            && document.selectedTreeCursor.relativePath.length > 0
+            ? document.selectedTreeCursor.relativePath
+            : row.sourceKey.length > 0 ? row.sourceKey : row.primaryFileName;
+        return resolveDocumentSourcePath(document.filePath, relativePath,
+            repositoryRoot);
+    }
     auto selectedTreePath = document.selectedTreeCursor.relativePath;
     if (selectedTreePath.length > 0)
     {
@@ -2578,6 +2586,33 @@ unittest
     assert(previewFileCheckFailure("/nas/missing.mp4", "").canFind("Referenced file is missing"));
     assert(previewFileCheckFailure("/nas/unavailable.mp4", "permission denied")
         .canFind("permission denied"));
+}
+
+@("preview path resolution falls back to backend row paths")
+unittest
+{
+    auto document = new DocumentTab();
+    document.filePath = "/nas/library/catalog.json";
+    document.sourceRoot = "/nas/library";
+
+    BlobRow row;
+    row.sourceKey = "media/clip.mp4";
+    row.primaryFileName = "clip.mp4";
+    assert(resolvePreviewPath(document, row)
+        == "/nas/library/media/clip.mp4");
+
+    /* While the tree drives the selection, the exact tree path wins over the
+     * content row's representative path. */
+    BlobRow treeRow;
+    treeRow.sourceKey = "media/clip.mp4";
+    treeRow.primaryFileName = "clip.mp4";
+    document.selectedTreeCursor.relativePath = "media/alias.mp4";
+    document.syncingTreeSelection = true;
+    assert(resolvePreviewPath(document, treeRow)
+        == "/nas/library/media/alias.mp4");
+    document.syncingTreeSelection = false;
+    assert(resolvePreviewPath(document, treeRow)
+        == "/nas/library/media/clip.mp4");
 }
 
 @("unknown-file hex previews show only a bounded prefix")

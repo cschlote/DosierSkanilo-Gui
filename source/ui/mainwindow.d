@@ -3175,6 +3175,20 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     logLineVerbose("[archive-tree] applied parent=", parentNodeId,
                         " childrenAfter=",
                         document.directoryTreeStore.iterNChildren(currentParentStore));
+                    /* Removing the temporary marker briefly leaves the row
+                     * without children, which makes GTK collapse it before
+                     * the loaded rows are appended. Restore the expanded
+                     * state so one selection click is enough. */
+                    if (error.length == 0)
+                    {
+                        TreeModelIF viewModel = document.directoryTreeView.getModel();
+                        TreeIter viewParent;
+                        if (viewModel !is null
+                            && findTreeIterByValue(viewModel, new TreeIter(),
+                                false, TREE_COL_NODE_ID, parentNodeId, viewParent))
+                            document.directoryTreeView.expandRow(
+                                viewModel.getPath(viewParent), false);
+                    }
                     return false;
                 });
             }).start();
