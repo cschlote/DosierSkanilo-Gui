@@ -5938,6 +5938,23 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     logLine("[self-test] operation ", completedResult.operation,
                         " state=", completedResult.state,
                         " error=", completedResult.error);
+                    if (succeeded && cli.selfTestSave
+                        && document !is null && document.catalogDocument !is null
+                        && document.modified)
+                    {
+                        try
+                        {
+                            document.catalogDocument.save();
+                            setDocumentModified(document, false);
+                            logLine("[self-test] saved the modified document");
+                        }
+                        catch (Exception ex)
+                        {
+                            logLine("[self-test] saving the document failed: ",
+                                ex.msg);
+                            selfTestOperationFailed = true;
+                        }
+                    }
                     if (succeeded && !expectCancellation && refreshDocument)
                     {
                         const auto refreshLoadId = document.loadRequestId;

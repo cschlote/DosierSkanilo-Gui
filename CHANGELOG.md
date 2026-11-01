@@ -13,7 +13,8 @@ All notable changes to this project are documented in this file.
   window close offer save/discard/cancel. Saves detect external file changes
   instead of overwriting them; SQLite tabs remain transactional without a dirty
   marker. Reloading a modified JSON tab asks to save or discard, and File →
-  Revert to Stored restores the catalog from disk.
+  Revert to Stored restores the catalog from disk. The display self-test can
+  save an in-memory JSON analyze result before exiting (`--self-test-save`).
 
 ## Release 0.10.0 - 2026-10-30
 

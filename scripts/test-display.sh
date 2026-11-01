@@ -54,7 +54,7 @@ if [ -f "${fixture}" ]; then
 	printf '%s\n' "[display-test] running a JSON analyze operation in memory"
 	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
 		./build/bin/dosierskanilo-gui \
-		--self-test --self-test-operation analyze \
+		--self-test --self-test-operation analyze --self-test-save \
 		--self-test-delay 1200 "${fixture}"
 else
 	printf '%s\n' "[display-test] catalog fixture not found; skipping JSON smoke test."
