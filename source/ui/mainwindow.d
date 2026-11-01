@@ -105,6 +105,7 @@ import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL
 import ui.contextpaths : resolveDocumentSourcePath;
 import ui.dataexport : loadFilteredExportRows, writeRowsCsv, writeRowsJson;
 import ui.nestedentrylogic : prepareNestedEntryPage;
+import ui.splitterlayout : clampSplitPosition;
 import ui.nestedentrysignals : NestedPageActivation, bindNestedPageActivation,
     nestedEntryReplyMatches;
 import ui.directoryactions : toggleDirectoryExpansion, toggleDirectorySubtree;
@@ -2360,37 +2361,20 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
             minPosition = minimumListWidth(document);
         }
-        if (requestedPosition < minPosition)
+        const auto clampedPosition = clampSplitPosition(requestedPosition,
+            totalExtent, minPosition, maxPosition);
+        if (clampedPosition != requestedPosition)
         {
-            logLineVerbose("[layout] clamp low ", document.filePath,
+            logLineVerbose("[layout] clamp ", document.filePath,
                 ": requested=", requestedPosition,
+                ", clamped=", clampedPosition,
                 ", min=", minPosition,
                 ", max=", maxPosition,
                 ", totalExtent=", totalExtent,
                 ", natural=", naturalListWidth(document),
                 ", minimum=", minimumListWidth(document));
-            return minPosition;
         }
-        if (requestedPosition > maxPosition)
-        {
-            logLineVerbose("[layout] clamp high ", document.filePath,
-                ": requested=", requestedPosition,
-                ", min=", minPosition,
-                ", max=", maxPosition,
-                ", totalExtent=", totalExtent,
-                ", natural=", naturalListWidth(document),
-                ", minimum=", minimumListWidth(document));
-            return maxPosition;
-        }
-        // logLineVerbose("[layout] clamp ok ", document.filePath,
-        //     ": orientation=", cast(int) orientation,
-        //     ", totalExtent=", totalExtent,
-        //     ", requested=", requestedPosition,
-        //     ", min=", minPosition,
-        //     ", max=", maxPosition,
-        //     ", natural=", naturalListWidth(document),
-        //     ", minimum=", minimumListWidth(document));
-        return requestedPosition;
+        return clampedPosition;
     }
 
     /** Estimate the natural width required to show the blob list columns without truncating the split too early. */
