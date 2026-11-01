@@ -12,7 +12,8 @@ All notable changes to this project are documented in this file.
   modify the tab, the label marks unsaved changes, and Save (Ctrl+S), close, and
   window close offer save/discard/cancel. Saves detect external file changes
   instead of overwriting them; SQLite tabs remain transactional without a dirty
-  marker.
+  marker. Reloading a modified JSON tab asks to save or discard, and File →
+  Revert to Stored restores the catalog from disk.
 
 ## Release 0.10.0 - 2026-10-30
 

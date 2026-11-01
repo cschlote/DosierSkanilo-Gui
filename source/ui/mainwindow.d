@@ -4754,6 +4754,78 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
     }
 
+    /** Offer save/discard/cancel before reloading a modified document from disk. */
+    bool confirmDocumentReload(DocumentTab document)
+    {
+        if (document is null || !document.modified
+            || document.catalogDocument is null)
+            return true;
+        auto dialog = new MessageDialog(window, DialogFlags.MODAL,
+            MessageType.WARNING, ButtonsType.NONE,
+            "Save changes to '" ~ baseName(document.filePath) ~ "' before reloading?");
+        dialog.setTitle("Unsaved changes");
+        dialog.addButton("_Cancel", ResponseType.CANCEL);
+        dialog.addButton("_Discard", ResponseType.REJECT);
+        dialog.addButton("_Save", ResponseType.ACCEPT);
+        const response = dialog.run();
+        dialog.destroy();
+        if (response == cast(int) ResponseType.ACCEPT)
+        {
+            try
+            {
+                document.catalogDocument.save();
+                setDocumentModified(document, false);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                document.status.setText("Could not save the catalog: " ~ ex.msg);
+                return false;
+            }
+        }
+        if (response == cast(int) ResponseType.REJECT)
+        {
+            document.catalogDocument.discard();
+            setDocumentModified(document, false);
+            return true;
+        }
+        return false;
+    }
+
+    /** Discard in-memory changes and show the stored catalog again. */
+    void revertCurrentDocument()
+    {
+        auto document = currentDocument();
+        if (document is null || document.catalogDocument is null)
+            return;
+        if (document.modified)
+        {
+            auto dialog = new MessageDialog(window, DialogFlags.MODAL,
+                MessageType.WARNING, ButtonsType.NONE,
+                "Discard unsaved changes to '"
+                ~ baseName(document.filePath) ~ "'?");
+            dialog.setTitle("Revert catalog");
+            dialog.addButton("_Cancel", ResponseType.CANCEL);
+            dialog.addButton("_Revert", ResponseType.ACCEPT);
+            const response = dialog.run();
+            dialog.destroy();
+            if (response != cast(int) ResponseType.ACCEPT)
+                return;
+        }
+        try
+        {
+            document.catalogDocument.discard();
+            setDocumentModified(document, false);
+            document.reloadFromDocument = false;
+            document.status.setText("Reverted to the stored catalog.");
+            loadDocument(document, false);
+        }
+        catch (Exception ex)
+        {
+            document.status.setText("Could not revert the catalog: " ~ ex.msg);
+        }
+    }
+
     closeDocumentTab = (DocumentTab document) {
         if (document.operationRunning)
         {
@@ -4803,6 +4875,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
     saveMenuItem.addOnActivate((MenuItem _) { saveCurrentDocument(); });
     fileMenu.append(saveMenuItem);
     attachMenuAccelerator(saveMenuItem, 's');
+
+    auto revertMenuItem = new MenuItem("_Revert to Stored");
+    revertMenuItem.addOnActivate((MenuItem _) { revertCurrentDocument(); });
+    fileMenu.append(revertMenuItem);
 
     /** Open a document in a tab, selecting it optionally, without forcing a reload. */
     openDocumentFromPath = (string filePath, bool selectTab, bool addToRecent) {
@@ -6387,7 +6463,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             },
             () { return busyDocument; },
             () { return clearSavedWindowGeometryOnExit; },
-            (DocumentTab document, bool fitHorizontalSplitAfterLoad) { loadDocument(document, fitHorizontalSplitAfterLoad); }
+            (DocumentTab document, bool fitHorizontalSplitAfterLoad) { if (confirmDocumentReload(document)) loadDocument(document, fitHorizontalSplitAfterLoad); }
         ));
     });
 
@@ -6535,7 +6611,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     () { return isLoading; },
                     () { return busyDocument; },
                     () { return clearSavedWindowGeometryOnExit; },
-                    (DocumentTab document, bool fitHorizontalSplitAfterLoad) { loadDocument(document, fitHorizontalSplitAfterLoad); }
+                    (DocumentTab document, bool fitHorizontalSplitAfterLoad) { if (confirmDocumentReload(document)) loadDocument(document, fitHorizontalSplitAfterLoad); }
                 ));
             },
             () { relayoutCurrentDocument(); },

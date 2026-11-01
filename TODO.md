@@ -192,7 +192,8 @@ in-memory document; SQLite tabs commit directly and have no dirty state.
   show it in the tab label.
 - [x] Offer save/discard/cancel when closing a modified JSON document or the
   window; keep the document modified when saving fails.
-- [ ] Prompt on reload/revert and add an explicit discard action in the UI.
+- [x] Prompt on reload and add an explicit revert-to-stored action in the File
+  menu.
 - [x] Compare a load-time file fingerprint before saving so external edits are
   reported instead of overwritten.
 - [x] Do not show a dirty marker for SQLite tabs; a future long-transaction
