@@ -115,9 +115,10 @@ retains its per-document store behind `GtkTreeModelFilter`. See
 - [x] Add `scripts/benchmark-filters.sh` (headless release benchmark) and record
   filter/tree projection latency plus used heap: 1k rows 0.2/0.6 ms/0.2 MiB,
   10k 2.4/5.4 ms/1.8 MiB, 100k 22.1/51.6 ms/15.3 MiB.
-- [ ] Profile Blob-table rendering at 95,001 rows on a supported display,
-  including GC allocation behavior and batch time; repeat against a SQLite
-  catalog.
+- [x] Smoke-load a 95,001-record Blob table from JSON and from an imported
+  SQLite catalog under Xvfb and log the wall time.
+- [ ] Profile detailed GC allocation behavior and per-batch rendering times for
+  the same 95,001-row datasets.
 
 **Acceptance:** filter changes update the visible projection without clearing or
 recreating existing source nodes; matching descendants keep their ancestor paths
