@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Verbose loading now reports JSON index, backend, row, tree, render, and total
+  timing plus current/peak RSS, making multi-million-record catalog diagnostics
+  actionable.
+
 - Archive directories and archive files in the main tree now expand on the
   first selection click; the loaded children no longer leave the row collapsed
   until a second click. Catalog rows without a legacy blob again resolve their

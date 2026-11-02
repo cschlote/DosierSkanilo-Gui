@@ -97,6 +97,9 @@ verbose diagnostics make future allocation/sink failures understandable.
       found.
 - [ ] Make module-level Ddoc headers consistent across all GUI modules
       (`Authors`/`License`), not only the recently touched files.
+- [ ] Add a size guard/warning when opening very large JSON catalogs directly
+      and point users to repository import; direct JSON tabs keep the whole
+      catalog and derived index in memory.
 
 ## Completed work (compact record)
 
