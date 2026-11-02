@@ -83,6 +83,8 @@ dub build --compiler=ldc2
 Open JSON files from `File` > `Open JSON File`, or repository directories from
 `File` > `Open Repository Directory`. A selected directory may be the repository
 root or any directory below it; the nearest `.dosierskanilo` directory is used.
+For multi-million-record catalogs, import the JSON into a repository first:
+direct JSON tabs keep the complete catalog and derived index in memory.
 
 ## Startup Controls
 
