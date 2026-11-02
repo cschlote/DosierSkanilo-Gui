@@ -94,6 +94,41 @@ string metadataPresenceSummary(bool value)
     return value ? format("%s present", boolStatusIcon(true)) : format("%s none", boolStatusIcon(false));
 }
 
+/** Summarize current and peak resident memory for verbose diagnostics.
+ *
+ * Returns: A compact ` rss=... peak=...` suffix, or an empty string when the
+ *     platform does not expose `/proc/self/status`.
+ */
+string processMemorySummary()
+{
+    version (linux)
+    {
+        import std.algorithm.searching : startsWith;
+        import std.file : readText;
+        import std.string : splitLines, strip;
+
+        try
+        {
+            string rss;
+            string peak;
+            foreach (line; readText("/proc/self/status").splitLines())
+            {
+                if (line.startsWith("VmRSS:"))
+                    rss = line[6 .. $].strip;
+                else if (line.startsWith("VmHWM:"))
+                    peak = line[6 .. $].strip;
+            }
+            if (rss.length > 0 || peak.length > 0)
+                return " rss=" ~ (rss.length > 0 ? rss : "?")
+                    ~ " peak=" ~ (peak.length > 0 ? peak : "?");
+        }
+        catch (Exception)
+        {
+        }
+    }
+    return "";
+}
+
 /** Log the measured phase timings for a document tab.
  *
  * Params:
@@ -108,7 +143,7 @@ void updatePerfStatus(DocumentTab document)
         " load=", document.lastLoadElapsedMs >= 0 ? to!string(document.lastLoadElapsedMs) : "-",
         "ms filter=", document.lastFilterElapsedMs >= 0 ? to!string(document.lastFilterElapsedMs) : "-",
         "ms render=", document.lastRenderElapsedMs >= 0 ? to!string(document.lastRenderElapsedMs) : "-",
-        "ms");
+        "ms", processMemorySummary());
 }
 
 /** Log the parsed format metadata for a document tab.

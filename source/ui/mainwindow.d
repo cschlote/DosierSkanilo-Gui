@@ -140,7 +140,7 @@ import ui.loadingstatus;
 import ui.jsonfilter : JsonFilterOptions, filterJsonRows, projectRowsToDirectoryTree;
 import ui.preferencesdialog : PreferencesDialogCallbacks, showPreferencesDialog;
 import ui.selectionstatus : boolStatusIcon, checksumStatusSummary, clearSelectionDetails,
-    mediaInfoStatusSummary, metadataPresenceSummary, resetFilterState, resetPerfMetrics, updateFileMetaStatus, updatePerfStatus;
+    mediaInfoStatusSummary, metadataPresenceSummary, processMemorySummary, resetFilterState, resetPerfMetrics, updateFileMetaStatus, updatePerfStatus;
 import ui.styles : installApplicationCss;
 import ui.toolbarbindings : ToolbarBindingsCallbacks, bindFilterSignals,
     bindToolbarButtons, captureDocumentFilterState;
@@ -1010,6 +1010,7 @@ void renderDirectoryTree(DocumentTab document, DirectorySource source,
     string[] expandedIds, FileFilter filter = FileFilter(),
     TreeSortOrder order = TreeSortOrder.nameAscending)
 {
+    auto renderStarted = MonoTime.currTime;
     auto store = document.directoryTreeStore;
     auto treeView = document.directoryTreeView;
     string previousSelectionId;
@@ -1071,6 +1072,9 @@ void renderDirectoryTree(DocumentTab document, DirectorySource source,
     if (previousSelectionId.length > 0)
         document.pendingTreeRevealFileId = previousSelectionId;
     selectPendingTreeFile(document);
+    logLineVerbose("[tree] rendered ", document.filePath, " elapsedMs=",
+        cast(long) (MonoTime.currTime - renderStarted).total!"msecs",
+        " rootChildren=", store.iterNChildren(root));
 }
 
 /** Keep the current tree visible while its background filter runs. */
@@ -5521,6 +5525,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                                 result.sourceRoot);
                         }
                     }
+                    logLineVerbose("[load-worker] backend ready ",
+                        document.filePath, " elapsedMs=",
+                        cast(long) (MonoTime.currTime - started).total!"msecs");
                 }
                 if (backend !is null)
                 {
@@ -5553,6 +5560,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         result.pageTotal = page.total;
                     }
                     result.pagedSource = true;
+                    logLineVerbose("[load-worker] rows ready ",
+                        document.filePath, ": rows=", result.allRows.length,
+                        " total=", result.pageTotal, " elapsedMs=",
+                        cast(long) (MonoTime.currTime - started).total!"msecs");
                 }
                 else
                 {
@@ -5631,7 +5642,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 }
 
                 logLineVerbose("[load-worker] done ", document.filePath,
-                    ": rows=", result.allRows.length);
+                    ": rows=", result.allRows.length, " elapsedMs=",
+                    cast(long) (MonoTime.currTime - started).total!"msecs",
+                    processMemorySummary());
             }
             catch (Exception ex)
             {
@@ -5812,6 +5825,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 }
                 updateFileMetaStatus(document);
                 document.lastLoadElapsedMs = result.elapsedMs;
+                updatePerfStatus(document);
                 document.drainAfterRender = false;
 
                 if (isRepositorySource(document.filePath))
