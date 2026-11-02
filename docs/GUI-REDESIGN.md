@@ -464,21 +464,26 @@ a compatibility layer around the current table UI:
 9. Move stable, reusable projection and analysis code into `DosierSkanilo`.
    **Directory query DTOs and bounded queries are complete.**
 
-## Current Work Plan
+## Remaining Work
 
-The archive-member TreeView/extraction workflow is implemented. Remaining work
-is the CLI/GUI operation parity matrix and the explicitly deferred GTK layout
-issues; current GUI work is tracked in [`TODO.md`](../TODO.md). Large-catalog
-latency, GC allocation, and peak-memory measurements are recorded in `TODO.md`;
-per-batch display profiling remains follow-up verification.
+The archive-member TreeView/extraction workflow and the shared CLI/GTK operation
+matrix are implemented. Open GUI work is tracked in [`TODO.md`](../TODO.md):
 
-The shared CLI/GTK operation work is tracked as WP-09 in the backend's
+- release preparation for `0.11.0`
+- per-batch display profiling of the 95,001-row table
+- splitter persistence/sizing and video-preview realization/window-growth fixes
+- optional sibling prefetch and Wayland sink verification
+- distribution/install smoke checks and consistent module Ddoc headers
+
+Large-catalog latency, GC allocation, and peak-memory measurements are recorded
+in `TODO.md`; per-batch display profiling remains follow-up verification.
+
+The shared CLI/GTK operation work is recorded as WP-09 in the backend's
 [`SQLITE-IMPLEMENTATION-PLAN.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09).
-Its dependency order is intentional: agree the shared request/control contract,
-extend it with safe pause/resume semantics, make backend operations report
-progress and stop/pause safely, then build the CLI and GTK adapters, and finally
-verify parity. GTK must not introduce a second scanner or analysis
-implementation.
+The parity evidence is current; GTK must not introduce a second scanner or
+analysis implementation.
 
-The current pagination and BlobRow table are temporary implementation details.
-They may be removed once the new source and tree model are usable.
+`CatalogDirectorySource` and `CatalogBackend` are the current source/tree model.
+The legacy `ProjectedDirectorySource`, in-memory JSON projection, and BlobRow
+table remain for fallback, export, and tests; they are not the primary path for
+normal catalog-backed tabs.
