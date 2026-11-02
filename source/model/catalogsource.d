@@ -1,4 +1,8 @@
-/** Storage-neutral directory source over the catalog backend contract. */
+/** Storage-neutral directory source over the catalog backend contract.
+ *
+ * Authors: DosierSkanilo contributors
+ * License: GPL-3.0-only
+ */
 module model.catalogsource;
 
 import std.exception : enforce;
@@ -40,8 +44,9 @@ DirectorySource openCatalogDirectorySource(CatalogBackend backend,
  * Directory source backed by a catalog backend.
  *
  * Directory and file nodes are addressed by their source-relative paths, so
- * restored state resolves against a freshly opened backend instance. The
- * backend target is owned by this source and closed with it.
+ * restored state resolves against a freshly opened backend instance. The source
+ * closes the backend only when constructed with `ownBackend = true`; wrapper
+ * sources leave backend lifetime to the caller.
  */
 final class CatalogDirectorySource : DirectorySource
 {

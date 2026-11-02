@@ -2,10 +2,11 @@
 
 This document describes the current architecture of `DosierSkanilo-Gui`.
 
-The planned replacement for the current flattened `NamedBinaryBlob` table is
-documented in [GUI-REDESIGN.md](GUI-REDESIGN.md). `NamedBinaryBlob` remains the
-JSON/Jsonizer representation; it is not intended to be the long-term GUI view
-model.
+The tree-first view replaced the flattened `NamedBinaryBlob` table as the
+primary navigation surface; the blob table remains an alternative view. Design
+history and remaining UI work are documented in
+[GUI-REDESIGN.md](GUI-REDESIGN.md). `NamedBinaryBlob` remains the backend's JSON
+representation, not the GUI view model.
 
 The GUI browses DosierSkanilo JSON catalogs and initialized `.dosierskanilo`
 SQLite repositories. Its Tools actions invoke the shared backend scan, metadata,
@@ -14,10 +15,9 @@ GTK.
 
 WP-09.1 and WP-09.1b define the shared request, progress, cancellation, and
 pause/resume contract. Controlled backend executors, target leases, CLI adapters,
-and initial GUI Tools actions are implemented. Remaining parity and process-level
-verification is tracked in the backend plan:
-`https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md`
-(WP-09).
+and GUI Tools actions are implemented. Cross-process and display-backed
+verification evidence is recorded in the backend
+[OPERATION-PARITY.md](https://github.com/cschlote/DosierSkanilo/blob/main/docs/OPERATION-PARITY.md).
 
 The Tools workflow runs backend operations on background workers, reports
 phase/progress/results through the owning document tab, supports cooperative
@@ -41,11 +41,11 @@ JSON supports scan/analyze with optional metadata phases.
 
 1. User opens a JSON index file, repository root, or restores previously open
    tabs.
-2. The source adapter loads JSON through the legacy loader or reads the SQLite
-  repository through the DosierSkanilo library API.
-3. The source is projected into a GTK-independent `DirectorySource`.
-4. Directory children are loaded lazily; repository children use bounded SQLite
-   queries on background workers.
+2. The source adapter opens both JSON catalogs and SQLite repositories through
+   the shared `CatalogBackend`; JSON sessions bind a derived filesystem root.
+3. Backend directory queries are exposed through `CatalogDirectorySource`.
+4. Directory children are loaded lazily with bounded backend pages on background
+   workers.
 5. The directory tree is rendered as the primary navigation view. The flattened
    `BlobRow` table remains an alternative blob-oriented view.
 6. Selection details are shown in a split view with metadata expanders,
@@ -68,8 +68,9 @@ JSON supports scan/analyze with optional metadata phases.
 - `source/model/datasource.d`: JSON/repository source adapter
 - `source/view/textreport.d`: filtering and helper transformations
 
-Repository DTOs and bounded directory SQL queries live in the sibling
-`DosierSkanilo` library. The GUI does not access SQLite directly.
+Catalog DTOs, directory/file queries, archive pages, and SQLite access live in
+the sibling `DosierSkanilo` library behind `CatalogBackend`. The GUI does not
+access SQLite directly.
 
 ## 3. Startup CLI Layer
 
@@ -85,9 +86,9 @@ Supported startup controls include:
 The GUI opens JSON files and repository directories through the File menu, and
 also accepts them as positional startup arguments. Tools operation requests use
 explicit targets and are constructed by `operationrequests.d`; the task worker
-calls the public `dosierskanilo.operationrunner` API. Repository queries use
-bounded backend DTOs/pages; JSON retains a full-load compatibility source with
-shared catalog read leases around file parsing.
+calls the public `dosierskanilo.operationrunner` API. Both storage modes use
+bounded `CatalogBackend` DTOs/pages. The legacy full-load JSON parser remains
+only for filtered export, archive-scan helpers, and tests.
 Nested repository details are fetched asynchronously when a row is selected.
 Directory expansion and additional file pages use the same background-query
 pattern. Known file references can be navigated independently of the blob row.
@@ -96,13 +97,14 @@ pattern. Known file references can be navigated independently of the blob row.
 
 - classic menu bar
   - `File`: open, reload, close tab, cancel operation, quit
-  - planned `Tools` actions: start supported operations, pause/resume at safe
-    checkpoints, and cancel
+  - `Tools`: start supported operations, pause/resume at safe checkpoints, and
+    cancel
   - `Edit`: filter actions, metrics reset, preferences
   - `Help`: shortcuts, about
 - toolbar with load/filter controls
 - primary lazy directory `TreeView`
-- alternative `TreeView`/`ListStore` blob table
+- alternative blob table: ListStore rows for JSON tabs and a virtual
+  cursor-backed model for repositories
 - split-view details column and Previewer, separated by a horizontal splitter
 - vertically scrollable detail expanders for metadata and known-file information
 - large scrollable text content in the Previewer, with filesystem attributes in
@@ -120,11 +122,11 @@ a second `DirectoryTree` per filter. SQLite filter loads query the materialized
 directory IDs in the worker and reconcile returned rows into the existing store.
 The view is refiltered after row visibility is updated on GTK's main loop.
 
-File-reference identity is separate from Blob identity and filtered-array order:
-JSON keys combine source-row and reference ordinals, while SQLite keys use the
-file-reference cursor ID. The Blob ID remains separate for detail lookups. A
-directory remains visible when it has a matching descendant; placeholders and
-page markers follow the same visibility index. Filter changes preserve existing
+Catalog-backed JSON and repository rows use source-relative paths for tree,
+table, cursor, and detail identity. The legacy JSON ordinal scheme remains only
+in the `ProjectedDirectorySource` fallback and tests. A directory remains visible
+when it has a matching descendant; placeholders and page markers follow the same
+visibility index. Filter changes preserve existing
 node identity, sorting, selection, and expansion, while new rows are upserted by
 stable ID. Clearing a filter restores existing rows and asynchronously fills
 already-materialized directories from the unfiltered source.
@@ -132,8 +134,10 @@ already-materialized directories from the unfiltered source.
 Matching and index construction run off the GTK thread. GTK model writes and
 `GtkTreeModelFilter.refilter()` run on the main loop; filter visibility reads a
 precomputed ID lookup and never calls a backend query. Tests cover filter
-predicates, stable IDs, ancestor visibility, and canonical-row retention. Large
-tree latency, allocation churn, and peak-memory measurements remain a follow-up.
+predicates, stable IDs, ancestor visibility, and canonical-row retention.
+Headless filter/tree latency, allocation, and peak-memory measurements are
+recorded in `TODO.md`; per-batch 95,001-row display profiling remains a
+follow-up.
 
 ## 6. GC-Friendly GUI Algorithms
 
@@ -147,10 +151,10 @@ Keep caches bounded, mutable scratch worker-local, and large temporary results
 short-lived. Measure repeated filter cycles, GC behavior where tooling permits,
 and peak memory on representative JSON and SQLite sources.
 
-The planned archive extraction cache is shared by member scraping, checksums,
-file type, MediaInfo, preview, and optional sibling prefetch. Cache leases pin
-entries while a preview or extractor uses them; eviction must not interrupt an
-active user. The cache uses an application-owned per-session directory, is
+The shared archive extraction cache is used by member scraping, checksums, file
+type, MediaInfo, and preview; optional same-directory sibling prefetch remains
+planned. Cache leases pin entries while a preview or extractor uses them;
+eviction must not interrupt an active user. The cache uses an application-owned per-session directory, is
 removed after workers and previews stop at shutdown, and is never represented as
 a persistent catalog file reference. JSON defaults to OS temporary storage;
 SQLite uses a configurable cache base. A RAM-backed filesystem may be selected as

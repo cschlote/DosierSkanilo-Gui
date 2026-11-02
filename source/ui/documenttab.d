@@ -1,8 +1,11 @@
 /** Per-document UI state, bindings, and preview state for one open tab.
  *
  * The document tab keeps the table model, detail widgets, preview widgets, and
- * filter state for a single loaded JSON document together so the UI layer can
- * update it consistently.
+ * filter state for one open JSON catalog or SQLite repository document together
+ * so the UI layer can update it consistently.
+ *
+ * Authors: DosierSkanilo contributors
+ * License: GPL-3.0-only
  */
 module ui.documenttab;
 
@@ -110,7 +113,7 @@ PreviewScaleMode clampPreviewScaleMode(int value)
     return cast(PreviewScaleMode) value;
 }
 
-/** Per-document UI and data state for one open JSON file tab. */
+/** Per-document UI and catalog state for one JSON or repository tab. */
 class DocumentTab
 {
     string filePath;

@@ -47,7 +47,7 @@ Better left in D are:
 
 ## Possible Next Steps
 
-- Move the remaining top-level window shell, toolbar, and menu layout into Glade if that structure is expected to stay stable.
+- Move remaining runtime-created menu items and dialogs to Builder where their structure is stable; the window shell, menu bar, toolbar, and notebook are already builder-defined.
 - Consider a Builder template or composite widget for repeated detail rows if a subpanel becomes reusable across tabs.
 - Add more builder-defined defaults for panes, scroll containers, and labels so D only changes them when user state or loaded data requires it.
 - Revisit whether more runtime-only widget creation can be replaced with predefined builder objects plus explicit fallback handling.
