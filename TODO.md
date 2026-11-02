@@ -1,289 +1,120 @@
 # GUI Work Plan
 
-This file tracks active GUI work and GUI-owned follow-ups. The shared scan,
-metadata, and analysis operation plan is maintained in
-[`DosierSkanilo/docs/SQLITE-IMPLEMENTATION-PLAN.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md).
-Completed implementation history is in `CHANGELOG.md`; completed integration
-and verification coverage is summarized in `docs/GUI-REDESIGN.md`.
-
-## P0 — Finish asynchronous JSON filtering
-
-Status: **complete and verified**.
-
-The current changes move construction of filtered JSON tree projections away
-from the GTK main thread and add indexes for directory-child and per-directory
-file lookup. Finish this as one bounded change before starting another GUI
-refactor.
-
-- [x] Review the filter lifecycle for apply, clear, changing tabs, loading a new
-  source, and cancelling while filtering. A late result must not replace a newer
-  filter or source; cancellation must restore a usable tree and table.
-- [x] Verify the unfiltered JSON tree/source remains available after applying a
-  filter and is restored by Clear. A filtered projection must not accidentally
-  become the next filter's source.
-- [x] Persist whether each document's filter is applied; reapply an active saved
-  filter after JSON source binding even if global auto-filter is disabled, then
-  restore expanded directories against that filtered tree. New documents start
-  empty rather than inheriting the previous tab's filter.
-- [x] Persist Blob-table sort column/direction per document and use the existing
-  Directory tree / Blob table notebook tabs instead of a redundant view dropdown.
-- [x] Verify text case sensitivity, media negation, file-type/archive/torrent
-  presence filters, sorting, and directory visibility match the JSON
-  `DirectorySource` semantics. Blob/catalog case-sensitive parity is verified
-  separately under backend WP-10.1.
-- [x] Exercise large directory/file projections and confirm indexed lookups do
-  not change results or require repeated full-tree scans during rendering.
-- [x] Run GUI unit tests/build, `git diff --check`, GTK-independent
-  lifecycle/filter projection tests, and the opt-in GTK tree-loading test. There
-  is no dedicated display-driven filter lifecycle test yet.
-
-**Acceptance:** filtering does not freeze GTK while computing the JSON
-projection; Clear/cancel and rapid successive requests leave the active document
-in a consistent state; JSON filter results retain the established filter and
-sort semantics; the normal verification commands pass.
-
-## P1 — Restore Blob-table filter parity (WP-10.1)
-
-Status: **complete and verified**.
-
-The review found a real gap between case-sensitive tree filtering and the
-repository Blob/catalog query. The backend option and GUI adapter propagation are
-implemented and verified under WP-10.1:
-
-- [x] Add the active case-sensitivity preference to `SourceQuery` and propagate
-  it through GUI catalog offset/cursor requests to `RepositoryQueryOptions`.
-- [x] Verify the Blob table and directory tree return the same path matches for
-  mixed-case names in JSON and SQLite documents.
-- [x] Verify exact SHA1 matches remain independent of path case and cursor
-  navigation remains stable after the path filter is applied.
-
-**Acceptance:** one preference produces matching results in the JSON/SQLite
-tree and Blob-table views; regression coverage exists at backend and GUI adapter
-boundaries. Backend API/SQL scope and dependency are defined in WP-10.1.
-
-## P1 — Complete shared CLI/GTK operations
-
-The initial WP-09.4 GUI task manager is implemented: Tools actions construct the
-shared requests, run them on workers, marshal progress to GTK, expose safe
-pause/resume/cancel controls, and reload the affected tab after success. Backend
-WP-09.5 remains the source of truth for cross-frontend parity; its current matrix
-and remaining process/display checks are in the backend's `docs/OPERATION-PARITY.md`.
-
-- [x] Add target-aware Tools actions for repository/JSON scan and analysis and
-  repository metadata extraction.
-- [x] Run requests on background workers, display backend progress, and marshal
-  all widget updates to the GTK main loop.
-- [x] Connect Cancel/Pause/Resume to backend operation control and retain the
-  operation's target lease until completion.
-- [x] Refresh the affected document after successful mutations and prevent tab
-  closure while its operation is draining.
-- [x] Add GTK-independent task-manager lifecycle tests for stale/foreign events,
-  invalid transitions, terminal results, and refresh decisions.
-- [x] Add an Xvfb-backed display test job that runs the GUI unit suite with the
-  display-gated scroll test and startup/self-test runs for JSON and repository
-  documents.
-- [x] Extend the display suite to start scan, metadata, and analyze through the
-  Tools path and verify progress/status handling plus the post-operation refresh
-  trigger before quitting.
-- [x] Exercise pause/resume and cancellation in the display suite through a
-  synthetic operation that reports progress and honors control checkpoints.
-- [x] Verify that the post-operation reload completes in the owning tab before
-  the self-test exits (10s timeout fails the run).
-- [ ] Complete WP-09.5 CLI/GUI result, progress, cancellation, error, refresh, and
-  explicit storage-mode parity coverage.
-
-## P1 — Reuse directory TreeView nodes across filter changes
-
-Status: **implemented for JSON and SQLite filter changes**. The former path
-created a new JSON projection and cleared the GTK `TreeStore`; the current path
-retains its per-document store behind `GtkTreeModelFilter`. See
+Current GUI work and GUI-owned follow-ups. Shared backend operations are planned
+in the backend's
+[`docs/SQLITE-IMPLEMENTATION-PLAN.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md);
+completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
 [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md).
 
-- [x] Define stable tree-node IDs that survive filtering/sorting and distinguish
-  file-reference paths from their Blob IDs; preserve materialized rows when a
-  filter changes or is cleared.
-- [x] Compute match state and visible ancestors off the GTK thread, then update
-  the filtered model on the GTK main loop. Visibility callbacks must not perform
-  source queries or recursive descendant scans.
-- [x] Reconcile lazy SQLite results by stable ID, reusing existing rows and only
-  inserting newly materialized nodes; keep paging/query caches bounded.
-- [x] For JSON, reuse the one loaded/indexed source and a compact match index;
-  do not rebuild a complete `DirectoryTree` and GTK model on every filter.
-- [x] Preserve selection, expansion, sort, placeholder/loading states, and exact
-  text/media/presence/negation semantics through apply/change/clear cycles.
-- [x] Add GTK model tests for underlying node retention and result parity.
-- [x] Add `scripts/benchmark-filters.sh` (headless release benchmark) and record
-  filter/tree projection latency plus used heap: 1k rows 0.2/0.6 ms/0.2 MiB,
-  10k 2.4/5.4 ms/1.8 MiB, 100k 22.1/51.6 ms/15.3 MiB.
-- [x] Smoke-load a 95,001-record Blob table from JSON and from an imported
-  SQLite catalog under Xvfb and log the wall time.
-- [x] Benchmark GC allocation/collection behavior headlessly: at 100k rows the
-  filter takes 21.3 ms, tree projection 49.7 ms, one GC cycle 4.1 ms, and 19.9
-  MiB are allocated (22.9 MiB peak heap).
-- [ ] Profile per-batch rendering times of the 95,001-row table on a display.
+## Current status (2026-11-02)
 
-**Acceptance:** filter changes update the visible projection without clearing or
-recreating existing source nodes; matching descendants keep their ancestor paths
-visible; repeated filtering is GC-friendly and preserves existing behavior. Unit
-tests and the display-backed startup/filter smoke test pass.
+- Version `0.10.0`; JSON and repository tabs both use `CatalogBackend`.
+- JSON tabs have explicit document sessions with modified markers,
+  Save/Revert, and save/discard/cancel prompts; SQLite tabs remain
+  transactional.
+- The main tree expands archive files lazily, synthesizes inner archive
+  directories, expands on the first selection click, and previews/extracts
+  members through the shared cache.
+- The GUI Xvfb display job and the shared CLI/GTK operation matrix are green on
+  `testing` and `main`. GUI verification: 73 tests, coverage 36.46 %, build
+  clean.
+- Documentation and Ddoc headers were refreshed on 2026-11-02.
 
-## P1 — Archive member TreeView and shared extraction cache (WP-13.5)
+## P0 — Prepare the next GUI release
 
-Status: **implemented** — lazy archive-member expansion, synthesized inner
-archive directories, first-selection expansion, nested members, shared-cache
-previews, cache settings, and shutdown cleanup. The archive file remains the
-expandable file row; the GUI does not create a second sibling folder or persist
-cache paths.
+Target: `0.11.0` (minor release for the backend-backed JSON views, archive tree
+workflow, and JSON document save semantics).
 
-- [x] Give `hasArchive` file rows an async TreeView expander. Expanding lists safe
-  entries lazily; selecting a member extracts it for preview. Nested archives
-  use the same flow, and visible names hide the duplicate-occurrence path suffix.
-- [x] Carry the structured container/entry locator through JSON and SQLite
-  directory/file sources. Use the virtual path only as a reversible reference
-  spelling (`!/`, `!!`, `!~N`), not as an OS path or the primary identity.
-- [x] Add one shared extraction-cache service for preview, checksums, File Type,
-  MediaInfo, archive scans, and optional prefetch. Coalesce in-flight requests,
-  pin active previews, bound size/workers, and never persist cache paths as
-  `FileSpec` references.
-- [x] Add cache preferences: JSON defaults below OS temp; SQLite uses a
-  configurable local cache base and a per-session subdirectory. Remove the
-  session cache on normal exit and sweep only application-owned stale sessions
-  at startup. A RAM disk can be selected as the cache base. Preview threads are
-  stopped best-effort; the backend refuses to close while leases are active.
-- [x] Join archive preview worker threads before cache cleanup so a normal exit
-  always removes the current session instead of deferring it to process exit.
-- [ ] Keep same-directory sibling prefetch disabled by default. When enabled,
-  make it cancellable, bounded, and use the same cache leases as foreground
-  preview/extraction.
-- [x] During explicit deep scans, process every safely selectable non-directory
-  member using one cache lease for checksums and the selected metadata extractors;
-  persist metadata against the member content blob, not the temporary path
-  (verified for encrypted containers in the backend repository tests).
-- [x] Test `!` escaping, duplicate occurrence IDs, unsafe paths, and nested
-  member identities for both storage modes.
-- [x] Test encrypted-container extraction cancellation (typed `cancelled` in
-  both adapters) plus cache eviction/pinning and stale-session cleanup in the
-  shared cache tests.
-- [ ] Test sibling-prefetch cancellation once prefetch is implemented.
+- [ ] Confirm the paired backend release version and run
+      [`DosierSkanilo/docs/RELEASE-CHECKLIST.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/RELEASE-CHECKLIST.md)
+      end to end.
+- [ ] Move `## Unreleased` to `## Release 0.11.0` in `CHANGELOG.md`, update the
+      package version, and commit the release notes.
+- [ ] Create the annotated `v0.11.0` tag after the backend tag is ready; verify
+      that the tag workflow validates tag/VERSION/CHANGELOG and publishes the
+      release.
+- [ ] Re-run the Xvfb display suite and the 95,001-row JSON/SQLite smoke loads
+      as release evidence.
+- [ ] Update packaging metadata (Arch, Fedora, Flatpak) for `0.11.0`, verify
+      the paired Flatpak/source archive hashes, and launch the installed
+      package.
 
-**Acceptance:** selecting an archive member displays it in the normal Previewer;
-scraped metadata survives cache eviction, no cache paths enter JSON/SQLite source
-references, and shutdown removes the current session's extracted files.
+## P1 — Finish verification and performance work
 
-## P1 — WP-13.6.2: storage-neutral catalog access in the GUI
+- [ ] Profile per-batch rendering of the 95,001-row table on a display and
+      record the result in `TODO.md`/the benchmark notes. Headless filter/tree
+      and allocation numbers are already recorded.
+- [ ] Confirm the final WP-09.5 CLI/GUI result, progress, cancellation, error,
+      refresh, and explicit storage-mode parity evidence stays complete when
+      either HMI changes; keep the backend parity table in sync.
+- [ ] Re-run the shared display self-tests after any tree/preview change:
+      archive expansion, member preview, JSON save/reload, and repository
+      operation refresh.
 
-Status: **complete**. Repository documents read trees, content rows, details,
-archive/torrent entry pages, and member previews through `CatalogBackend`.
-Archive rescans and password updates also use the shared operation/backend
-surface. Tree and cursor identities are source-relative paths, and the backend
-is held per document so page cursors stay valid.
-
-- [x] Use path-based node identities in the GUI tree and table, so restored
-  state resolves with `resolveDirectory`/`resolveReference` and never stores
-  adapter tokens or UI handles.
-- [x] Load content rows via `listContents` and details via `loadContent`.
-- [x] Route archive member previews through `acquireMemberContent` and drop the
-  GUI-owned repository extraction path.
-- [x] Keep CLI/GUI operation parity covered when the source abstraction changes.
-- [x] Run repository archive rescans through `runOperation` instead of calling
-  `Repository.updateMetadata` directly.
-- [x] Store archive passwords through `CatalogBackend.setArchivePassword`, so
-  JSON and repository documents no longer need storage-specific writers.
-- [x] Remove the unused repository-specific GUI load helpers; tests exercise the
-  backend loaders instead.
-
-## P1 — JSON document save semantics
-
-Status: **implemented and verified**. JSON tabs use an in-memory catalog session
-with modified markers, Save/Revert, and save/discard/cancel prompts; SQLite tabs
-remain transactional without dirty state.
-
-- [x] Track a modified flag for JSON document tabs after in-memory mutations and
-  show it in the tab label.
-- [x] Offer save/discard/cancel when closing a modified JSON document or the
-  window; keep the document modified when saving fails.
-- [x] Prompt on reload and add an explicit revert-to-stored action in the File
-  menu.
-- [x] Compare a load-time file fingerprint before saving so external edits are
-  reported instead of overwritten.
-- [x] Do not show a dirty marker for SQLite tabs; a future long-transaction
-  indicator is a separate concept.
-
-## P2 — Backend-backed JSON views
-
-Status: **complete**. JSON tabs are backend-backed after binding a derived tree
-root, so rows, tree, details, archive/torrent pages, and previews use the same
-`CatalogBackend` paths as repository tabs.
-
-- [x] Split the GUI's `directorySourceRemote` meaning into storage mode
-  (`repositoryStorage`) and backend-backed views; JSON becomes backend-backed
-  once a tree root is bound.
-- [x] Load JSON rows, tree, details, archive/torrent pages, and previews through
-  `CatalogBackend` like repository tabs.
-- [x] Remove the `documentBlobs()` snapshot bridge and the duplicate JSON load.
-- [x] Keep the CLI/GUI operation parity and modified/save semantics unchanged.
-
-## P2 — Stabilize GTK layout and video preview
-
-The following are separate user-visible issues. Reproduce and log each before
-changing allocation or persistence code, so fixes can be evaluated independently.
+## P1 — Stability and UX follow-ups
 
 ### Splitter persistence and sizing
 
 - [ ] Reproduce the top-level splitter returning to an extreme position after a
-  fresh load, reload, tab switch, and application restart.
-- [ ] Reproduce preview/details splitter restoration after those same lifecycle
-  transitions, including startup before the first real GTK allocation.
-- [ ] Define which saved position wins (new window default versus per-window
-  restored value), clamp only after a usable allocation, and avoid saving
-  transient/unallocated positions.
+      fresh load, reload, tab switch, and application restart.
+- [ ] Reproduce preview/details splitter restoration after those lifecycle
+      transitions, including startup before the first real GTK allocation.
+- [ ] Define which saved position wins (new-window default versus per-window
+      restored value), clamp only after a usable allocation, and avoid saving
+      transient/unallocated positions.
 - [x] Verify the pane clamp keeps both panes usable at narrow extents; covered
-  by `ui.splitterlayout` unit tests.
+      by `ui.splitterlayout` unit tests.
 - [ ] Verify the chosen split positions survive a restart.
 
 ### Video preview realization and window growth
 
 - [ ] Reproduce first-selection video playback where audio starts but the video
-  frame stays blank; capture widget realization, sink attachment, and allocation
-  order in verbose logs.
+      frame stays blank; capture widget realization, sink attachment, and
+      allocation order in verbose logs.
 - [ ] Reproduce horizontal window growth when switching between video rows and
-  determine whether the sink, aspect frame, or preferred video size requests the
-  extra width.
+      determine whether the sink, aspect frame, or preferred video size requests
+      the extra width.
 - [ ] Ensure a failed or delayed video sink falls back without blocking other
-  preview controls or changing the parent window's requested width.
+      preview controls or changing the parent window's requested width.
 - [ ] Verify first and subsequent video selections on the supported GTK display
-  backends, and retain audio/image preview behavior.
+      backends, and retain audio/image preview behavior.
 
-**Acceptance for both layout tasks:** the reproduction steps are documented, the
-fix is verified through the GTK self-test or a repeatable manual test, and
+**Acceptance for both stability packages:** reproduction steps are documented,
+the fix is verified through the GTK self-test or a repeatable manual test, and
 verbose diagnostics make future allocation/sink failures understandable.
 
-## P3 — UI maintenance and portability
+## P2 — Optional and delivery work
 
-These are lower-priority cleanup packages; start them only when they have a
-specific visual or compatibility outcome to verify.
-
-- [x] Replace `overrideFont` monospace styling with reusable CSS classes and a
-  shared `CssProvider` (`source/ui/styles.d`); digest, status, title, and preview
-  summary styling now come from application CSS classes.
-- [x] Remove obsolete `double-buffered` Builder properties and confirm preview
-  rendering remains correct on the supported GTK baseline.
-- [x] Isolate the `gtksink` → `ximagesink` fallback order in `ui.videooutput`,
-  unit-test it, and add a display self-test that verifies at least one embedded
-  sink is available on the Xvfb/X11 CI display.
-- [ ] Manually verify the same preference on a Wayland session.
-- [x] Audit builder files for static styling duplication: widget properties are
-  already declared in the `.ui` files and no runtime duplication worth moving
-  remains.
-
-## P4 — Deferred product and delivery work
-
-- [x] Add archive password prompting and filename-based persistence for JSON
-  catalogs and repositories, including the archive scan retry flow (Release
-  0.8.0).
-- [x] Tag-driven release workflow: validate tag/VERSION/CHANGELOG, run the test
-  suite, and publish the GitHub release when the tag is pushed.
+- [ ] Implement optional same-directory sibling prefetch, disabled by default,
+      with cancellable bounded requests and the same cache leases as foreground
+      preview/extraction. Add the sibling-prefetch cancellation test.
+- [ ] Manually verify the `gtksink` → `ximagesink` preference on a Wayland
+      session.
 - [ ] Extend the release workflow with distribution artifacts and installation
-  smoke checks for the supported packages.
+      smoke checks for the supported packages.
 - [ ] Investigate the previously noted CLI stdout/stderr ordering concern around
-  `argsArray`; only add synchronization if a reproducible interleaving is found.
+      `argsArray`; only add synchronization if a reproducible interleaving is
+      found.
+- [ ] Make module-level Ddoc headers consistent across all GUI modules
+      (`Authors`/`License`), not only the recently touched files.
+
+## Completed work (compact record)
+
+- **JSON filtering:** asynchronous projection, indexed child/file lookup,
+  per-document filter persistence, Blob-table sort persistence, case/media/
+  presence/sort parity, and clear/cancel lifecycle coverage.
+- **Shared CLI/GTK operations:** target-aware Tools actions, background workers,
+  progress, cancellation, pause/resume, refresh, lease retention, and display
+  tests for synthetic scan/metadata/analyze operations.
+- **TreeView node reuse:** canonical `TreeStore` retained behind
+  `GtkTreeModelFilter`; stable IDs, ancestor visibility, and bounded reflow.
+- **Archive tree and cache:** lazy member expansion, synthesized inner
+  directories, first-click expansion, nested archives, shared preview leases,
+  cache preferences, and shutdown/stale-session cleanup.
+- **Backend-backed JSON views:** JSON tabs now use `CatalogBackend` for rows,
+  tree, details, archive/torrent pages, and previews after binding a derived
+  tree root; the legacy projection remains only for export/tests.
+- **JSON document save semantics:** modified markers, Save (Ctrl+S), Revert to
+  Stored, close/reload prompts, recovery copy, and external-edit conflicts.
+- **UI maintenance:** CSS-based styling, builder cleanup, and the embedded
+  video-sink fallback with an Xvfb check.
