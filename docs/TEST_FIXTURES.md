@@ -41,15 +41,16 @@ use an in-memory nested-entry model with a page boundary at offset 250. They
 check continuation offsets, later-page path copying, and stale-selection reply
 rejection. The GTK signal test is opt-in and requires a display.
 
-### Planned archive-member TreeView and extraction cache
+### Archive-member TreeView and extraction cache
 
-WP-13.5 GUI coverage will add ZIP fixtures with nested archives, duplicate member
-names, literal `!` characters, unsafe traversal names, and encrypted members. The
-cache tests will cover concurrent request coalescing, cancellation, sibling
-prefetch disabled/enabled, maximum-byte eviction, active-preview pinning, normal
-shutdown cleanup, and stale-session cleanup after a simulated crash. Both JSON
-v5 and migrated SQLite schema-v4 sources will verify virtual path references and
-that cache paths never enter catalog data.
+Current coverage includes virtual member identities, `!` escaping, duplicate
+occurrences, unsafe paths, nested archive pages, member previews through leased
+cache files, encrypted-container cancellation, concurrent request coalescing,
+maximum-byte eviction, active-preview pinning, normal shutdown cleanup, and
+stale-session cleanup after a simulated crash. Both JSON v5 and migrated SQLite
+schema-v5 sources verify virtual path references and that cache paths never enter
+catalog data. Same-directory sibling prefetch remains planned and disabled by
+default.
 
 GTK opt-in checks and their commands are listed in
 [`GUI-REDESIGN.md`](GUI-REDESIGN.md#verification-baseline). Tests create and
@@ -66,7 +67,7 @@ The backend's JSON compatibility and metadata fixtures live under
   `json_file_v2_torrent.json` are historical fixture filenames containing
   version-3 output; they are used as serializer expectations.
 - `json_file_wrapper_v2.json` is the actual version-2 wrapper used to verify
-  migration to the current version-3 representation.
+  migration to the current JSON-v5 representation.
 - `json_file_v1_wrongversion.json` covers rejection of an unsupported wrapper
   version.
 - `json_file_v2_archive.json` and `json_file_v2_torrent.json` cover archive and
@@ -74,7 +75,6 @@ The backend's JSON compatibility and metadata fixtures live under
 - `dummy-audio-file.mp3`, `dummy-video-file.mp4.mkv`, image/text/subtitle files,
   and torrent files provide small metadata/scanner inputs.
 
-The serializer emits JSON version 3; there is no checked-in `json_file_v3.json`
-fixture. The reader/writer behavior and the supported fixtures are described in
+The serializer emits JSON version 5; there is no checked-in JSON-v5 fixture. The reader/writer behavior and the supported fixtures are described in
 [`DATAFILE_EXTRACTION.md`](DATAFILE_EXTRACTION.md) and the backend
 [`JSON-FORMAT.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/JSON-FORMAT.md).

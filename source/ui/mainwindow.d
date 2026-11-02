@@ -1,7 +1,8 @@
 /** Main GTK application shell for DosierSkanilo GUI.
  *
- * This module wires together command-line startup options, JSON loading,
- * row-table rendering, and classic desktop menu actions.
+ * This module wires command-line startup, JSON and repository document loading
+ * through `CatalogBackend`, catalog sessions, tree/table/preview rendering,
+ * backend operations, and classic desktop menu actions.
  *
  * Authors: DosierSkanilo contributors
  * License: GPL-3.0-only
@@ -1157,7 +1158,7 @@ private string[] directoryTreeIdsToRefresh(TreeStore store,
     return ids;
 }
 
-/** Worker result payload for background JSON loading. */
+/** Worker result payload for background document loading. */
 struct AsyncLoadResult
 {
     BlobRow[] allRows;
@@ -1207,7 +1208,7 @@ struct AsyncNestedEntryResult
 
 enum size_t repositoryPageSize = 250;
 
-/** Worker result payload for background text filtering. */
+/** Expanded-directory page rows refreshed during load or filtering. */
 struct AsyncExpandedDirectoryRows
 {
     string directoryId;

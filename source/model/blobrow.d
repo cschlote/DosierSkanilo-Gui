@@ -1,8 +1,8 @@
 /** Row projection model for table-oriented GUI rendering.
  *
- * The scanner JSON can contain rich nested structures. The GUI primarily needs
- * compact row data for list views and filters. `BlobRow` is the normalized
- * projection used between parser and view layers.
+ * The scanner catalog can contain rich nested structures. The GUI primarily
+ * needs compact row data for list views and filters. `BlobRow` is the
+ * normalized projection used between catalog/backend and view layers.
  *
  * Authors: DosierSkanilo contributors
  * License: GPL-3.0-only
@@ -20,8 +20,9 @@ import cli.logging;
 
 /** Flat row model for the main result table.
  *
- * We use the DosierSkanilo library's `NamedBinaryBlob` as the canonical data model for scanner output.
- * `BlobRow` is a flattened projection of the most relevant fields for GUI display and interaction.
+ * `BlobRow` projects either a legacy `NamedBinaryBlob` or a backend catalog
+ * snapshot. It is a flattened projection of the most relevant fields for GUI
+ * display and interaction.
  *
  * Fields are intentionally string/number primitives so they can be mapped
  * directly into GTK list store columns.
@@ -45,8 +46,9 @@ struct BlobRow
     bool summaryHasFileType;
     bool summaryHasArchive;
     bool summaryHasTorrent;
-    /* Backlink to the NamedBinaryBlob source for this row, for fold-out details and metadata sections. */
-    NamedBinaryBlob sourceBlob; /// Original blob data for this row, for direct access to FileSpec and metadata fields.
+    /// Legacy blob data when the row came from the in-memory projection;
+    /// catalog-backed rows leave this null and use the `catalog*` fields.
+    NamedBinaryBlob sourceBlob;
 
     /* Basic blob properties. */
     string primaryFileName; /// Preferred display filename for a blob row.

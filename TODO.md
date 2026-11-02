@@ -129,10 +129,11 @@ tests and the display-backed startup/filter smoke test pass.
 
 ## P1 — Archive member TreeView and shared extraction cache (WP-13.5)
 
-Status: **archive expansion and cached member previews implemented** (commits
-`038d5e3`, `b17efab`, `6167f8f`); cache settings and shutdown cleanup added.
-The archive file remains the expandable file row; the GUI must not create a
-second sibling folder or persist cache paths.
+Status: **implemented** — lazy archive-member expansion, synthesized inner
+archive directories, first-selection expansion, nested members, shared-cache
+previews, cache settings, and shutdown cleanup. The archive file remains the
+expandable file row; the GUI does not create a second sibling folder or persist
+cache paths.
 
 - [x] Give `hasArchive` file rows an async TreeView expander. Expanding lists safe
   entries lazily; selecting a member extracts it for preview. Nested archives
@@ -193,8 +194,9 @@ is held per document so page cursors stay valid.
 
 ## P1 — JSON document save semantics
 
-Status: **design clarified**. JSON tabs follow load → modify → store on an
-in-memory document; SQLite tabs commit directly and have no dirty state.
+Status: **implemented and verified**. JSON tabs use an in-memory catalog session
+with modified markers, Save/Revert, and save/discard/cancel prompts; SQLite tabs
+remain transactional without dirty state.
 
 - [x] Track a modified flag for JSON document tabs after in-memory mutations and
   show it in the tab label.

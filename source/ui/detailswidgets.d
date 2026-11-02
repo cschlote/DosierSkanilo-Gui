@@ -1,8 +1,11 @@
 /** Shared helpers for rendering details, metadata, and media previews.
  *
  * This module contains the widget-level glue used by the document tab detail
- * pane, including metadata labels, known-file tables, and image/video preview
- * management.
+ * pane, including metadata labels, known-file tables, archive-member preview
+ * leases, and image/video preview management.
+ *
+ * Authors: DosierSkanilo contributors
+ * License: GPL-3.0-only
  */
 module ui.detailswidgets;
 
@@ -53,7 +56,9 @@ import std.uri : encode;
 import std.utf : validate;
 import ui.mainsources : scheduleUiIdle;
 
+/// Maximum bytes shown in an unknown-file hex preview.
 enum size_t PREVIEW_HEX_DUMP_BYTES = 512;
+/// Maximum bytes shown in a text preview prefix.
 enum size_t PREVIEW_TEXT_BYTES = 8192;
 
 private enum PreviewContentKind
@@ -2312,6 +2317,12 @@ void refreshMediaPreview(DocumentTab document)
  * Params:
  *     document = Active document tab that owns the preview pane.
  *     row = Selected row whose media and preview metadata should be shown.
+ *     previewPathOverride = filesystem or cache path to preview instead of the
+ *         row's resolved path.
+ *     memberLease = shared archive-member lease that pins the extracted file for
+ *         the active preview; null clears the previous lease.
+ *     logicalArchiveMemberPath = virtual archive-path identity shown to the
+ *         user while the preview reads from a cache path.
  * Returns: Nothing.
  * Throws: None.
  */

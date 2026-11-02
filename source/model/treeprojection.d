@@ -1,4 +1,8 @@
-/** GTK-independent directory tree projection for source adapters. */
+/** GTK-independent directory tree projection for source adapters.
+ *
+ * Authors: DosierSkanilo contributors
+ * License: GPL-3.0-only
+ */
 module model.treeprojection;
 
 import std.algorithm : any, canFind, filter, sort;
@@ -159,7 +163,8 @@ interface DirectorySource
     void close();
 }
 
-/** Source adapter used until the repository backend exposes directory queries. */
+/** Legacy in-memory directory source for JSON projections, fallback paths, and
+ * tests. Normal catalog-backed tabs use `CatalogDirectorySource`. */
 final class ProjectedDirectorySource : DirectorySource
 {
     private DirectoryTree tree;

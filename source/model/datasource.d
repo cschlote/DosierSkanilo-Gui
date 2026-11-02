@@ -1,4 +1,8 @@
-/** Shared data-source adapter for JSON files and SQLite repositories. */
+/** Shared data-source adapter for JSON files and SQLite repositories.
+ *
+ * Authors: DosierSkanilo contributors
+ * License: GPL-3.0-only
+ */
 module model.datasource;
 
 import core.atomic : atomicOp;
@@ -94,7 +98,7 @@ bool isRepositorySource(string path)
     return exists(path) && isDir(path) && !Repository.findRoot(path).empty;
 }
 
-/** Build the directory projection for a JSON or repository source. */
+/** Build the legacy in-memory directory projection for a JSON catalog. */
 DirectoryTree loadDocumentTree(string path)
 {
     auto blobs = loadDocumentSource(path);
@@ -129,7 +133,6 @@ DirectoryTree loadDocumentTree(string path)
     return buildDirectoryTree(inputs);
 }
 
-/** Directory source backed by bounded SQLite repository queries. */
 /** Open a repository-backed directory source for the GUI tree. */
 DirectorySource openRepositoryDirectorySource(string path)
 {

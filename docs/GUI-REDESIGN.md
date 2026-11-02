@@ -34,8 +34,8 @@ Implemented:
 - Lazy directory expansion with loading and error states.
 - Asynchronous repository child queries and paged file navigation.
 - Per-tab expanded-directory tracking and restoration.
-- Stable blob-ID selection between the TreeView and blob table where nodes are
-  materialized.
+- Stable source-relative path selection between the TreeView and blob table
+  where nodes are materialized.
 - Asynchronous details for repository files outside the current table page,
   rendered directly from the selected Tree file.
 - Repository Blob-table view uses a virtual GTK TreeModel with a bounded async
@@ -91,8 +91,8 @@ Implemented:
 - Text content renders in the large preview scroller; the lower summary lists
   path, size, access rights, access and modification times, file type, and
   checksum availability.
-- In-memory JSON directory paging keeps a bounded sorted candidate window rather
-  than materializing and sorting every file in the directory for each page.
+- The legacy `ProjectedDirectorySource` keeps a bounded sorted JSON paging
+  window; normal JSON tabs query `CatalogBackend` directory/file pages instead.
 
 Known limitations:
 
@@ -103,11 +103,10 @@ Known limitations:
   token before applying a page reply and verifies that the stale reply is rejected.
 - The blob table remains an alternative, transitional view; the directory tree
   is still the primary navigation surface.
-- The backend now exposes archive members as content/reference projections, but
-  the GUI Directory Tree does not yet expand the archive file row. The Previewer
-  lists indexed entries; selecting a member does not yet extract it into a shared
-  cache for ordinary file preview or metadata extraction. The storage/path
-  transition is planned in backend WP-13.5.
+- The GUI Directory Tree expands archive file rows lazily into paged member
+  rows, including nested archives and synthesized inner directories. Selecting a
+  member extracts it through the shared leased cache and feeds the normal preview
+  pipeline; only same-directory sibling prefetch remains planned.
 - Several window splitters and video-preview layout behaviors remain on the
   open-issues list in `TODO.md`.
 - General scan, metadata, and analysis are available from the Tools menu through
@@ -119,7 +118,7 @@ Known limitations:
 
 The current working tree passes:
 
-- `dub test --compiler=ldc2` — 61 tests.
+- `dub test --compiler=ldc2` (default suite).
 - `dub build --compiler=ldc2`.
 - `git diff --check`.
 
@@ -141,8 +140,8 @@ Earlier display-backed verification also covered:
 
 The virtual-table test uses a temporary 1,000-row repository with 50-row chunks.
 It queues a backward request during a forward load, reads all rows in both
-directions, verifies stable blob IDs after cache eviction, and asserts that no
-more than four chunks remain cached. An opt-in GTK TreeView test scrolls through
+directions, verifies stable reference paths after cache eviction, and asserts
+that no more than four chunks remain cached. An opt-in GTK TreeView test scrolls through
 distant rows and back to evicted chunks. Audio classification and GStreamer
 preroll were tested with an MP3 fixture and fake sinks; audible output through a
 physical audio device has not been smoke-tested.
@@ -167,16 +166,15 @@ chunks must not become visible `Page 1 of N` UI state.
 
 ## JSON and Jsonizer
 
-`NamedBinaryBlob` remains the canonical representation of the JSON file format.
-Jsonizer is useful because it provides serialization, deserialization, and
-compatibility handling without handwritten JSON boilerplate. The JSON adapter
-should continue to use it.
+`NamedBinaryBlob` remains the backend's representation of the JSON file format.
+Jsonizer provides serialization, deserialization, and compatibility handling
+without handwritten JSON boilerplate. The GUI adapter uses `CatalogBackend` for
+JSON and repository documents; direct `NamedBinaryBlob` parsing remains only in
+legacy export/archive-scan helpers and tests.
 
-The GUI should add a separate projection layer instead of replacing
-`NamedBinaryBlob` immediately. Pure D types and functions in this layer must
-not depend on GTK, SQLite, or Jsonizer-specific implementation details. This
-makes useful parts movable to `DosierSkanilo` later without first untangling
-widget code.
+The GUI projection layer does not depend on GTK, SQLite, or Jsonizer-specific
+implementation details. Pure D types and functions let useful parts live in
+`DosierSkanilo` without first untangling widget code.
 
 ## GUI Data Types
 
@@ -274,9 +272,11 @@ The primary view is a GTK `TreeView` backed by a lazy tree model:
 
 Filter changes retain the per-document canonical directory `TreeStore`; a
 `GtkTreeModelFilter` changes row visibility without clearing loaded nodes.
-File-node identity is separate from Blob identity and filtered-array position:
-one Blob can have multiple path nodes. JSON uses stable source-row/reference
-ordinals; SQLite uses file-reference cursor IDs.
+File-node identity is separate from content identity and filtered-array
+position: one content record can have multiple path nodes. Catalog-backed JSON
+and repository rows use source-relative paths for tree, table, and cursor
+identity; the legacy JSON ordinal scheme remains in `ProjectedDirectorySource`
+and tests.
 
 For JSON, parse/index the source once and compute stable-ID visibility and
 filtered directory summaries on a worker; no new full `DirectoryTree` is built
@@ -292,9 +292,9 @@ refresh already materialized directories, and restore the same canonical nodes.
 
 Unit/model tests cover filter parity, stable IDs, ancestor visibility, and
 retention of underlying rows. A display-backed JSON filter smoke test passed with
-`G_DEBUG=fatal-warnings`. Measure large-tree latency, allocation churn, and peak
-memory on representative catalogs as a follow-up; include Blob-table rendering
-at 95,001 JSON rows and record per-batch time and GC behavior.
+`G_DEBUG=fatal-warnings`. Large-tree latency, allocation, and peak-memory
+measurements are recorded in `TODO.md`; per-batch Blob-table rendering at 95,001
+JSON rows remains a follow-up.
 
 ## GC-Friendly Algorithms
 
@@ -390,8 +390,8 @@ uses the regular media/text/fallback preview pipeline. The logical reference
 stays virtual, while the cache lease pins the temporary preview file for the
 active document. The main Directory Tree also expands physical archive rows
 lazily, pages member rows, and supports nested archive rows without projecting
-virtual member paths as ordinary directories. Cache preferences and prefetch
-remain planned.
+virtual member paths as ordinary directories. Cache preferences are implemented;
+same-directory sibling prefetch remains planned and disabled by default.
 
 The archive file remains the TreeView file row and is expandable when it has an
 archive index or a recognized archive extension. Expansion lists safe member
@@ -405,7 +405,8 @@ labels show the original name; content/reference identity uses the structured
 locator and occurrence. JSON v5 stores scraped members as ordinary content
 records with virtual `FileSpec` paths. SQLite schema v4 migrates existing archive
 rows to virtual `file_refs` and removes `archive_entries`/`archive_indexes`
-without adding archive-specific tables.
+without adding archive-specific tables; schema v5 adds the generated
+`is_virtual` classification column.
 
 One session extraction cache is shared by archive scraping, checksums, file-type
 and MediaInfo extraction, preview, and optional prefetch. JSON defaults to an OS
@@ -465,12 +466,11 @@ a compatibility layer around the current table UI:
 
 ## Current Work Plan
 
-The older immediate-plan checklist is complete except for the archive-member
-TreeView/extraction workflow, remaining CLI/GUI operation parity checks, and the
-explicitly deferred GTK layout issues. Current GUI work is tracked in
-[`TODO.md`](../TODO.md). Archive-member work depends on backend WP-13.5 virtual
-references and the shared cache contract. Large-catalog latency, GC allocation,
-and peak-memory measurements remain follow-up verification.
+The archive-member TreeView/extraction workflow is implemented. Remaining work
+is the CLI/GUI operation parity matrix and the explicitly deferred GTK layout
+issues; current GUI work is tracked in [`TODO.md`](../TODO.md). Large-catalog
+latency, GC allocation, and peak-memory measurements are recorded in `TODO.md`;
+per-batch display profiling remains follow-up verification.
 
 The shared CLI/GTK operation work is tracked as WP-09 in the backend's
 [`SQLITE-IMPLEMENTATION-PLAN.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09).

@@ -7,8 +7,8 @@ This directory contains project documentation for the GTK frontend.
 - `ARCHITECTURE.md`: high-level architecture and module boundaries
 - `GUI-REDESIGN.md`: current directory-tree implementation and source-opaque
   query plan
-- `CHANGELOG.md`: user-visible and engineering changes by release
-- `TODO.md`: planned next steps
+- `../CHANGELOG.md`: user-visible and engineering changes by release
+- `../TODO.md`: planned next steps and completed work-package evidence
 - `UI_REFACTOR.md`: current UI issues and the Glade-based refactor direction
 - `DATAFILE_EXTRACTION.md`: extracted data-format notes from scanner project
 - `TEST_FIXTURES.md`: test fixture descriptions and generation reference
