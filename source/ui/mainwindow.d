@@ -2971,6 +2971,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             const auto markerKind = model.getValueString(marker, 1);
             if (offset == 0
                 ? markerKind != "ArchivePlaceholder" && markerKind != "ArchiveLoading"
+                    && markerKind != "ArchiveInfo" && markerKind != "ArchiveError"
                 : markerKind != "ArchivePage" && markerKind != "ArchiveLoadingPage")
                 return;
 
@@ -3247,8 +3248,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 return;
             }
             auto childKind = model.getValueString(child, 1);
-            if (childKind == "ArchivePlaceholder")
+            if (childKind == "ArchivePlaceholder" || childKind == "ArchiveInfo"
+                || childKind == "ArchiveError")
             {
+                /* An info or error row is a cached "nothing loaded" state. A
+                 * later scan can make members available, so expanding the
+                 * node retries the query instead of keeping the stale row. */
                 loadArchiveTreePage(model.getPath(iter), 0, model.getPath(child));
                 return;
             }

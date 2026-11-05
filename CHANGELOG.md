@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Archive tree pages for repository catalogs now descend into indexed
+  directories inside an archive. Previously a directory row was treated as the
+  archive container, so members were searched below a non-existent
+  `archive!/folder!/` path and the tree reported "No indexed safe members".
+  Expanding a cached empty/error archive row now retries the query, so members
+  appear after a later scan without reopening the document.
+
 - A single-archive rescan from the context menu refreshes only that archive node
   instead of reloading the complete document and re-expanding every other
   archive.
