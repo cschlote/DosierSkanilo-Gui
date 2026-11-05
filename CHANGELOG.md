@@ -12,9 +12,9 @@ All notable changes to this project are documented in this file.
   appear after a later scan without reopening the document.
 
 - An archive node with no indexed members no longer requests the same empty
-  page in an endless loop. The automatic re-expand after loading is skipped for
-  empty pages, so the info row stays stable until the next manual expand or
-  rescan.
+  page in an endless loop. The automatic re-expand after loading is not treated
+  as a retry, so the info row stays visible and stable until the next manual
+  expand or rescan.
 
 - A single-archive rescan from the context menu refreshes only that archive node
   instead of reloading the complete document and re-expanding every other

@@ -2955,6 +2955,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 });
             }).start();
         };
+        /* The archive page loader re-expands its parent after applying rows.
+         * When the page is empty, the parent now holds the ArchiveInfo retry
+         * marker. The automatic re-expand must not be mistaken for a user
+         * retry, otherwise it requests the same empty page forever. */
+        bool suppressArchiveInfoRetry;
         void delegate(TreePath, size_t, TreePath) loadArchiveTreePage;
         loadArchiveTreePage = (TreePath parentPath, size_t offset,
                 TreePath markerPath) {
@@ -3186,19 +3191,23 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     /* Removing the temporary marker briefly leaves the row
                      * without children, which makes GTK collapse it before
                      * the loaded rows are appended. Restore the expanded
-                     * state so one selection click is enough. Do not re-expand
-                     * an empty page: its info row is itself a retry marker, and
-                     * the expand signal would immediately request the same
-                     * empty page again in an endless loop. */
-                    if (error.length == 0 && page.entries.length > 0)
+                     * state so one selection click is enough. An empty page
+                     * shows its info row through the same re-expand; the
+                     * suppression flag keeps that signal from retrying the
+                     * page in an endless loop. */
+                    if (error.length == 0)
                     {
                         TreeModelIF viewModel = document.directoryTreeView.getModel();
                         TreeIter viewParent;
                         if (viewModel !is null
                             && findTreeIterByValue(viewModel, new TreeIter(),
                                 false, TREE_COL_NODE_ID, parentNodeId, viewParent))
+                        {
+                            suppressArchiveInfoRetry = true;
                             document.directoryTreeView.expandRow(
                                 viewModel.getPath(viewParent), false);
+                            suppressArchiveInfoRetry = false;
+                        }
                     }
                     return false;
                 });
@@ -3251,12 +3260,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 return;
             }
             auto childKind = model.getValueString(child, 1);
-            if (childKind == "ArchivePlaceholder" || childKind == "ArchiveInfo"
-                || childKind == "ArchiveError")
+            if (childKind == "ArchiveInfo" || childKind == "ArchiveError")
             {
+                if (suppressArchiveInfoRetry)
+                    return;
                 /* An info or error row is a cached "nothing loaded" state. A
                  * later scan can make members available, so expanding the
                  * node retries the query instead of keeping the stale row. */
+                loadArchiveTreePage(model.getPath(iter), 0, model.getPath(child));
+                return;
+            }
+            if (childKind == "ArchivePlaceholder")
+            {
                 loadArchiveTreePage(model.getPath(iter), 0, model.getPath(child));
                 return;
             }
@@ -6582,6 +6597,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             return;
         if (isLoading)
         {
+            logLineVerbose("[archive-scan] ignored: another operation is active");
             document.status.setText("Wait for the current operation before scanning archives.");
             return;
         }
@@ -6595,6 +6611,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             : "Scanning archives...";
         setLoadingState(document, true, loadingMessage);
         auto passwordCallback = archivePasswordPromptCallback();
+        logLineVerbose("[archive-scan] start source=", sourcePath,
+            " archive=", archivePath, " single=", isSingleArchive);
         new Thread({
             MetadataSummary summary;
             string error;
@@ -6621,6 +6639,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                                 summary.failed)
                             : format("Archive scan finished: %s updated, %s failed.",
                                 summary.archivesUpdated, summary.failed);
+                logLineVerbose("[archive-scan] done archive=", archivePath,
+                    " updated=", summary.archivesUpdated, " failed=",
+                    summary.failed, " cancelled=", cancelled, " error=", error);
                 setLoadingState(document, false, message);
                 if (error.length == 0)
                 {
