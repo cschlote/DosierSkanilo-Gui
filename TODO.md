@@ -47,6 +47,8 @@ workflow, and JSON document save semantics).
 - [ ] Confirm the final WP-09.5 CLI/GUI result, progress, cancellation, error,
       refresh, and explicit storage-mode parity evidence stays complete when
       either HMI changes; keep the backend parity table in sync.
+- [ ] Investigate preview failures for filenames with heavy UTF-8 use and for
+      RAR archives; capture the failing external-tool command and stderr.
 - [ ] Re-run the shared display self-tests after any tree/preview change:
       archive expansion, member preview, JSON save/reload, and repository
       operation refresh.

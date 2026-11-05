@@ -334,6 +334,7 @@ class DocumentTab
     bool modified;
     size_t pageSize = 250;
     bool loadAllRows;
+    shared bool archiveScanCancelled; /// Cooperative cancel flag for archive scans.
     bool drainRepositoryPages;
     bool drainPageRequest;
     bool drainAfterRender;

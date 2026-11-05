@@ -5,7 +5,7 @@
  */
 module model.datasource;
 
-import core.atomic : atomicOp;
+import core.atomic : atomicLoad, atomicOp;
 import std.algorithm.searching : canFind;
 import std.base64 : Base64;
 import std.file : exists, isDir;
@@ -941,7 +941,8 @@ private shared ulong nextArchiveScanOperationId;
 
 /** Run an archive rescan against a repository through the operation API. */
 private MetadataSummary runRepositoryArchiveScan(string sourcePath,
-    string filePath, ArchivePasswordCallback passwordCallback)
+    string filePath, ArchivePasswordCallback passwordCallback,
+    shared(bool)* cancellation = null)
 {
     MetadataScanOptions options;
     options.scanArchives = true;
@@ -953,7 +954,10 @@ private MetadataSummary runRepositoryArchiveScan(string sourcePath,
     request.operationId = atomicOp!"+="(nextArchiveScanOperationId, 1UL) + 1;
     request.target = OperationTarget.repositoryTarget(sourcePath);
     request.options = options;
-    auto result = runOperation(request, new OperationControl());
+    auto control = new OperationControl();
+    if (cancellation !is null)
+        control.bindCancellationMirror(cancellation);
+    auto result = runOperation(request, control);
     if (result.state != OperationState.completed)
         throw new Exception(result.error.length > 0
             ? result.error : "Repository archive scan did not complete.");
@@ -962,10 +966,12 @@ private MetadataSummary runRepositoryArchiveScan(string sourcePath,
 
 /** Scan archive entries in a JSON catalog or SQLite repository. */
 MetadataSummary scanDocumentArchives(string sourcePath,
-    ArchivePasswordCallback passwordCallback)
+    ArchivePasswordCallback passwordCallback,
+    shared(bool)* cancellation = null)
 {
     if (isRepositorySource(sourcePath))
-        return runRepositoryArchiveScan(sourcePath, "", passwordCallback);
+        return runRepositoryArchiveScan(sourcePath, "", passwordCallback,
+            cancellation);
 
     auto targetLease = TargetWriteLease.acquire(
         OperationTarget.jsonTarget(sourcePath));
@@ -976,6 +982,8 @@ MetadataSummary scanDocumentArchives(string sourcePath,
     summary.blobsVisited = blobs.length;
     foreach (blob; blobs)
     {
+        if (cancellation !is null && atomicLoad(*cancellation))
+            break;
         string[] originalPaths;
         foreach (spec; blob.fileSpecs)
         {
@@ -996,7 +1004,7 @@ MetadataSummary scanDocumentArchives(string sourcePath,
         }
         try
         {
-            updateArchives(blob, true, true, null, null, passwordCallback);
+            updateArchives(blob, true, true, cancellation, null, passwordCallback);
             if (blob.archiveSpecs !is null)
                 ++summary.archivesUpdated;
         }
@@ -1016,12 +1024,13 @@ MetadataSummary scanDocumentArchives(string sourcePath,
 
 /** Scan archive entries for the single file selected in a source context menu. */
 MetadataSummary scanDocumentArchive(string sourcePath, string filePath,
-    ArchivePasswordCallback passwordCallback)
+    ArchivePasswordCallback passwordCallback,
+    shared(bool)* cancellation = null)
 {
     if (isRepositorySource(sourcePath))
     {
         auto summary = runRepositoryArchiveScan(sourcePath, filePath,
-            passwordCallback);
+            passwordCallback, cancellation);
         if (summary.blobsVisited == 0)
             throw new Exception("No repository file matches: " ~ filePath);
         return summary;
@@ -1076,7 +1085,7 @@ MetadataSummary scanDocumentArchive(string sourcePath, string filePath,
         }
         try
         {
-            updateArchives(blob, true, true, null, null, passwordCallback);
+            updateArchives(blob, true, true, cancellation, null, passwordCallback);
             if (blob.archiveSpecs !is null)
                 ++summary.archivesUpdated;
         }

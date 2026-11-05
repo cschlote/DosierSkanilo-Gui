@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Archive scans started from the Tools or context menu can now be cancelled
+  while they run; the Cancel action stays enabled instead of leaving the window
+  looking frozen. JSON analysis requests now carry the document's filesystem
+  root, so direct JSON analysis resolves relative paths correctly.
+
 - Verbose loading now reports JSON index, backend, row, tree, render, and total
   timing plus current/peak RSS, making multi-million-record catalog diagnostics
   actionable.

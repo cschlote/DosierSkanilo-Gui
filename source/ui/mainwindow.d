@@ -9,6 +9,8 @@
  */
 module ui.mainwindow;
 
+import core.atomic : atomicLoad, atomicStore;
+
 import gdk.c.types : GdkEventConfigure;
 import gdk.Display;
 import gdk.Event : Event;
@@ -2165,8 +2167,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
         fileExportJsonMenuItem.setSensitive(!isLoading && hasCurrentDocument);
         fileArchivePasswordsMenuItem.setSensitive(!isLoading && !operationRunning && hasCurrentDocument);
         fileScanArchivesMenuItem.setSensitive(operationIdle && hasCurrentDocument);
-        btnCancelLoad.setSensitive((isLoading && !isArchiveScanning) || operationRunning);
-        fileCancelOperationMenuItem.setSensitive((isLoading && !isArchiveScanning) || operationRunning);
+        btnCancelLoad.setSensitive(isLoading || operationRunning);
+        fileCancelOperationMenuItem.setSensitive(isLoading || operationRunning);
         fileCloseMenuItem.setSensitive(!isLoading && !operationRunning && hasCurrentDocument);
         fileOpenMenuItem.setSensitive(!isLoading);
         fileOpenRepositoryMenuItem.setSensitive(!isLoading);
@@ -6370,7 +6372,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             (OperationControl control, ulong operationId) {
                 auto request = buildAnalysisOperationRequest(operationId,
                     repositorySource ? sourceDescription : document.filePath,
-                    repositorySource, options.analysisOptions, metadata);
+                    repositorySource, options.analysisOptions, metadata,
+                    repositorySource ? "" : document.sourceRoot);
                 if (document.catalogDocument !is null)
                     return document.catalogDocument.applyAnalysis(request, control);
                 return runOperation(request, control);
@@ -6488,7 +6491,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 (OperationControl control, ulong operationId) {
                     auto request = buildAnalysisOperationRequest(operationId,
                         repositorySource ? root : document.filePath,
-                        repositorySource, analysis, MetadataScanOptions.init);
+                        repositorySource, analysis, MetadataScanOptions.init,
+                        repositorySource ? "" : document.sourceRoot);
                     if (document.catalogDocument !is null)
                         return document.catalogDocument.applyAnalysis(request,
                             control);
@@ -6535,6 +6539,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
         auto sourcePath = document.filePath;
         auto isSingleArchive = archivePath.length > 0;
+        atomicStore(document.archiveScanCancelled, false);
         isArchiveScanning = true;
         auto loadingMessage = isSingleArchive
             ? "Scanning archive " ~ baseName(archivePath) ~ "..."
@@ -6546,22 +6551,27 @@ int runMainWindow(string[] args, ref CliOptions cli)
             string error;
             try
                 summary = isSingleArchive
-                    ? scanDocumentArchive(sourcePath, archivePath, passwordCallback)
-                    : scanDocumentArchives(sourcePath, passwordCallback);
+                    ? scanDocumentArchive(sourcePath, archivePath, passwordCallback,
+                        &document.archiveScanCancelled)
+                    : scanDocumentArchives(sourcePath, passwordCallback,
+                        &document.archiveScanCancelled);
             catch (Exception ex)
                 error = ex.msg;
             scheduleUiIdle({
                 if (findDocumentByPath(sourcePath) !is document)
                     return false;
                 isArchiveScanning = false;
+                const cancelled = atomicLoad(document.archiveScanCancelled);
                 auto message = error.length > 0
                     ? "Archive scan failed: " ~ error
-                    : isSingleArchive
-                        ? format("Scan of %s finished: %s updated, %s failed.",
-                            baseName(archivePath), summary.archivesUpdated,
-                            summary.failed)
-                        : format("Archive scan finished: %s updated, %s failed.",
-                            summary.archivesUpdated, summary.failed);
+                    : cancelled
+                        ? "Archive scan cancelled; partial results were saved."
+                        : isSingleArchive
+                            ? format("Scan of %s finished: %s updated, %s failed.",
+                                baseName(archivePath), summary.archivesUpdated,
+                                summary.failed)
+                            : format("Archive scan finished: %s updated, %s failed.",
+                                summary.archivesUpdated, summary.failed);
                 setLoadingState(document, false, message);
                 if (error.length == 0)
                     loadDocument(document, false);
@@ -6619,6 +6629,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     /** Cancel the currently active background request. */
     cancelPendingLoad = () {
+        auto scanDocument = busyDocument !is null ? busyDocument : currentDocument();
+        if (isArchiveScanning && scanDocument !is null)
+        {
+            atomicStore(scanDocument.archiveScanCancelled, true);
+            scanDocument.status.setText("Cancelling archive scan...");
+            return;
+        }
         if (!isLoading || busyDocument is null)
         {
             auto document = currentDocument();

@@ -36,13 +36,14 @@ MetadataOperationRequest buildMetadataOperationRequest(ulong operationId,
 /** Build an analysis request without crossing or inferring storage modes. */
 AnalysisOperationRequest buildAnalysisOperationRequest(ulong operationId,
     string documentPath, bool repositorySource,
-    RepositoryAnalysisOptions analysisOptions, MetadataScanOptions metadataOptions)
+    RepositoryAnalysisOptions analysisOptions, MetadataScanOptions metadataOptions,
+    string filesystemRoot = "")
 {
     AnalysisOperationRequest request;
     request.operationId = operationId;
     request.target = repositorySource
         ? OperationTarget.repositoryTarget(documentPath)
-        : OperationTarget.jsonTarget(documentPath);
+        : OperationTarget.jsonTarget(documentPath, filesystemRoot);
     request.options = analysisOptions;
     request.metadataOptions = metadataOptions;
     return request;
@@ -154,7 +155,7 @@ unittest
     auto sqliteAnalyzeRequest = buildAnalysisOperationRequest(13, root, true,
         analysisOptions, MetadataScanOptions.init);
     auto jsonAnalyzeRequest = buildAnalysisOperationRequest(14, catalogPath, false,
-        analysisOptions, typeOptions);
+        analysisOptions, typeOptions, root);
     auto sqliteAnalyze = runOperation(sqliteAnalyzeRequest, new OperationControl());
     auto jsonAnalyze = runOperation(jsonAnalyzeRequest, new OperationControl());
     assert(sqliteAnalyze.state == OperationState.completed, sqliteAnalyze.error);
