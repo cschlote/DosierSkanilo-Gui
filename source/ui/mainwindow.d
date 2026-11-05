@@ -3186,8 +3186,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     /* Removing the temporary marker briefly leaves the row
                      * without children, which makes GTK collapse it before
                      * the loaded rows are appended. Restore the expanded
-                     * state so one selection click is enough. */
-                    if (error.length == 0)
+                     * state so one selection click is enough. Do not re-expand
+                     * an empty page: its info row is itself a retry marker, and
+                     * the expand signal would immediately request the same
+                     * empty page again in an endless loop. */
+                    if (error.length == 0 && page.entries.length > 0)
                     {
                         TreeModelIF viewModel = document.directoryTreeView.getModel();
                         TreeIter viewParent;
