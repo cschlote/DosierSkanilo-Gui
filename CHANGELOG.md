@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- A single-archive rescan from the context menu refreshes only that archive node
+  instead of reloading the complete document and re-expanding every other
+  archive.
+
 - Archive scans started from the Tools or context menu can now be cancelled
   while they run; the Cancel action stays enabled instead of leaving the window
   looking frozen. JSON analysis requests now carry the document's filesystem

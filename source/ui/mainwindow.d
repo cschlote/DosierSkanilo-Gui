@@ -6526,6 +6526,47 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.status.setText("The operation is not paused.");
     }
 
+    /** Refresh one materialized archive node without reloading the whole document. */
+    bool refreshArchiveTreeNode(DocumentTab document, string archivePath)
+    {
+        auto model = document.directoryTreeView.getModel();
+        TreeIter viewParent;
+        if (model is null
+            || (!findTreeIterByValue(model, new TreeIter(), false,
+                    TREE_COL_NODE_ID, archivePath, viewParent)
+                && !findTreeIterByValue(model, new TreeIter(), false, 5,
+                    archivePath, viewParent)))
+            return false;
+        auto storeParent = treeStoreIter(document, viewParent);
+        TreeIter child;
+        while (document.directoryTreeStore.iterChildren(child, storeParent))
+            document.directoryTreeStore.remove(child);
+
+        const auto nodeId = document.directoryTreeStore.getValueString(
+            storeParent, TREE_COL_NODE_ID);
+        TreeIter placeholder;
+        document.directoryTreeStore.append(placeholder, storeParent);
+        document.directoryTreeStore.setValue(placeholder, 0,
+            "Load archive members...");
+        document.directoryTreeStore.setValue(placeholder, 1,
+            "ArchivePlaceholder");
+        document.directoryTreeStore.setValue(placeholder, 3, nodeId);
+        document.directoryTreeStore.setValue(placeholder, TREE_COL_NODE_ID,
+            "ArchivePlaceholder:" ~ nodeId);
+        document.directoryTreeStore.setValue(placeholder,
+            TREE_COL_PROJECTION_INDEX,
+            document.directoryTreeStore.getValueString(storeParent,
+                TREE_COL_PROJECTION_INDEX));
+        document.directoryTreeStore.setValue(placeholder,
+            TREE_COL_SORT_SIZE, "");
+        setTreeNodeVisible(document.directoryTreeStore, placeholder, true);
+
+        auto parentPath = model.getPath(viewParent);
+        document.directoryTreeView.collapseRow(parentPath);
+        document.directoryTreeView.expandRow(parentPath, false);
+        return true;
+    }
+
     /** Scan all archives or one selected archive, prompting for passwords as needed. */
     void scanArchiveForDocument(DocumentTab document, string archivePath = "")
     {
@@ -6574,7 +6615,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
                                 summary.archivesUpdated, summary.failed);
                 setLoadingState(document, false, message);
                 if (error.length == 0)
-                    loadDocument(document, false);
+                {
+                    /* A single repository archive scan only changes that
+                     * archive's members. Refresh that node instead of
+                     * reloading and re-expanding every other archive. */
+                    if (!isSingleArchive || !document.repositoryStorage
+                        || !refreshArchiveTreeNode(document, archivePath))
+                        loadDocument(document, false);
+                }
                 return false;
             });
         }).start();
