@@ -266,7 +266,7 @@ string torrentMetadataSummary(const(BlobRow) row)
 import dosierskanilo.metadata.mediainfosig : MediaInfoAudio, MediaInfoSig, MediaInfoText, MediaInfoVideo;
 import model.blobrow : BlobRow;
 import ui.documenttab : DocumentTab, PreviewScaleMode;
-import ui.contextpaths : resolveDocumentSourcePath;
+import ui.contextpaths : decodeCatalogReferencePath, resolveDocumentSourcePath;
 import ui.fallbackrenderer : fallbackDetailRows;
 import ui.mediainforenderer : mediaInfoStreamRows;
 import ui.videooutput : videoSinkCandidates;
@@ -598,8 +598,8 @@ private string resolvePreviewPath(DocumentTab document, const(BlobRow) row)
             && document.selectedTreeCursor.relativePath.length > 0
             ? document.selectedTreeCursor.relativePath
             : row.sourceKey.length > 0 ? row.sourceKey : row.primaryFileName;
-        return resolveDocumentSourcePath(document.filePath, relativePath,
-            repositoryRoot);
+        return resolveDocumentSourcePath(document.filePath,
+            decodeCatalogReferencePath(relativePath), repositoryRoot);
     }
     auto selectedTreePath = document.selectedTreeCursor.relativePath;
     if (selectedTreePath.length > 0)
@@ -2624,6 +2624,41 @@ unittest
     document.syncingTreeSelection = false;
     assert(resolvePreviewPath(document, treeRow)
         == "/nas/library/media/clip.mp4");
+}
+
+@("preview path resolution decodes escaped exclamation marks in catalog paths")
+unittest
+{
+    import dosierskanilo.model.filespec : FileSpec;
+    import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob;
+
+    auto document = new DocumentTab();
+    document.filePath = "/nas/library/catalog.json";
+    document.sourceRoot = "/nas/library";
+
+    BlobRow row;
+    row.sourceKey = "media/clip!!.mp4";
+    row.primaryFileName = "clip!!.mp4";
+    assert(resolvePreviewPath(document, row)
+        == "/nas/library/media/clip!.mp4");
+
+    document.selectedTreeCursor.relativePath = "media/alias!!.mp4";
+    document.syncingTreeSelection = true;
+    assert(resolvePreviewPath(document, row)
+        == "/nas/library/media/alias!.mp4");
+    document.syncingTreeSelection = false;
+
+    /* Legacy JSON references are not encoded and keep literal exclamation
+     * marks untouched. */
+    auto legacy = new DocumentTab();
+    legacy.filePath = "/nas/library/catalog.json";
+    auto blob = new NamedBinaryBlob();
+    blob.fileSpecs = [new FileSpec("media/literal!.mp4", "")];
+    BlobRow legacyRow;
+    legacyRow.sourceBlob = blob;
+    legacyRow.primaryFileName = "literal!.mp4";
+    assert(resolvePreviewPath(legacy, legacyRow)
+        == "/nas/library/media/literal!.mp4");
 }
 
 @("unknown-file hex previews show only a bounded prefix")
