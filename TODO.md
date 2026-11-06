@@ -30,7 +30,7 @@ workflow, and JSON document save semantics).
       end to end.
 - [x] Move `## Unreleased` to `## Release 0.11.0` in `CHANGELOG.md`, update the
       package version, and commit the release notes.
-- [ ] Create the annotated `v0.11.0` tag after the backend tag is ready; verify
+- [x] Create the annotated `v0.11.0` tag after the backend tag is ready; verify
       that the tag workflow validates tag/VERSION/CHANGELOG and publishes the
       release.
 - [x] Re-run the Xvfb display suite and the 95,001-row JSON/SQLite smoke loads
