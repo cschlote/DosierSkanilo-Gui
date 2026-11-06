@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Archive tree pages for repository catalogs now descend into indexed
+  directories inside an archive. Previously a directory row was treated as the
+  archive container, so members were searched below a non-existent
+  `archive!/folder!/` path and the tree reported "No indexed safe members".
+  Expanding a cached empty/error archive row now retries the query, so members
+  appear after a later scan without reopening the document.
+
+- An archive node with no indexed members no longer requests the same empty
+  page in an endless loop. The automatic re-expand after loading is not treated
+  as a retry, so the info row stays visible and stable until the next manual
+  expand or rescan.
+
+- Archive tree pages drop explicit directory rows that collide with the
+  directory synthesized from member paths. Older catalogs no longer show two
+  identically named directory nodes where only one can expand.
+
+- A failed archive scan now shows the last scanner error in the status line and
+  the verbose `[archive-scan] done` log, instead of only reporting a failure
+  count.
+
 - A single-archive rescan from the context menu refreshes only that archive node
   instead of reloading the complete document and re-expanding every other
   archive.

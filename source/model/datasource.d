@@ -777,14 +777,25 @@ ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(CatalogBackend backend,
     enforce(limit > 0, "Archive-member page size must be greater than zero.");
 
     /* `containerPath` names either an archive reference or a directory inside
-     * one. Resolve the containing archive by trimming path components. */
+     * one. Resolve the containing archive by trimming path components. A
+     * repository indexes synthesized directory rows as references, so the
+     * longest resolvable prefix may be a directory inside an archive. Only an
+     * indexed archive container (or an uninterrupted physical path) may serve
+     * as the query root; otherwise members would be searched below
+     * `archive!/dir!/...`, which does not exist. */
     string rootPath = containerPath;
     ReferenceId referenceId;
+    CatalogFile container;
     while (rootPath.length > 0)
     {
         referenceId = backend.resolveReference(rootPath);
         if (referenceId.isValid)
-            break;
+        {
+            container = backend.loadReference(referenceId);
+            if (container.hasArchive || rootPath.indexOf("!/") == -1)
+                break;
+            container = CatalogFile.init;
+        }
         const bang = rootPath.lastIndexOf("!/");
         const slash = rootPath.lastIndexOf('/');
         const cut = bang != -1 ? bang : slash;
@@ -795,10 +806,9 @@ ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(CatalogBackend backend,
         }
         rootPath = rootPath[0 .. cut];
     }
-    if (!referenceId.isValid)
+    if (!referenceId.isValid || !container.referenceId.isValid)
         return ArchiveMemberTreePage.init;
 
-    const container = backend.loadReference(referenceId);
     string targetRelative;
     if (containerPath.length > rootPath.length)
         targetRelative = containerPath[rootPath.length .. $];
@@ -878,6 +888,23 @@ ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(CatalogBackend backend,
         if (!page.hasMore)
             break;
         cursor = page.nextCursor;
+    }
+
+    /* Repository indexes may still contain explicit directory references
+     * from older scans. They collide with the directory synthesized from the
+     * member paths and would show two nodes with the same name, only one of
+     * which can expand. Keep the synthesized directory. */
+    bool[string] directoryVirtualPaths;
+    foreach (entry; direct)
+        if (entry.isDirectory)
+            directoryVirtualPaths[entry.virtualPath] = true;
+    if (directoryVirtualPaths.length > 0)
+    {
+        ArchiveMemberTreeEntry[] unique;
+        foreach (entry; direct)
+            if (entry.isDirectory || entry.virtualPath !in directoryVirtualPaths)
+                unique ~= entry;
+        direct = unique;
     }
 
     direct.sort!((left, right) => left.isDirectory != right.isDirectory
@@ -1462,6 +1489,60 @@ unittest
     assert(loadCatalogTorrentEntries(root, torrentFile.relativePath).length > 0);
 }
 
+@("repository archive tree pages descend into indexed directories")
+unittest
+{
+    import std.file : exists, mkdirRecurse, rmdirRecurse, tempDir, write;
+    import std.path : buildPath;
+    import std.process : Config, execute, executeShell;
+    import std.uuid : randomUUID;
+
+    if (executeShell("command -v rar").status != 0)
+        return;
+
+    const fixture = buildPath(tempDir(), "gui-repo-archive-dirs-"
+        ~ randomUUID().toString());
+    const root = buildPath(fixture, "repository");
+    const input = buildPath(fixture, "input");
+    mkdirRecurse(buildPath(input, "folder", "empty"));
+    mkdirRecurse(root);
+    write(buildPath(input, "top.txt"), "top");
+    write(buildPath(input, "folder", "a.txt"), "a");
+    const archivePath = buildPath(root, "bundle.rar");
+    scope (exit)
+        if (exists(fixture))
+            rmdirRecurse(fixture);
+    assert(execute(["rar", "a", "-r", "-idq", archivePath,
+        "top.txt", "folder"], null, Config.none, size_t.max,
+        input).status == 0);
+
+    auto repository = Repository.initialize(root);
+    scope (exit)
+        repository.close();
+    repository.scan();
+    MetadataScanOptions options;
+    options.scanArchives = true;
+    options.deepArchiveScan = true;
+    repository.updateMetadata(options);
+
+    const rootPage = loadCatalogArchiveMemberTreePage(root, "bundle.rar");
+    string folderPath;
+    foreach (entry; rootPage.entries)
+        if (entry.isDirectory && entry.relativePath == "folder")
+            folderPath = entry.virtualPath;
+    assert(folderPath.length > 0);
+
+    /* RAR indexes the explicit `folder` directory as a reference. The page
+     * must query members of the containing archive instead of searching for
+     * `bundle.rar!/folder!/`, which matches nothing. */
+    const folderPage = loadCatalogArchiveMemberTreePage(root, folderPath);
+    bool sawFile;
+    foreach (entry; folderPage.entries)
+        if (entry.relativePath == "a.txt" && !entry.isDirectory)
+            sawFile = true;
+    assert(sawFile);
+}
+
 @("archive and torrent detail adapters continue beyond 250 entries")
 unittest
 {
@@ -1823,7 +1904,12 @@ unittest
     auto container = new NamedBinaryBlob("archives/test.zip", 14, SysTime(0));
     container.archiveSpecs = [
         new ArchiveSpec("member.txt", 6, "", CheckSums("md5", "sha1", "xxh64")),
+        /* Older catalogs can contain explicit directory rows. They must not
+         * duplicate the directory synthesized from the member paths. */
+        new ArchiveSpec("folder", 0, "", CheckSums("md5", "sha1", "xxh64")),
         new ArchiveSpec("folder/a.txt", 1, "", CheckSums("md5", "sha1", "xxh64")),
+        new ArchiveSpec("folder/sub", 0, "",
+            CheckSums("md5", "sha1", "xxh64")),
         new ArchiveSpec("folder/sub/b.txt", 1, "",
             CheckSums("md5", "sha1", "xxh64"))
     ];
