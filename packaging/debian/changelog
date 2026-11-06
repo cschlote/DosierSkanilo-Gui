@@ -1,3 +1,10 @@
+dosierskanilo-gui (0.11.0-1) unstable; urgency=medium
+
+  * Release GUI 0.11.0 with backend-backed archive trees, cancellable archive
+    scans, targeted archive refresh, and JSON document save semantics.
+
+ -- Carsten Schlote <schlote@vahanus.net>  Fri, 06 Nov 2026 00:00:00 +0000
+
 dosierskanilo-gui (0.8.0-1) unstable; urgency=medium
 
   * Release GUI 0.8.0 with case-sensitive filtering and safer video previews.

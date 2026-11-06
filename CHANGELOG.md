@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## Release 0.11.0 - 2026-11-06
+
 - Archive tree pages for repository catalogs now descend into indexed
   directories inside an archive. Previously a directory row was treated as the
   archive container, so members were searched below a non-existent

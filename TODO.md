@@ -6,9 +6,9 @@ in the backend's
 completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
 [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md).
 
-## Current status (2026-11-02)
+## Current status (2026-11-06)
 
-- Version `0.10.0`; JSON and repository tabs both use `CatalogBackend`.
+- Version `0.11.0`; JSON and repository tabs both use `CatalogBackend`.
 - JSON tabs have explicit document sessions with modified markers,
   Save/Revert, and save/discard/cancel prompts; SQLite tabs remain
   transactional.
@@ -16,24 +16,24 @@ completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
   directories, expands on the first selection click, and previews/extracts
   members through the shared cache.
 - The GUI Xvfb display job and the shared CLI/GTK operation matrix are green on
-  `testing` and `main`. GUI verification: 73 tests, coverage 36.46 %, build
+  `testing` and `main`. GUI verification: 74 tests, coverage 36.53 %, build
   clean.
-- Documentation and Ddoc headers were refreshed on 2026-11-02.
+- Documentation and Ddoc headers were refreshed on 2026-11-06.
 
 ## P0 — Prepare the next GUI release
 
 Target: `0.11.0` (minor release for the backend-backed JSON views, archive tree
 workflow, and JSON document save semantics).
 
-- [ ] Confirm the paired backend release version and run
+- [x] Confirm the paired backend release version and run
       [`DosierSkanilo/docs/RELEASE-CHECKLIST.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/RELEASE-CHECKLIST.md)
       end to end.
-- [ ] Move `## Unreleased` to `## Release 0.11.0` in `CHANGELOG.md`, update the
+- [x] Move `## Unreleased` to `## Release 0.11.0` in `CHANGELOG.md`, update the
       package version, and commit the release notes.
 - [ ] Create the annotated `v0.11.0` tag after the backend tag is ready; verify
       that the tag workflow validates tag/VERSION/CHANGELOG and publishes the
       release.
-- [ ] Re-run the Xvfb display suite and the 95,001-row JSON/SQLite smoke loads
+- [x] Re-run the Xvfb display suite and the 95,001-row JSON/SQLite smoke loads
       as release evidence.
 - [ ] Update packaging metadata (Arch, Fedora, Flatpak) for `0.11.0`, verify
       the paired Flatpak/source archive hashes, and launch the installed
