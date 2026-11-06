@@ -10,5 +10,8 @@ Minimal guidelines for coding AI working in this repository:
   Semantic Versioning in the `vX.Y.Z` form. Keep GUI versions independent of the
   backend package version; bump major for incompatible user-facing changes,
   minor for backward-compatible features, and patch for fixes.
+- Create release tags on the `main` merge commit, then update Flatpak hashes in
+  a follow-up commit on `main`. Source archives embed the tagged commit SHA, so
+  moving a tag changes the archive hash even with an identical tree.
 - Run the smallest relevant verification step after editing and report if verification could not be completed.
 - Flag assumptions, risks, or follow-up work clearly when they affect correctness.
