@@ -21,3 +21,15 @@ the `dosierskanilo` CLI package at runtime. The project is licensed under
 Build and validate recipes in clean native environments. The Flatpak draft uses
 the backend as a sibling source module and needs an offline/vendorable DUB
 dependency strategy before Flathub submission.
+
+## Release tags and Flatpak hashes
+
+Create annotated release tags on the `main` merge commit, after the release
+commit has been merged. GitHub and GitLab source archives include the tagged
+commit SHA in their archive metadata, so re-pointing or re-creating a tag
+changes the archive `sha256` even when the source tree is identical.
+
+The source archive cannot contain the final hash of itself. Tag first, download
+the published archive, compute its `sha256`, then update the Flatpak manifest in
+a follow-up commit on `main`. Never tag that hash-update commit, and never reuse
+a hash after moving a tag.
