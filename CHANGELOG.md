@@ -16,6 +16,14 @@ All notable changes to this project are documented in this file.
   as a retry, so the info row stays visible and stable until the next manual
   expand or rescan.
 
+- Archive tree pages drop explicit directory rows that collide with the
+  directory synthesized from member paths. Older catalogs no longer show two
+  identically named directory nodes where only one can expand.
+
+- A failed archive scan now shows the last scanner error in the status line and
+  the verbose `[archive-scan] done` log, instead of only reporting a failure
+  count.
+
 - A single-archive rescan from the context menu refreshes only that archive node
   instead of reloading the complete document and re-expanding every other
   archive.

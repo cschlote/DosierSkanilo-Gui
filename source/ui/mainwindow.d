@@ -6641,7 +6641,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
                                 summary.archivesUpdated, summary.failed);
                 logLineVerbose("[archive-scan] done archive=", archivePath,
                     " updated=", summary.archivesUpdated, " failed=",
-                    summary.failed, " cancelled=", cancelled, " error=", error);
+                    summary.failed, " cancelled=", cancelled, " error=", error,
+                    " lastError=", summary.lastError);
+                if (error.length == 0 && summary.failed > 0
+                    && summary.lastError.length > 0)
+                    message ~= " Last error: " ~ summary.lastError;
                 setLoadingState(document, false, message);
                 if (error.length == 0)
                 {

@@ -890,6 +890,23 @@ ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(CatalogBackend backend,
         cursor = page.nextCursor;
     }
 
+    /* Repository indexes may still contain explicit directory references
+     * from older scans. They collide with the directory synthesized from the
+     * member paths and would show two nodes with the same name, only one of
+     * which can expand. Keep the synthesized directory. */
+    bool[string] directoryVirtualPaths;
+    foreach (entry; direct)
+        if (entry.isDirectory)
+            directoryVirtualPaths[entry.virtualPath] = true;
+    if (directoryVirtualPaths.length > 0)
+    {
+        ArchiveMemberTreeEntry[] unique;
+        foreach (entry; direct)
+            if (entry.isDirectory || entry.virtualPath !in directoryVirtualPaths)
+                unique ~= entry;
+        direct = unique;
+    }
+
     direct.sort!((left, right) => left.isDirectory != right.isDirectory
         ? left.isDirectory : left.relativePath < right.relativePath);
 
@@ -1887,7 +1904,12 @@ unittest
     auto container = new NamedBinaryBlob("archives/test.zip", 14, SysTime(0));
     container.archiveSpecs = [
         new ArchiveSpec("member.txt", 6, "", CheckSums("md5", "sha1", "xxh64")),
+        /* Older catalogs can contain explicit directory rows. They must not
+         * duplicate the directory synthesized from the member paths. */
+        new ArchiveSpec("folder", 0, "", CheckSums("md5", "sha1", "xxh64")),
         new ArchiveSpec("folder/a.txt", 1, "", CheckSums("md5", "sha1", "xxh64")),
+        new ArchiveSpec("folder/sub", 0, "",
+            CheckSums("md5", "sha1", "xxh64")),
         new ArchiveSpec("folder/sub/b.txt", 1, "",
             CheckSums("md5", "sha1", "xxh64"))
     ];
