@@ -110,7 +110,8 @@ import ui.builderutils : builderObject;
 import ui.detailpane : DetailPaneCallbacks, bindDetailPaneSignals, loadDetailPaneUi;
 import ui.detailpreview : DetailPreviewCallbacks, bindDetailPreviewSignals, loadDetailPreviewUi;
 import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT, COL_FILE_TYPE, COL_HAS_ARCHIVE, COL_HAS_TORRENT, COL_HAS_FILE_TYPE_FLAG, COL_HAS_MEDIA_FLAG, COL_HAS_VIDEO_FLAG, COL_HAS_AUDIO_FLAG, COL_HAS_IMAGE_FLAG, COL_HAS_TEXT_FLAG, COL_HAS_ARCHIVE_FLAG, COL_HAS_TORRENT_FLAG, COL_INDEX, COL_INDEX_SORT, COL_MEDIA_INFO, COL_SOURCE_ID, DocumentTab, PreviewScaleMode, TreeSortOrder, clampPreviewScaleMode;
-import ui.contextpaths : resolveDocumentSourcePath;
+import ui.contextpaths : decodeCatalogReferencePath,
+    resolveDocumentSourcePath;
 import ui.dataexport : loadFilteredExportRows, writeRowsCsv, writeRowsJson;
 import ui.nestedentrylogic : prepareNestedEntryPage;
 import ui.splitterlayout : clampSplitPosition;
@@ -2066,7 +2067,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
     {
         const auto sourceRoot = document.repositoryStorage
             ? Repository.findRoot(document.filePath) : document.sourceRoot;
-        return resolveDocumentSourcePath(document.filePath, knownFileName,
+        const auto sourcePath = document.directorySourceRemote
+            ? decodeCatalogReferencePath(knownFileName) : knownFileName;
+        return resolveDocumentSourcePath(document.filePath, sourcePath,
             sourceRoot);
     }
 

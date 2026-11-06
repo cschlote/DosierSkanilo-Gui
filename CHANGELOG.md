@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- The preview pane now decodes escaped catalog reference paths before probing
+  the filesystem. Files and archive containers whose names contain `!` are no
+  longer reported as missing when their stored path uses the canonical `!!`
+  escape.
+
 ## Release 0.11.0 - 2026-11-06
 
 - Archive tree pages for repository catalogs now descend into indexed
