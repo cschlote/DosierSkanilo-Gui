@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Paged repository blob tables no longer mark their columns as GTK-sortable
+  while the cursor-backed virtual model is active. This removes the GTK
+  sorting warnings; choosing the "All rows" page size restores sortable
+  columns.
+
 - The directory tree now supports keyboard navigation: `Left` selects the
   parent row, while `Right` expands a directory or archive directory and
   selects its first materialized child. Asynchronous repository and archive
