@@ -70,6 +70,7 @@ import gtk.c.types : ButtonsType, DialogFlags, FileChooserAction, MessageType,
     ResponseType;
 import gdk.c.types : GdkModifierType;
 import gdk.Event;
+import gdk.Keysyms : GdkKeysyms;
 
 import core.thread : Thread;
 import core.time : MonoTime, dur;
@@ -863,6 +864,43 @@ private void selectPendingTreeFile(DocumentTab document)
         document.syncingTreeSelection = false;
         document.pendingTreeRevealFileId = "";
     }
+}
+
+/** Select the first real child row below a tree node.
+ *
+ * Loading, page, info, and error markers are skipped. Returns false when no
+ * materialized child exists yet, so asynchronous loaders can retry later.
+ */
+private bool selectFirstMaterializedTreeChild(DocumentTab document,
+    string parentNodeId)
+{
+    auto model = document.directoryTreeView.getModel();
+    TreeIter parent;
+    if (model is null
+        || !findTreeIterByValue(model, new TreeIter(), false,
+            TREE_COL_NODE_ID, parentNodeId, parent))
+        return false;
+    TreeIter child;
+    if (!model.iterChildren(child, parent))
+        return false;
+    do
+    {
+        const auto kind = model.getValueString(child, 1);
+        if (kind != "Placeholder" && kind != "Loading"
+            && kind != "ArchivePlaceholder" && kind != "ArchiveLoading"
+            && kind != "Page" && kind != "LoadingPage"
+            && kind != "ArchiveInfo" && kind != "ArchiveError"
+            && kind != "TorrentPlaceholder" && kind != "TorrentLoading"
+            && kind != "TorrentPage" && kind != "TorrentLoadingPage")
+        {
+            document.syncingTreeSelection = true;
+            document.directoryTreeView.getSelection().selectIter(child);
+            document.syncingTreeSelection = false;
+            return true;
+        }
+    }
+    while (model.iterNext(child));
+    return false;
 }
 
 private void updateTreeNodeVisibility(DocumentTab document, TreeIter iter,
@@ -2937,6 +2975,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     document.directoryTreeStore.remove(removeStore);
                     if (result.error.length > 0)
                     {
+                        if (document.pendingTreeFirstChildNodeId
+                            == result.directoryId)
+                            document.pendingTreeFirstChildNodeId = "";
                         auto errorIter = document.directoryTreeStore.createIter(parentStore);
                         document.directoryTreeStore.setValue(errorIter, 0,
                             "Failed to load: " ~ result.error);
@@ -2959,6 +3000,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         restoreExpandedDirectories(document.directoryTreeView,
                             document.expandedDirectoryIds);
                         selectPendingTreeFile(document);
+                        if (document.pendingTreeFirstChildNodeId
+                            == result.directoryId)
+                        {
+                            selectFirstMaterializedTreeChild(document,
+                                result.directoryId);
+                            document.pendingTreeFirstChildNodeId = "";
+                        }
                         if (loadExpandedTreePlaceholders !is null)
                             scheduleUiIdle({ loadExpandedTreePlaceholders(); return false; });
                     }
@@ -3220,6 +3268,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
                             suppressArchiveInfoRetry = false;
                         }
                     }
+                    if (document.pendingTreeFirstChildNodeId == parentNodeId)
+                    {
+                        selectFirstMaterializedTreeChild(document, parentNodeId);
+                        document.pendingTreeFirstChildNodeId = "";
+                    }
                     return false;
                 });
             }).start();
@@ -3386,6 +3439,56 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     treeFilterForDocument(document, prefCaseSensitiveFilter), document.treeSortOrder);
             }
         });
+        document.directoryTreeView.addOnKeyPress((Event event, Widget _) {
+            auto key = event.key();
+            if (key is null)
+                return false;
+            if (key.keyval == GdkKeysyms.GDK_Left)
+            {
+                document.pendingTreeFirstChildNodeId = "";
+                auto model = document.directoryTreeView.getModel();
+                auto selection = document.directoryTreeView.getSelection();
+                TreeModelIF selectedModel;
+                TreeIter selected;
+                if (model is null
+                    || !selection.getSelected(selectedModel, selected))
+                    return false;
+                TreeIter parent;
+                if (!model.iterParent(parent, selected))
+                    return false;
+                document.syncingTreeSelection = true;
+                selection.selectIter(parent);
+                document.syncingTreeSelection = false;
+                return true;
+            }
+            if (key.keyval != GdkKeysyms.GDK_Right)
+                return false;
+
+            auto model = document.directoryTreeView.getModel();
+            auto selection = document.directoryTreeView.getSelection();
+            TreeModelIF selectedModel;
+            TreeIter selected;
+            if (model is null
+                || !selection.getSelected(selectedModel, selected))
+                return false;
+            const auto kind = model.getValueString(selected, 1);
+            if (kind != "Directory" && kind != "ArchiveDirectory")
+                return false;
+            const auto nodeId = model.getValueString(selected, TREE_COL_NODE_ID);
+            document.pendingTreeFirstChildNodeId = nodeId;
+            document.directoryTreeView.expandRow(model.getPath(selected), false);
+            if (selectFirstMaterializedTreeChild(document, nodeId))
+            {
+                document.pendingTreeFirstChildNodeId = "";
+            }
+            else if (kind == "Directory" && !document.directorySourceRemote)
+            {
+                /* Local directories load synchronously during expandRow. */
+                document.pendingTreeFirstChildNodeId = "";
+            }
+            return true;
+        });
+
         void selectTableRowFromTree(TreeIter tableIter, string fileName, string filePath)
         {
             document.syncingTreeSelection = true;

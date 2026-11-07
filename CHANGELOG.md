@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- The directory tree now supports keyboard navigation: `Left` selects the
+  parent row, while `Right` expands a directory or archive directory and
+  selects its first materialized child. Asynchronous repository and archive
+  loads apply the selection when the first rows arrive.
+
 ## Release 0.12.1 - 2026-11-07
 
 - Loading the next page of a large directory tree no longer keeps `TreePath`

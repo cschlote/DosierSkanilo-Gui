@@ -171,6 +171,7 @@ class DocumentTab
     void delegate() reconcileDirectoryLoads;
     bool syncingTreeSelection;
     string pendingTreeRevealFileId;
+    string pendingTreeFirstChildNodeId;
     string selectedTreeFileId;
     string selectedTreeDirectoryId;
     FileCursor selectedTreeCursor;
