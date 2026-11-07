@@ -8,6 +8,8 @@ import gtk.TreeStore;
 import gtk.c.types : GType;
 import std.algorithm : canFind;
 import std.string : toLower;
+
+import dosierarkivo.archive : archivePathMatchesText;
 import model.treeprojection : FileFilter;
 
 enum int treeNodeIdColumn = 16;
@@ -82,10 +84,11 @@ bool treeFileMatchesFilter(string name, string path, bool video, bool audio,
 {
     if (filter.text.length > 0)
     {
-        auto query = filter.caseSensitive ? filter.text : filter.text.toLower;
-        auto filteredName = filter.caseSensitive ? name : name.toLower;
-        auto filteredPath = filter.caseSensitive ? path : path.toLower;
-        if (!filteredName.canFind(query) && !filteredPath.canFind(query))
+        const query = filter.caseSensitive ? filter.text : filter.text.toLower;
+        const filteredName = filter.caseSensitive ? name : name.toLower;
+        if (!filteredName.canFind(query)
+            && !archivePathMatchesText(path, filter.text,
+                filter.caseSensitive))
             return false;
     }
     auto hasMediaFilter = filter.video || filter.audio || filter.image || filter.textStream;
@@ -198,4 +201,10 @@ unittest
     filter.mediaNegated = true;
     assert(!treeFileMatchesFilter("Song.mkv", "Music/Song.mkv", true, false,
         false, false, false, false, false, filter));
+
+    FileFilter escapedFilter;
+    escapedFilter.text = "d!e";
+    escapedFilter.caseSensitive = false;
+    assert(treeFileMatchesFilter("f.txt", "d!!e/f.txt", false, false, false,
+        false, false, false, false, escapedFilter));
 }
