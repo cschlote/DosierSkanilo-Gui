@@ -8,7 +8,7 @@ completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
 
 ## Current status (2026-11-07)
 
-- Version `0.12.0`; JSON and repository tabs both use `CatalogBackend`.
+- Version `0.12.1`; JSON and repository tabs both use `CatalogBackend`.
 - JSON tabs have explicit document sessions with modified markers,
   Save/Revert, and save/discard/cancel prompts; SQLite tabs remain
   transactional.
@@ -16,14 +16,14 @@ completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
   directories, expands on the first selection click, and previews/extracts
   members through the shared cache.
 - The GUI Xvfb display job and the shared CLI/GTK operation matrix are green on
-  `testing` and `main`. GUI verification: 76 tests, coverage 36.79 %, build
+  `testing` and `main`. GUI verification: 76 tests, coverage 36.77 %, build
   clean.
 - Documentation and Ddoc headers were refreshed on 2026-11-06.
 
 ## P0 — Prepare the next GUI release
 
-Target: `0.12.0` (minor release for escaped archive path previews, decoded path
-filters, and GtkD model finalization cleanup since `0.11.0`).
+Target: `0.12.1` (patch release for large-directory page loading and the
+reverted GtkD model cleanup since `0.12.0`).
 
 - [x] Confirm the paired backend release version and run
       [`DosierSkanilo/docs/RELEASE-CHECKLIST.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/RELEASE-CHECKLIST.md)

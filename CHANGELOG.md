@@ -4,6 +4,18 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## Release 0.12.1 - 2026-11-07
+
+- Loading the next page of a large directory tree no longer keeps `TreePath`
+  objects that belong to the signal emission. The asynchronous reply now uses
+  stable copies, preventing invalid-path GTK warnings and crashes after
+  selecting "More files available...".
+
+- Reverted the 0.12.0 custom `TreeModel` data-key cleanup. Removing GtkD's
+  second destroy-notify registration could crash during GC in
+  `customTreeModelFinalize`; keeping the registration is safer even though the
+  underlying GtkD toggle-ref warning can still appear.
+
 ## Release 0.12.0 - 2026-11-07
 
 - The custom virtual blob table model now drops GtkD's duplicate
