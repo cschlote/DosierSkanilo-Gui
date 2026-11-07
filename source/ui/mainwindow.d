@@ -2867,8 +2867,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 return;
             auto loadingKind = cursor.id.length == 0 ? "Loading" : "LoadingPage";
             auto loadingStoreIter = treeStoreIter(document, loadingIter);
+            if (loadingStoreIter is null)
+                return;
             document.directoryTreeStore.setValue(loadingStoreIter, 0, "Loading...");
             document.directoryTreeStore.setValue(loadingStoreIter, 1, loadingKind);
+            /* TreePath arguments belong to the signal emission. Keep copies
+             * for the worker reply, which runs after the signal returns. */
+            auto stableParentPath = parentPath.copy();
+            auto stableRowToRemovePath = rowToRemovePath.copy();
             auto filePath = document.filePath;
             auto fileFilter = treeFilterForDocument(document, prefCaseSensitiveFilter);
             auto treeSortOrder = document.treeSortOrder;
@@ -2920,12 +2926,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
                             return false;
                         }
                     }
-                    else if (!model.getIter(parent, parentPath)
-                        || !model.getIter(rowToRemove, rowToRemovePath)
+                    else if (!model.getIter(parent, stableParentPath)
+                        || !model.getIter(rowToRemove, stableRowToRemovePath)
                         || model.getValueString(rowToRemove, 1) != "LoadingPage")
                         return false;
                     auto parentStore = treeStoreIter(document, parent);
                     auto removeStore = treeStoreIter(document, rowToRemove);
+                    if (parentStore is null || removeStore is null)
+                        return false;
                     document.directoryTreeStore.remove(removeStore);
                     if (result.error.length > 0)
                     {

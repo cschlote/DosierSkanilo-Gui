@@ -2,10 +2,7 @@
 module ui.virtualblobtable;
 
 import core.thread : Thread;
-import glib.Str : Str;
 import gobject.Value;
-import gobject.c.functions : g_object_steal_data;
-import gobject.c.types : GObject;
 import gtk.TreeIter;
 import gtk.TreeModel;
 import gtk.TreePath;
@@ -59,13 +56,6 @@ public:
         CatalogPageCursor nextCursor, bool hasMore)
     {
         super();
-        /* GtkD's custom TreeModel constructor registers a second destroy
-         * notify for the same D wrapper under "customTreeModel". The key is
-         * never read and the duplicate notify can run after the wrapper's
-         * GObject data was already stolen, producing
-         * g_object_remove_toggle_ref warnings during GC. */
-        g_object_steal_data(getObjectGStruct(),
-            Str.toStringz("customTreeModel"));
         this.sourcePath = sourcePath;
         this.backend = backend;
         this.query = query;

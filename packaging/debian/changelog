@@ -1,3 +1,10 @@
+dosierskanilo-gui (0.12.1-1) unstable; urgency=medium
+
+  * Release GUI 0.12.1 with stable TreePath copies for large-directory page
+    loading and a revert of the unsafe GtkD custom-model data cleanup.
+
+ -- Carsten Schlote <schlote@vahanus.net>  Sat, 07 Nov 2026 00:00:00 +0000
+
 dosierskanilo-gui (0.12.0-1) unstable; urgency=medium
 
   * Release GUI 0.12.0 with preview paths for names containing "!", decoded
