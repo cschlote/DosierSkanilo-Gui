@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Tree filters now match both the stored escaped path and its decoded display
+  form, so filtering by a name containing `!` works for repository and JSON
+  catalogs.
+
 - The preview pane now decodes escaped catalog reference paths before probing
   the filesystem. Files and archive containers whose names contain `!` are no
   longer reported as missing when their stored path uses the canonical `!!`

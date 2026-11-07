@@ -18,6 +18,7 @@ import std.string : empty;
 
 import dosierarkivo.archive : ArchiveEntryDescriptor, ArchivePasswordCallback,
     ArchivePasswordCancelledException, appendArchiveVirtualPath,
+    archivePathOccurrenceMarker, archivePathSeparator,
     escapeArchiveVirtualPath, normalizeArchiveEntryPath,
     ArchiveVirtualPathLayer, ParsedArchiveVirtualPath,
     parseArchiveVirtualPath;
@@ -600,7 +601,8 @@ private MemberContentLease acquireVirtualArchiveMember(string sourceRoot,
 
             const auto locator = ContentLocator.init;
             const auto fallbackIdentity = sourceIdentity ~ ":container:"
-                ~ containerPathIdentity ~ "!/" ~ layer.relativePath ~ "!~"
+                ~ containerPathIdentity ~ archivePathSeparator()
+                ~ layer.relativePath ~ archivePathOccurrenceMarker()
                 ~ requestedOccurrence.to!string;
             const auto sizeLimit = selected.hasSize ? selected.size
                 : index + 1 == parsed.entries.length ? expectedSize : 0;
@@ -728,7 +730,8 @@ NestedFileNode[] loadCatalogTorrentEntries(CatalogBackend backend,
                         relativePath ~= "/";
                     relativePath ~= component;
                 }
-                result ~= NestedFileNode(containerPath ~ "!/" ~ relativePath,
+                result ~= NestedFileNode(containerPath
+                    ~ archivePathSeparator() ~ relativePath,
                     relativePath, relativePath, entry.size, "");
             }
             ++seen;
@@ -755,7 +758,8 @@ private string decodedArchiveComponent(string component)
 {
     try
     {
-        const parsed = parseArchiveVirtualPath("x!/" ~ component);
+        const parsed = parseArchiveVirtualPath("x" ~ archivePathSeparator()
+            ~ component);
         if (parsed.entries.length == 1)
             return parsed.entries[0].relativePath;
     }
@@ -792,11 +796,12 @@ ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(CatalogBackend backend,
         if (referenceId.isValid)
         {
             container = backend.loadReference(referenceId);
-            if (container.hasArchive || rootPath.indexOf("!/") == -1)
+            if (container.hasArchive
+                || rootPath.indexOf(archivePathSeparator()) == -1)
                 break;
             container = CatalogFile.init;
         }
-        const bang = rootPath.lastIndexOf("!/");
+        const bang = rootPath.lastIndexOf(archivePathSeparator());
         const slash = rootPath.lastIndexOf('/');
         const cut = bang != -1 ? bang : slash;
         if (cut <= 0)
@@ -812,8 +817,9 @@ ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(CatalogBackend backend,
     string targetRelative;
     if (containerPath.length > rootPath.length)
         targetRelative = containerPath[rootPath.length .. $];
-    while (targetRelative.startsWith("!/"))
-        targetRelative = targetRelative[2 .. $];
+    const separator = archivePathSeparator();
+    while (targetRelative.startsWith(separator))
+        targetRelative = targetRelative[separator.length .. $];
     while (targetRelative.startsWith("/"))
         targetRelative = targetRelative[1 .. $];
     string[] targetComponents = targetRelative.length > 0
@@ -822,7 +828,7 @@ ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(CatalogBackend backend,
     CatalogFileQuery query;
     query.directoryId = container.directoryId;
     query.filter.includeArchiveMembers = true;
-    query.filter.pathText = rootPath ~ "!/";
+    query.filter.pathText = rootPath ~ separator;
 
     ArchiveMemberTreeEntry[] direct;
     bool[string] seenDirectories;
@@ -836,10 +842,11 @@ ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(CatalogBackend backend,
         foreach (file; page.files)
         {
             const memberPath = file.relativePath;
-            if (!memberPath.startsWith(rootPath ~ "!/"))
+            if (!memberPath.startsWith(rootPath ~ separator))
                 continue;
-            auto relative = memberPath[(rootPath.length + 2) .. $];
-            const nextLayer = relative.indexOf("!/");
+            auto relative = memberPath[(rootPath.length
+                + separator.length) .. $];
+            const nextLayer = relative.indexOf(separator);
             if (nextLayer != -1)
                 relative = relative[0 .. nextLayer];
             auto components = relative.split("/");
@@ -868,7 +875,7 @@ ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(CatalogBackend backend,
                 entry.relativePath = decodedArchiveComponent(childDisplay);
                 entry.name = entry.relativePath;
                 entry.virtualPath = containerPath
-                    ~ (targetComponents.length == 0 ? "!/" : "/")
+                    ~ (targetComponents.length == 0 ? separator : "/")
                     ~ childDisplay;
                 entry.referenceId = entry.virtualPath;
                 direct ~= entry;
