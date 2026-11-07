@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- The custom virtual blob table model now drops GtkD's duplicate
+  `customTreeModel` destroy-notify registration after construction. This avoids
+  `g_object_remove_toggle_ref: couldn't find toggle ref` warnings when table
+  models are finalized or replaced.
+
 - Tree filters now match both the stored escaped path and its decoded display
   form, so filtering by a name containing `!` works for repository and JSON
   catalogs.
