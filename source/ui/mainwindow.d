@@ -342,6 +342,42 @@ void configureDirectoryTreeColumns(TreeView treeView)
     treeView.setHeadersClickable(false);
 }
 
+/** Map a visible blob-table column to its sortable model column. */
+private int blobTableSortColumnForView(int index)
+{
+    switch (index)
+    {
+    case 0: return COL_INDEX_SORT;
+    case 1: return COL_FILE_SIZE_SORT;
+    default: return index;
+    }
+}
+
+/** Enable or disable header sorting on the blob table.
+ *
+ * The cursor-backed `VirtualBlobTableModel` is deliberately not a
+ * `TreeSortable`. Clear the column sort IDs before attaching it so GTK does
+ * not try to sort a model that only keeps a few pages in memory.
+ */
+private void setBlobTableSortEnabled(TreeView treeView, bool enabled)
+{
+    if (treeView is null)
+        return;
+    foreach (index; 0 .. 7)
+    {
+        auto column = treeView.getColumn(index);
+        if (column is null)
+            continue;
+        const desired = enabled ? blobTableSortColumnForView(index) : -1;
+        column.setClickable(enabled);
+        if (column.getSortColumnId() != desired)
+            column.setSortColumnId(desired);
+        if (!enabled)
+            column.setSortIndicator(false);
+    }
+    treeView.setHeadersClickable(enabled);
+}
+
 private void setBlobTableVirtualMode(TreeView treeView, bool virtualMode)
 {
     treeView.setFixedHeightMode(false);
@@ -2720,6 +2756,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.tableStore.setSortColumnId(document.tableSortColumnId,
                 cast(GtkSortType) document.tableSortOrder);
         document.tableStore.addOnSortColumnChanged((TreeSortableIF sortable) {
+            if (document.repositoryTableModel !is null)
+                return;
             int columnId;
             GtkSortType order;
             document.tableSortEnabled = document.tableStore.getSortColumnId(
@@ -4395,6 +4433,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
         if (!appendRows)
         {
+            document.repositoryTableModel = null;
             document.tableStore.clear();
             document.visibleRows = [];
             clearSelectionDetails(document);
@@ -4512,6 +4551,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
             // Nach dem Befüllen TreeView wieder verbinden und eine neue Layout-Runde anstoßen.
             document.tableView.setModel(document.tableStore);
+            setBlobTableSortEnabled(document.tableView, true);
+            if (document.tableSortEnabled)
+                document.tableStore.setSortColumnId(document.tableSortColumnId,
+                    cast(GtkSortType) document.tableSortOrder);
             if (document.directorySource !is null && !appendRows)
             {
                 renderDirectoryTree(document, document.directorySource,
@@ -5980,12 +6023,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
                             document.pageSize, result.allRows, result.pageTotal,
                             result.nextContentCursor, result.hasMore);
                         setBlobTableVirtualMode(document.tableView, true);
+                        setBlobTableSortEnabled(document.tableView, false);
                         document.tableView.setModel(document.repositoryTableModel);
                         if (busyDocument is document)
                             setLoadingState(document, false);
                         document.status.setText(format(
-                            "Showing %s matching blobs; more rows load while scrolling",
-                            result.pageTotal));
+                            "Showing %s matching blobs; more rows load while scrolling. "
+                            ~ "Choose 'All rows' to sort.", result.pageTotal));
                     }
                     else
                     {
