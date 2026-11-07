@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+## Release 0.12.0 - 2026-11-07
+
 - The custom virtual blob table model now drops GtkD's duplicate
   `customTreeModel` destroy-notify registration after construction. This avoids
   `g_object_remove_toggle_ref: couldn't find toggle ref` warnings when table

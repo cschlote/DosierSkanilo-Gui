@@ -1,3 +1,10 @@
+dosierskanilo-gui (0.12.0-1) unstable; urgency=medium
+
+  * Release GUI 0.12.0 with preview paths for names containing "!", decoded
+    path filters, and cleaner GtkD table-model finalization.
+
+ -- Carsten Schlote <schlote@vahanus.net>  Sat, 07 Nov 2026 00:00:00 +0000
+
 dosierskanilo-gui (0.11.0-1) unstable; urgency=medium
 
   * Release GUI 0.11.0 with backend-backed archive trees, cancellable archive

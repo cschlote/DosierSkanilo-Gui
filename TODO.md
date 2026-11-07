@@ -6,9 +6,9 @@ in the backend's
 completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
 [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md).
 
-## Current status (2026-11-06)
+## Current status (2026-11-07)
 
-- Version `0.11.0`; JSON and repository tabs both use `CatalogBackend`.
+- Version `0.12.0`; JSON and repository tabs both use `CatalogBackend`.
 - JSON tabs have explicit document sessions with modified markers,
   Save/Revert, and save/discard/cancel prompts; SQLite tabs remain
   transactional.
@@ -22,8 +22,8 @@ completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
 
 ## P0 — Prepare the next GUI release
 
-Target: `0.11.0` (minor release for the backend-backed JSON views, archive tree
-workflow, and JSON document save semantics).
+Target: `0.12.0` (minor release for escaped archive path previews, decoded path
+filters, and GtkD model finalization cleanup since `0.11.0`).
 
 - [x] Confirm the paired backend release version and run
       [`DosierSkanilo/docs/RELEASE-CHECKLIST.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/RELEASE-CHECKLIST.md)
