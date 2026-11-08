@@ -16,8 +16,8 @@ completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
   directories, expands on the first selection click, and previews/extracts
   members through the shared cache.
 - The GUI Xvfb display job and the shared CLI/GTK operation matrix are green on
-  `testing` and `main`. GUI verification: 76 tests, coverage 36.43 %, build
-  clean.
+  `main`; `testing` mirrors the same commit without deployments. GUI
+  verification: 76 tests, coverage 36.43 %, build clean.
 - Documentation and Ddoc headers are complete: every documentable public,
   package, and private declaration has Ddoc (verified 2026-11-08).
 
