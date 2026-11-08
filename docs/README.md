@@ -5,6 +5,8 @@ This directory contains project documentation for the GTK frontend.
 ## Contents
 
 - `ARCHITECTURE.md`: high-level architecture and module boundaries
+- `development/engineering-workflow.md`: change, verification, versioning, and
+  release rules for contributors and coding agents
 - `GUI-REDESIGN.md`: current directory-tree implementation and source-opaque
   query plan
 - `../CHANGELOG.md`: user-visible and engineering changes by release
@@ -31,6 +33,9 @@ Or run stages individually:
 ./scripts/test.sh
 ./scripts/build-docs.sh
 ```
+
+The full verification matrix, versioning rules, and release workflow are in
+[`development/engineering-workflow.md`](development/engineering-workflow.md).
 
 ## Debugging With Startup Arguments
 
