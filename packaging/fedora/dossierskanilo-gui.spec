@@ -7,9 +7,26 @@ URL:            https://gitlab.vahanus.net/dlang/dosierskanilo-gui
 Source0:        https://gitlab.vahanus.net/dlang/dosierskanilo-gui/-/archive/v%{version}/dosierskanilo-gui-v%{version}.tar.gz
 BuildRequires:  ldc
 BuildRequires:  dub
+BuildRequires:  gcc
 BuildRequires:  gtk3-devel
+BuildRequires:  gstreamer1-devel
+BuildRequires:  gstreamer1-plugins-base-devel
+BuildRequires:  sqlite-devel
 Requires:       gtk3
 Requires:       gstreamer1
+Requires:       gstreamer1-plugins-base
+Requires:       sqlite-libs
+Recommends:     mediainfo
+Recommends:     gstreamer1-plugins-good
+Recommends:     file
+Recommends:     unzip
+Recommends:     tar
+Recommends:     unrar
+Recommends:     p7zip
+Suggests:       gstreamer1-plugins-bad-free
+Suggests:       gstreamer1-libav
+Suggests:       gstreamer1-plugins-ugly-free
+Suggests:       python3
 
 %description
 GTK desktop frontend for browsing and filtering DosierSkanilo JSON indexes.

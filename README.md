@@ -75,7 +75,9 @@ The GUI focuses on a traditional desktop workflow:
 
 The build needs a sibling `../DosierSkanilo` checkout, a D compiler with DUB,
 and GTK3/GStreamer development packages. `scripts/install-dependencies.sh`
-installs the supported local dependencies.
+installs the supported local dependencies. Per-package build and runtime
+dependencies are listed in
+[`packaging/README.md`](packaging/README.md#dependencies).
 
 ```bash
 dub build --compiler=ldc2
