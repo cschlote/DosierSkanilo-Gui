@@ -120,6 +120,9 @@ direct JSON tabs keep the complete catalog and derived index in memory.
 
 - `docs/README.md`
 - `docs/ARCHITECTURE.md`
+- `docs/development/engineering-workflow.md` - change, verification,
+  versioning, and release rules
+- [Shared D language guide](https://github.com/cschlote/DosierSkanilo/blob/main/docs/development/d-language-guide.md)
 - `CHANGELOG.md`
 - `TODO.md`
 - `docs/DATAFILE_EXTRACTION.md`

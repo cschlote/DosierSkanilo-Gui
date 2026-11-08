@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Contributor and agent guidance is now organized in a compact `AGENTS.md`,
+  with detailed change, verification, versioning, and release rules in
+  `docs/development/engineering-workflow.md`.
+
 - Source documentation is now complete for every public, package, and private
   declaration, including fields, enum members, constructors, callbacks, and
   helper functions with their parameter and return contracts.
