@@ -19,4 +19,4 @@ modules:
     sources:
       - type: archive
         url: https://gitlab.vahanus.net/dlang/dosierskanilo-gui/-/archive/v0.13.0/dosierskanilo-gui-v0.13.0.tar.gz
-        sha256: 33873999482a1dd9dca6a2c37d200129a18b700f763c1a55fe6e20334e75a1fd
+        sha256: 76d5eeedcff492674192bccfed0ff17be9c804fae941a05703305cf17eb15ca7
