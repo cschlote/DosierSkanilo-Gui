@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## Release 0.13.0 - 2026-11-08
 
 - Branch workflow now uses short-lived, intent-named feature branches from
   `main`; `testing` is a deployment-free mirror, and changelog updates happen

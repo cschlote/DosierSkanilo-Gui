@@ -1,5 +1,5 @@
 Name:           dosierskanilo-gui
-Version:        0.12.1
+Version:        0.13.0
 Release:        1%{?dist}
 Summary:        GTK desktop frontend for DosierSkanilo
 License:        GPL-3.0-only
