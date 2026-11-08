@@ -93,9 +93,12 @@ Open JSON files from `File` > `Open JSON File`, or repository directories from
 `File` > `Open Repository Directory`. A selected directory may be the repository
 root or any directory below it; the nearest `.dosierskanilo` directory is used.
 Catalog paths are root-relative, so a copied, moved, or remounted repository
-opens at its current path even when the stored advisory root differs. For
-multi-million-record catalogs, import the JSON into a repository first: direct
-JSON tabs keep the complete catalog and derived index in memory.
+opens at its current path even when the stored advisory root differs. The
+SQLite file must still reside on a local filesystem; sshfs, FUSE, SMB/CIFS,
+NFS, 9p, and similar network filesystems are rejected because they cannot
+provide SQLite's locking and durability guarantees. For multi-million-record
+catalogs, import the JSON into a repository first: direct JSON tabs keep the
+complete catalog and derived index in memory.
 
 ## Startup Controls
 

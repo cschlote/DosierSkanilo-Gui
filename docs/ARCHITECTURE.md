@@ -45,6 +45,7 @@ JSON supports scan/analyze with optional metadata phases.
    the shared `CatalogBackend`; JSON sessions bind a derived filesystem root.
    SQLite references are root-relative, so a copied, moved, or remounted
    repository opens at its current path and refreshes the advisory root metadata.
+   The backend rejects network and FUSE mount types before opening SQLite.
 3. Backend directory queries are exposed through `CatalogDirectorySource`.
 4. Directory children are loaded lazily with bounded backend pages on background
    workers.
