@@ -51,6 +51,15 @@ on the user-facing changes since the last tag.
       archive expansion, member preview, JSON save/reload, and repository
       operation refresh.
 
+## P1 — Backend Major 27 format cleanup
+
+- [ ] Rebuild and retest the GUI against backend 27 after legacy JSON v0–v4 and
+      SQLite schema migrations 1–5 are removed. Verify JSON v5 tabs, schema v6
+      repositories, document save/reload, backup/restore, and all shared
+      operation paths.
+- [ ] Remove GUI wording that implies legacy JSON versions are still supported
+      and update the error/help text for rejected old catalogs.
+
 ## P1 — Stability and UX follow-ups
 
 ### Splitter persistence and sizing
