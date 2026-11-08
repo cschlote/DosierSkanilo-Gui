@@ -481,7 +481,7 @@ a compatibility layer around the current table UI:
 The archive-member TreeView/extraction workflow and the shared CLI/GTK operation
 matrix are implemented. Open GUI work is tracked in [`TODO.md`](../TODO.md):
 
-- release preparation after `0.12.1`
+- release preparation after `0.13.0`
 - per-batch display profiling of the 95,001-row table
 - splitter persistence/sizing and video-preview realization/window-growth fixes
 - optional sibling prefetch and Wayland sink verification

@@ -1,3 +1,11 @@
+dosierskanilo-gui (0.13.0-1) unstable; urgency=medium
+
+  * Release GUI 0.13.0 with keyboard tree navigation, paged-table
+    sorting warnings removed, advisory repository roots, and refreshed
+    documentation.
+
+ -- Carsten Schlote <schlote@vahanus.net>  Sun, 08 Nov 2026 00:00:00 +0000
+
 dosierskanilo-gui (0.12.1-1) unstable; urgency=medium
 
   * Release GUI 0.12.1 with stable TreePath copies for large-directory page
