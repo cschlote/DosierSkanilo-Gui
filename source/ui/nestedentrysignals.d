@@ -1,4 +1,9 @@
-/** GTK signal binding for asynchronous nested-detail continuation rows. */
+/** GTK signal binding for asynchronous nested-detail continuation rows.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.nestedentrysignals;
 
 import gtk.Main : Main;
@@ -16,14 +21,28 @@ import std.process : environment;
 /** Query details carried by an activated archive/torrent continuation row. */
 struct NestedPageActivation
 {
+    /// Whether the activation belongs to an archive page rather than a torrent page.
     bool archive;
+    /// Stable identifier of the archive or torrent blob whose details are paged.
     string blobId;
+    /// Zero-based offset of the first entry to load for the continuation page.
     size_t offset;
+    /// Token identifying the root selection the activation belongs to.
     string selectionToken;
+    /// Token identifying this particular page request for stale-reply rejection.
     string requestToken;
 }
 
-/** Bind a continuation-row activation to its asynchronous page request. */
+/** Bind a continuation-row activation to its asynchronous page request.
+ *
+ * Only archive/torrent continuation rows whose parent matches the expected
+ * root and blob ID are forwarded; other activations are ignored.
+ *
+ * Params:
+ *     treeView = Tree view whose row-activation signal is bound.
+ *     loadPage = Callback invoked with the root path, the copied page path, and
+ *         the activation details when a valid continuation row is activated.
+ */
 void bindNestedPageActivation(TreeView treeView,
     void delegate(TreePath, TreePath, NestedPageActivation) loadPage)
 {
@@ -64,7 +83,22 @@ void bindNestedPageActivation(TreeView treeView,
     });
 }
 
-/** Reject an async page reply unless its root, selection, and marker still match. */
+/** Reject an async page reply unless its root, selection, and marker still match.
+ *
+ * Params:
+ *     model = Tree model containing the root and marker rows.
+ *     rootPath = Path of the archive or torrent root row.
+ *     markerPath = Path of the loading/continuation marker row.
+ *     archive = Whether the expected root kind is `ArchiveRoot` rather than
+ *         `TorrentRoot`.
+ *     blobId = Expected blob identifier stored on both rows.
+ *     offset = Expected continuation offset stored on the marker row.
+ *     selectionToken = Expected root selection token.
+ *     loadingKind = Expected kind string of the marker row.
+ *     requestToken = Expected request token stored on the marker row.
+ * Returns: `true` when all root, selection, and marker fields still match;
+ *     `false` when either path is invalid or any checked value differs.
+ */
 bool nestedEntryReplyMatches(TreeModelIF model, TreePath rootPath, TreePath markerPath,
     bool archive, string blobId, size_t offset, string selectionToken,
     string loadingKind, string requestToken)

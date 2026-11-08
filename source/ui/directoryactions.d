@@ -1,4 +1,9 @@
-/** TreeView directory expansion actions. */
+/** TreeView directory expansion actions.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.directoryactions;
 
 import gtk.TreeIter;
@@ -6,7 +11,12 @@ import gtk.TreeModelIF;
 import gtk.TreePath;
 import gtk.TreeView;
 
-/** Toggle one directory row without recursively opening its descendants. */
+/** Toggle one directory row without recursively opening its descendants.
+ *
+ * Params:
+ *     treeView = View containing the directory row.
+ *     path = Path of the directory row to expand or collapse.
+ */
 void toggleDirectoryExpansion(TreeView treeView, TreePath path)
 {
     if (treeView.rowExpanded(path))
@@ -15,7 +25,12 @@ void toggleDirectoryExpansion(TreeView treeView, TreePath path)
         treeView.expandRow(path, false);
 }
 
-/** Toggle every currently represented directory below one tree row. */
+/** Toggle every currently represented directory below one tree row.
+ *
+ * Params:
+ *     treeView = View containing the directory row.
+ *     path = Path of the directory row whose subtree is toggled.
+ */
 void toggleDirectorySubtree(TreeView treeView, TreePath path)
 {
     if (!treeView.rowExpanded(path))
@@ -31,6 +46,13 @@ void toggleDirectorySubtree(TreeView treeView, TreePath path)
     collapseDirectoryNode(treeView, model, root);
 }
 
+/** Recursively collapse a directory row and all nested directories below it.
+ *
+ * Params:
+ *     treeView = View whose rows are collapsed.
+ *     model = Tree model backing the view.
+ *     directory = Row to collapse after its directory descendants.
+ */
 private void collapseDirectoryNode(TreeView treeView, TreeModelIF model,
     TreeIter directory)
 {

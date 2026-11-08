@@ -1,4 +1,9 @@
-/** UI loader for the preferences dialog layout. */
+/** UI loader for the preferences dialog layout.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.preferencesdialog;
 
 import gtk.Dialog;
@@ -18,26 +23,43 @@ import ui.documenttab : DocumentTab;
 /** Callbacks and state hooks required to apply preferences from the dialog. */
 struct PreferencesDialogCallbacks
 {
+    /// Re-apply the details pane placement preference to all open documents.
     void delegate() applyDetailsPanePreferenceToAll;
+    /// Persist the current preferences; the argument requests clearing stored
+    /// window geometry.
     void delegate(bool) persistCurrentState;
+    /// Return the active document tab, or null when no document is open.
     DocumentTab delegate() currentDocument;
+    /// Clear the recently used file list.
     void delegate() clearRecentFiles;
 }
 
 /** Widgets from the preferences dialog layout. */
 struct PreferencesDialogUi
 {
+    /// Container holding the preference rows.
     Box prefsBox;
+    /// Checkbox enabling automatic filter application.
     CheckButton optAutoApply;
+    /// Checkbox for case-sensitive filtering.
     CheckButton optCaseSensitive;
+    /// Checkbox placing the details pane below the main content.
     CheckButton optDetailsBelow;
+    /// Checkbox restoring previously open files on startup.
     CheckButton optRestoreOpenFiles;
+    /// Spin button for the recently used file count limit.
     SpinButton spinRecentFileCount;
+    /// Button that clears the recently used file list.
     Button btnClearRecentFiles;
+    /// Label describing the external open program setting.
     Label lblExternalOpenProgram;
+    /// Entry holding the external program used to open files.
     Entry entryExternalOpenProgram;
+    /// Entry holding the archive member cache directory.
     Entry entryArchiveCacheDirectory;
+    /// Spin button for the archive member cache size limit in MiB.
     SpinButton spinArchiveCacheSizeMiB;
+    /// Checkbox that clears saved window geometry when the preferences are saved.
     CheckButton optClearWindowGeometry;
 }
 

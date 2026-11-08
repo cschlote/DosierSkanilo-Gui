@@ -15,17 +15,29 @@ import std.getopt : getopt, config;
 /** Parsed startup options from command-line arguments. */
 struct CliOptions
 {
+    /// Positional file or repository paths supplied on the command line.
     string[] jsonPaths;
+    /// Text filter to prefill before the first load; empty means no filter.
     string filterOnStart;
+    /// True when text matching should be case-sensitive.
     bool caseSensitiveFilter;
+    /// True to skip automatically applying the filter after load or reload.
     bool disableAutoFilter;
+    /// True when verbose logging was requested.
     bool argVerboseOutputs;
+    /// True when the user requested help output.
     bool showHelp;
+    /// True when the GUI should run the scripted self-test flow.
     bool selfTestMode;
+    /// Operation to run before the self-test quits (scan, metadata, or analyze).
     string selfTestOperation;
+    /// True to save modified JSON documents before the self-test quits.
     bool selfTestSave;
+    /// True to verify that restored splitter positions are usable.
     bool selfTestCheckSplitter;
+    /// True to verify that an embedded video sink is available.
     bool selfTestCheckVideoSinks;
+    /// Delay in milliseconds before quitting in self-test mode.
     int selfTestDelayMs = 3000;
 }
 
@@ -55,6 +67,7 @@ Startup options:
 
 EOF";
 
+/** Process-wide parsed command-line options shared by the GUI entry point and handlers. */
 __gshared CliOptions argsArray;
 
 /** Parse CLI arguments into startup option flags.

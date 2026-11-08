@@ -1,6 +1,7 @@
 /** GTK-independent directory tree projection for source adapters.
  *
  * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
  * License: GPL-3.0-only
  */
 module model.treeprojection;
@@ -15,12 +16,19 @@ import std.string : toLower;
 /** Read-only directory node exposed to the GUI. */
 struct DirectoryNode
 {
+    /// Stable projection identity; the root node uses `"root"`.
     string id;
+    /// Identity of the parent directory, or the empty string for the root.
     string parentId;
+    /// Display name of the directory without its parent path.
     string name;
+    /// Slash-separated path relative to the source root; empty for the root.
     string relativePath;
+    /// Number of immediate child directories.
     size_t childDirectoryCount;
+    /// Number of files directly contained in this directory.
     size_t fileCount;
+    /// Total size in bytes of all files in this directory and its descendants.
     ulong aggregateSize;
     /// Dense index in its owning DirectoryTree projection.
     size_t sourceIndex;
@@ -31,19 +39,33 @@ struct DirectoryNode
 /** Read-only file node exposed to the GUI. */
 struct FileNode
 {
+    /// Stable identity of the file in its source.
     string id;
+    /// Identity used as the sort/cursor tie-breaker; may differ from `id`.
     string cursorId;
+    /// Identity of the directory containing this file.
     string directoryId;
+    /// Display name of the file without its directory path.
     string name;
+    /// Slash-separated path relative to the source root.
     string relativePath;
+    /// Size of the file payload in bytes.
     ulong size;
+    /// Whether the file has a resolved file type.
     bool hasFileType;
+    /// Whether the file has any recognized media stream.
     bool hasMedia;
+    /// Whether the file has a recognized video stream.
     bool hasVideo;
+    /// Whether the file has a recognized audio stream.
     bool hasAudio;
+    /// Whether the file has a recognized image stream.
     bool hasImage;
+    /// Whether the file has a recognized text stream.
     bool hasText;
+    /// Whether the file is or contains an archive.
     bool hasArchive;
+    /// Whether the file is or contains a torrent.
     bool hasTorrent;
     /// Dense index in its owning DirectoryTree projection.
     size_t sourceIndex;
@@ -54,49 +76,90 @@ struct FileNode
 /** Lazy nested entry projection used by archive and torrent detail trees. */
 struct NestedFileNode
 {
+    /// Virtual or nested identity used to resolve the entry, or empty when
+    /// the entry has no safe addressable path.
     string id;
+    /// Display name of the nested entry.
     string name;
+    /// Path of the entry relative to its containing archive or torrent.
     string relativePath;
+    /// Uncompressed size of the entry in bytes.
     ulong size;
+    /// Backend-provided modification timestamp, or empty when unknown.
     string modifiedAt;
 }
 
+/** Opaque position for resuming a sorted file listing. */
 struct FileCursor
 {
+    /// Relative path of the last returned file.
     string relativePath;
+    /// Identity of the last returned file, used as a tie-breaker.
     string id;
+    /// Size of the last returned file, used by size-ordered listings.
     ulong size;
 }
 
+/** Sort orders supported by filtered file listings. */
 enum FileSortOrder : int
 {
+    /// Sort by relative path in ascending order.
     pathAscending = 0,
+    /// Sort by relative path in descending order.
     pathDescending = 1,
+    /// Sort by size ascending, then by relative path ascending.
     sizeAscending = 2,
+    /// Sort by size descending, then by relative path ascending.
     sizeDescending = 3,
 }
 
+/** One bounded page of file nodes plus its continuation state. */
 struct FilePage
 {
+    /// Files included in this page, in the requested sort order.
     FileNode[] files;
+    /// Position after the last returned file; meaningful only when `hasMore`.
     FileCursor nextCursor;
+    /// Whether more files exist after this page.
     bool hasMore;
 }
 
+/** Combined text and type-presence filter for file and directory listings. */
 struct FileFilter
 {
+    /// Text searched in the file name and relative path; empty disables it.
     string text;
+    /// Whether the text search is case sensitive.
     bool caseSensitive;
+    /// Whether only files with a video stream match.
     bool video;
+    /// Whether only files with an audio stream match.
     bool audio;
+    /// Whether only files with an image stream match.
     bool image;
+    /// Whether only files with a text stream match.
     bool textStream;
+    /// Inverts the media-stream match: media files are excluded instead.
     bool mediaNegated;
+    /// Whether only files with a resolved file type match.
     bool fileType;
+    /// Whether only files with archive content match.
     bool archive;
+    /// Whether only files with torrent content match.
     bool torrent;
 }
 
+/** Test whether one file satisfies every active clause of `filter`.
+ *
+ * Clauses that are not enabled are ignored. Media-stream clauses are ORed
+ * together and, when `mediaNegated` is set, files matching any of them are
+ * rejected instead. Type-presence clauses are also ORed together.
+ *
+ * Params:
+ *     file = File node to test.
+ *     filter = Filter whose enabled clauses must all accept the file.
+ * Returns: `true` when the file matches the active filter clauses.
+ */
 private bool matchesFileFilter(const FileNode file, FileFilter filter)
 {
     if (filter.text.length > 0)
@@ -123,20 +186,40 @@ private bool matchesFileFilter(const FileNode file, FileFilter filter)
 /** In-memory directory projection shared by JSON and repository adapters. */
 struct DirectoryTree
 {
+    /// Directories in projection order; index 0 is the root node.
     DirectoryNode[] directories;
+    /// Files in projection order, each linked to a directory by identity.
     FileNode[] files;
 
+    /** Root directory node of the projection.
+     *
+     * Returns: The node stored at index 0.
+     */
     @property ref const(DirectoryNode) root() const
     {
         return directories[0];
     }
 
+    /** List the immediate child directories of one parent.
+     *
+     * Params:
+     *     parentId = Identity of the parent directory.
+     * Returns: Matching child directories, in projection order; empty when the
+     *     parent has no children or is unknown.
+     */
     const(DirectoryNode)[] listDirectories(string parentId) const
     {
         auto result = directories.filter!(node => node.parentId == parentId).array;
         return result;
     }
 
+    /** List the files directly contained in one directory.
+     *
+     * Params:
+     *     directoryId = Identity of the containing directory.
+     * Returns: Matching files, in projection order; empty when the directory
+     *     has no files or is unknown.
+     */
     const(FileNode)[] listFiles(string directoryId) const
     {
         auto result = files.filter!(node => node.directoryId == directoryId).array;
@@ -147,19 +230,76 @@ struct DirectoryTree
 /** Read-only source API consumed by the directory tree view. */
 interface DirectorySource
 {
+    /** Return the root directory node of this source.
+     *
+     * Returns: The root node of the source projection.
+     */
     DirectoryNode root();
+    /** List child directories that contain at least one file matching `filter`.
+     *
+     * Params:
+     *     parentId = Identity of the parent directory.
+     *     filter = Optional filter; an inactive filter returns all children.
+     * Returns: Visible child directories, in source order.
+     */
     DirectoryNode[] listDirectories(string parentId, FileFilter filter = FileFilter());
+    /** Test whether a directory or any descendant contains a matching file.
+     *
+     * Params:
+     *     directoryId = Identity of the directory to search.
+     *     filter = Filter applied to candidate files.
+     * Returns: `true` when at least one file in the subtree matches.
+     */
     bool hasMatchingFileInDirectory(string directoryId, FileFilter filter = FileFilter());
+    /** List files in a directory using offset-based paging.
+     *
+     * Params:
+     *     directoryId = Identity of the containing directory.
+     *     offset = Zero-based index of the first file to return.
+     *     limit = Maximum number of files to return; `size_t.max` means all.
+     *     filter = Case-insensitive text matched against name and path.
+     * Returns: A copy of the requested file slice; empty when out of range.
+     */
     FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250,
         string filter = "");
+    /** List one file page using cursor-based paging.
+     *
+     * Params:
+     *     directoryId = Identity of the containing directory.
+     *     cursor = Position returned by a previous call, or `FileCursor.init`.
+     *     limit = Maximum number of files to return.
+     *     filter = Case-insensitive text matched against name and path.
+     * Returns: The requested page and the cursor for the next page.
+     */
     FilePage listFilesPage(string directoryId, FileCursor cursor = FileCursor(),
         size_t limit = 250, string filter = "");
+    /** List one filtered, sorted file page using cursor-based paging.
+     *
+     * Params:
+     *     directoryId = Identity of the containing directory.
+     *     cursor = Position returned by a previous call, or `FileCursor.init`.
+     *     limit = Maximum number of files to return.
+     *     filter = Text and type-presence filter.
+     *     sortOrder = Ordering applied before paging.
+     * Returns: The requested page and the cursor for the next page.
+     */
     FilePage listFilteredFilesPage(string directoryId, FileCursor cursor = FileCursor(),
         size_t limit = 250, FileFilter filter = FileFilter(),
         FileSortOrder sortOrder = FileSortOrder.pathAscending);
+    /** List the page immediately preceding `cursor` in the same ordering.
+     *
+     * Params:
+     *     directoryId = Identity of the containing directory.
+     *     cursor = Position of the first file of the following page.
+     *     limit = Maximum number of files to return.
+     *     filter = Text and type-presence filter.
+     *     sortOrder = Ordering used to locate the preceding files.
+     * Returns: Up to `limit` files before the cursor, in the requested order.
+     */
     FilePage listPreviousFilteredFilesPage(string directoryId, FileCursor cursor,
         size_t limit = 250, FileFilter filter = FileFilter(),
         FileSortOrder sortOrder = FileSortOrder.pathAscending);
+    /// Release resources owned by this source.
     void close();
 }
 
@@ -167,10 +307,18 @@ interface DirectorySource
  * tests. Normal catalog-backed tabs use `CatalogDirectorySource`. */
 final class ProjectedDirectorySource : DirectorySource
 {
+    /// Projection served by this source; retained for the lifetime of the object.
     private DirectoryTree tree;
+    /// Child directories indexed by their parent identity.
     private DirectoryNode[][string] childDirectories;
+    /// Files indexed by their containing directory identity.
     private FileNode[][string] filesByDirectory;
 
+    /** Build a source and index the supplied projection by parent identity.
+     *
+     * Params:
+     *     tree = Projection to expose; it is copied into the new instance.
+     */
     this(DirectoryTree tree)
     {
         this.tree = tree;
@@ -180,8 +328,19 @@ final class ProjectedDirectorySource : DirectorySource
             filesByDirectory[file.directoryId] ~= file;
     }
 
+    /** Return the root node of the indexed projection.
+     *
+     * Returns: The root node of the served projection.
+     */
     override DirectoryNode root() { return tree.root; }
 
+    /** List child directories, optionally restricted to subtrees with matches.
+     *
+     * Params:
+     *     parentId = Identity of the parent directory.
+     *     filter = Optional filter; an inactive filter returns all children.
+     * Returns: Visible child directories, in projection order.
+     */
     override DirectoryNode[] listDirectories(string parentId, FileFilter filter = FileFilter())
     {
         auto children = directoriesFor(parentId);
@@ -200,6 +359,13 @@ final class ProjectedDirectorySource : DirectorySource
         return result;
     }
 
+    /** Test whether a directory directly contains a matching file.
+     *
+     * Params:
+     *     directoryId = Identity of the directory to inspect.
+     *     filter = Filter applied to the directory's files.
+     * Returns: `true` when at least one direct file matches.
+     */
     override bool hasMatchingFileInDirectory(string directoryId,
         FileFilter filter = FileFilter())
     {
@@ -209,6 +375,13 @@ final class ProjectedDirectorySource : DirectorySource
         return false;
     }
 
+    /** Test recursively whether a directory subtree contains a matching file.
+     *
+     * Params:
+     *     directoryId = Identity of the subtree root.
+     *     filter = Filter applied to candidate files.
+     * Returns: `true` when any file in the subtree matches.
+     */
     private bool hasMatchingFile(string directoryId, FileFilter filter)
     {
         if (filesFor(directoryId).any!(file => matchesFileFilter(file, filter)))
@@ -219,6 +392,13 @@ final class ProjectedDirectorySource : DirectorySource
         return false;
     }
 
+    /** Look up the indexed children of one parent directory.
+     *
+     * Params:
+     *     parentId = Identity of the parent directory.
+     * Returns: The indexed children, or an empty slice when the parent is
+     *     unknown.
+     */
     private const(DirectoryNode)[] directoriesFor(string parentId)
     {
         if (auto directories = parentId in childDirectories)
@@ -226,6 +406,13 @@ final class ProjectedDirectorySource : DirectorySource
         return [];
     }
 
+    /** Look up the indexed files of one directory.
+     *
+     * Params:
+     *     directoryId = Identity of the containing directory.
+     * Returns: The indexed files, or an empty slice when the directory is
+     *     unknown.
+     */
     private const(FileNode)[] filesFor(string directoryId)
     {
         if (auto files = directoryId in filesByDirectory)
@@ -233,6 +420,18 @@ final class ProjectedDirectorySource : DirectorySource
         return [];
     }
 
+    /** Compare two files under one sort order.
+     *
+     * The cursor identity breaks ties after path and size comparisons so that
+     * paging remains stable and total.
+     *
+     * Params:
+     *     left = First file to compare.
+     *     right = Second file to compare.
+     *     order = Ordering that defines the comparison.
+     * Returns: A negative number when `left` sorts first, zero when both are
+     *     equivalent, and a positive number otherwise.
+     */
     private int compareFiles(FileNode left, FileNode right, FileSortOrder order)
     {
         final switch (order)
@@ -266,6 +465,20 @@ final class ProjectedDirectorySource : DirectorySource
             : (left.cursorId < right.cursorId ? -1 : 1);
     }
 
+    /** Insert a file into a bounded, sorted candidate buffer.
+     *
+     * The buffer is kept sorted according to `order` and never grows beyond
+     * `capacity`. By default the smallest candidates are retained, which suits
+     * a forward page; `keepLargest` retains the greatest candidates instead for
+     * a backward page.
+     *
+     * Params:
+     *     candidates = Sorted buffer updated in place.
+     *     file = File to insert.
+     *     capacity = Maximum number of entries retained; zero is a no-op.
+     *     order = Ordering that defines the buffer order.
+     *     keepLargest = Keep the greatest candidates rather than the smallest.
+     */
     private void insertFileCandidate(ref FileNode[] candidates, FileNode file,
         size_t capacity, FileSortOrder order, bool keepLargest = false)
     {
@@ -310,6 +523,12 @@ final class ProjectedDirectorySource : DirectorySource
         candidates[insertAt] = file;
     }
 
+    /** Build the comparison key node represented by a cursor.
+     *
+     * Params:
+     *     cursor = Cursor position to convert.
+     * Returns: A partial file node carrying only the cursor's sort fields.
+     */
     private FileNode cursorNode(FileCursor cursor)
     {
         FileNode file;
@@ -319,6 +538,15 @@ final class ProjectedDirectorySource : DirectorySource
         return file;
     }
 
+    /** List files in a directory using offset-based paging.
+     *
+     * Params:
+     *     directoryId = Identity of the containing directory.
+     *     offset = Zero-based index of the first file to return.
+     *     limit = Maximum number of files to return; `size_t.max` means all.
+     *     filter = Case-insensitive text matched against name and path.
+     * Returns: A copy of the requested file slice; empty when out of range.
+     */
     override FileNode[] listFiles(string directoryId, size_t offset = 0, size_t limit = 250,
         string filter = "")
     {
@@ -337,6 +565,15 @@ final class ProjectedDirectorySource : DirectorySource
         return allFiles[offset .. end].dup;
     }
 
+    /** List one file page using a case-insensitive text filter.
+     *
+     * Params:
+     *     directoryId = Identity of the containing directory.
+     *     cursor = Position returned by a previous call, or `FileCursor.init`.
+     *     limit = Maximum number of files to return.
+     *     filter = Case-insensitive text matched against name and path.
+     * Returns: The requested page, sorted by ascending relative path.
+     */
     override FilePage listFilesPage(string directoryId, FileCursor cursor = FileCursor(),
         size_t limit = 250, string filter = "")
     {
@@ -346,6 +583,20 @@ final class ProjectedDirectorySource : DirectorySource
             FileSortOrder.pathAscending);
     }
 
+    /** List one filtered, sorted file page using cursor-based paging.
+     *
+     * Files strictly after `cursor` in `sortOrder` are considered. When
+     * `limit` is `size_t.max`, all remaining matches are returned and
+     * `hasMore` stays `false`.
+     *
+     * Params:
+     *     directoryId = Identity of the containing directory.
+     *     cursor = Position returned by a previous call, or `FileCursor.init`.
+     *     limit = Maximum number of files to return.
+     *     filter = Text and type-presence filter.
+     *     sortOrder = Ordering applied before paging.
+     * Returns: The requested page and the cursor for the next page.
+     */
     override FilePage listFilteredFilesPage(string directoryId, FileCursor cursor = FileCursor(),
         size_t limit = 250, FileFilter filter = FileFilter(),
         FileSortOrder sortOrder = FileSortOrder.pathAscending)
@@ -384,6 +635,20 @@ final class ProjectedDirectorySource : DirectorySource
         return page;
     }
 
+    /** List the page immediately preceding a cursor in the same ordering.
+     *
+     * An empty cursor yields an empty page. The returned files are ordered as
+     * requested; when `hasMore` is true, `nextCursor` addresses the first
+     * returned file so that callers can continue paging backwards.
+     *
+     * Params:
+     *     directoryId = Identity of the containing directory.
+     *     cursor = Position of the first file of the following page.
+     *     limit = Maximum number of files to return.
+     *     filter = Text and type-presence filter.
+     *     sortOrder = Ordering used to locate the preceding files.
+     * Returns: Up to `limit` files before the cursor, in the requested order.
+     */
     override FilePage listPreviousFilteredFilesPage(string directoryId, FileCursor cursor,
         size_t limit = 250, FileFilter filter = FileFilter(),
         FileSortOrder sortOrder = FileSortOrder.pathAscending)
@@ -412,10 +677,20 @@ final class ProjectedDirectorySource : DirectorySource
         return page;
     }
 
+    /// Release the in-memory projection. The source holds no external resources.
     override void close() {}
 }
 
-/** Build a deterministic tree from source file paths and payload sizes. */
+/** Build a deterministic tree from source file paths and payload sizes.
+ *
+ * Directories are synthesized on demand, the root is always index 0, and file
+ * order follows the input order. Aggregate sizes are propagated to every
+ * ancestor directory.
+ *
+ * Params:
+ *     inputs = Source files to project; each path is normalized.
+ * Returns: A root-inclusive projection with files linked to their directories.
+ */
 DirectoryTree buildDirectoryTree(const(FileInput)[] inputs)
 {
     DirectoryTree tree;
@@ -471,21 +746,37 @@ DirectoryTree buildDirectoryTree(const(FileInput)[] inputs)
 /** Minimal adapter input, intentionally independent from Jsonizer and GTK. */
 struct FileInput
 {
+    /// Slash-separated file path as reported by the source.
     string path;
+    /// Size of the file payload in bytes.
     ulong size;
+    /// Whether the file has a resolved file type.
     bool hasFileType;
+    /// Whether the file has any recognized media stream.
     bool hasMedia;
+    /// Whether the file has a recognized video stream.
     bool hasVideo;
+    /// Whether the file has a recognized audio stream.
     bool hasAudio;
+    /// Whether the file has a recognized image stream.
     bool hasImage;
+    /// Whether the file has a recognized text stream.
     bool hasText;
+    /// Whether the file is or contains an archive.
     bool hasArchive;
+    /// Whether the file is or contains a torrent.
     bool hasTorrent;
     /// Stable source-reference identity; falls back to the input ordinal.
     string id;
 }
 
-/** Whether a filename commonly denotes an archive supported by DosierArkivo. */
+/** Whether a filename commonly denotes an archive supported by DosierArkivo.
+ *
+ * Params:
+ *     path = File path or name whose extension is examined case-insensitively.
+ * Returns: `true` when the extension is one of the recognized archive
+ *     container extensions.
+ */
 bool isArchivePathCandidate(string path)
 {
     switch (extension(path.toLower))
@@ -507,12 +798,30 @@ unittest
     assert(!isArchivePathCandidate("notes.txt"));
 }
 
-/** Stable identity for one JSON file reference, independent of filtered order. */
+/** Stable identity for one JSON file reference, independent of filtered order.
+ *
+ * Params:
+ *     sourceOrdinal = Zero-based index of the source blob in the catalog.
+ *     referenceOrdinal = Zero-based index of the file reference within it.
+ * Returns: A `file:json:` identity string derived from both ordinals.
+ */
 string jsonFileNodeId(size_t sourceOrdinal, size_t referenceOrdinal)
 {
     return "file:json:" ~ sourceOrdinal.to!string ~ ":" ~ referenceOrdinal.to!string;
 }
 
+/** Ensure a directory and all its ancestors exist in a projection.
+ *
+ * The root is index 0. Intermediate directories are created on demand and the
+ * identity/index maps are updated consistently.
+ *
+ * Params:
+ *     tree = Projection receiving new directory nodes.
+ *     path = Slash-separated directory path; empty addresses the root.
+ *     directoryIndexes = Map from directory path to projection index.
+ *     parentIndexes = Parent index for each directory, in projection order.
+ * Returns: Projection index of the requested directory.
+ */
 private size_t ensureDirectory(ref DirectoryTree tree, string path,
     ref size_t[string] directoryIndexes, ref size_t[] parentIndexes)
 {

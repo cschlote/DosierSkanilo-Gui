@@ -1,4 +1,9 @@
-/** Pure JSON-row filtering and directory projection, safe for worker threads. */
+/** Pure JSON-row filtering and directory projection, safe for worker threads.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.jsonfilter;
 
 import std.array : appender;
@@ -14,31 +19,61 @@ import ui.directorytreefilter : treeFileMatchesFilter;
 /** Filter options for a loaded JSON catalog. */
 struct JsonFilterOptions
 {
+    /// Free-text query matched against primary file names and SHA-1 hashes.
     string text;
+    /// Whether the text query is matched case-sensitively.
     bool caseSensitive;
+    /// Require the video media flag when a media requirement is active.
     bool video;
+    /// Require the audio media flag when a media requirement is active.
     bool audio;
+    /// Require the image media flag when a media requirement is active.
     bool image;
+    /// Require the text media flag when a media requirement is active.
     bool textStream;
+    /// Invert the combined media requirement, hiding rows that match it.
     bool mediaNegated;
+    /// Require the file-type summary flag.
     bool fileType;
+    /// Require the archive summary flag.
     bool archive;
+    /// Require the torrent summary flag.
     bool torrent;
 }
 
 /** Filtered rows and compact stable-ID visibility state for the directory tree. */
 struct JsonFilterResult
 {
+    /// Rows that passed the filter, preserving source order.
     BlobRow[] rows;
+    /// One flag per tree file, indexed by the file's `sourceIndex`.
     bool[] visibleTreeFileIndexes;
+    /// One flag per tree directory, indexed by the directory's `sourceIndex`.
     bool[] visibleTreeDirectoryIndexes;
+    /// Number of directly matching files per directory.
     size_t[] visibleDirectoryFileCounts;
+    /// Total size in bytes of matching files per directory subtree.
     ulong[] visibleDirectoryAggregateSizes;
+    /// Number of visible immediate child directories per directory.
     size_t[] visibleDirectoryChildCounts;
+    /// Whether at least one tree file matched the filter.
     bool hasVisibleTreeMatches;
 }
 
-/** Filter rows and calculate tree visibility without touching GTK state. */
+/** Filter rows and calculate tree visibility without touching GTK state.
+ *
+ * Text, media, and other presence requirements are combined with AND between
+ * groups; toggles inside the media group and the other presence group are
+ * combined with OR. Tree visibility is computed independently of the returned
+ * row order.
+ *
+ * Params:
+ *     sourceRows = Rows to filter, usually the fully loaded catalog rows.
+ *     sourceTree = Canonical directory tree whose visibility is calculated.
+ *     options = Text, media, and presence filters to apply.
+ * Returns: The matching rows in source order plus compact file and directory
+ *     visibility arrays for `sourceTree`.
+ */
 JsonFilterResult filterJsonRows(const(BlobRow)[] sourceRows,
     const(DirectoryTree) sourceTree,
     JsonFilterOptions options)
@@ -90,17 +125,31 @@ JsonFilterResult filterJsonRows(const(BlobRow)[] sourceRows,
     return result;
 }
 
+/// Compact per-element visibility and summary data computed for the tree.
 private struct JsonTreeFilterIndex
 {
+    /// One flag per tree file, indexed by the file's `sourceIndex`.
     bool[] visibleFiles;
+    /// One flag per tree directory, indexed by the directory's `sourceIndex`.
     bool[] visibleDirectories;
+    /// Number of directly matching files per directory.
     size_t[] directoryFileCounts;
+    /// Total size in bytes of matching files per directory subtree.
     ulong[] directoryAggregateSizes;
+    /// Number of visible immediate child directories per directory.
     size_t[] directoryChildCounts;
+    /// Whether at least one file matched the filter.
     bool hasMatches;
 }
 
-/** Compute compact filter bitmaps and summaries in place over the canonical tree. */
+/** Compute compact filter bitmaps and summaries in place over the canonical tree.
+ *
+ * Params:
+ *     tree = Canonical directory tree to evaluate.
+ *     options = Filters applied to each file in the tree.
+ * Returns: Visibility arrays sized to the tree, with the root directory marked
+ *     visible. When the tree has no directories, all arrays are empty or zero.
+ */
 private JsonTreeFilterIndex treeFilterIndex(const(DirectoryTree) tree,
     JsonFilterOptions options)
 {
@@ -149,7 +198,16 @@ private JsonTreeFilterIndex treeFilterIndex(const(DirectoryTree) tree,
     return result;
 }
 
-/** Build a tree from the source file references represented by blob rows. */
+/** Build a tree from the source file references represented by blob rows.
+ *
+ * Rows without a source blob are skipped. Virtual archive member paths are
+ * omitted, while physical archive file paths are kept and marked as archives.
+ *
+ * Params:
+ *     rows = Blob rows whose source file references form the tree.
+ * Returns: A directory tree built from the retained physical file references;
+ *     an empty row list yields an empty tree.
+ */
 DirectoryTree projectRowsToDirectoryTree(const(BlobRow)[] rows)
 {
     FileInput[] inputs;

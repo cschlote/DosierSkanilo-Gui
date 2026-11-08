@@ -1,4 +1,9 @@
-/** Dialogs for managing and requesting archive passwords. */
+/** Dialogs for managing and requesting archive passwords.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.archivepasswords;
 
 import gtk.Box;
@@ -11,10 +16,17 @@ import gtk.c.types : DialogFlags, Orientation, ResponseType;
 /** Callback used to persist a filename-to-blob password mapping. */
 struct ArchivePasswordManagerCallbacks
 {
+    /// Persist `password` for `fileName`; an empty password removes the mapping.
     void delegate(string fileName, string password) savePassword;
 }
 
-/** Open the filename-based password manager for the current source. */
+/** Open the filename-based password manager for the current source.
+ *
+ * Params:
+ *     parent = Parent window for the modal dialog.
+ *     initialFileName = Archive filename or path prefilled in the dialog.
+ *     callbacks = Receiver for the filename/password mapping to persist.
+ */
 void showArchivePasswordManager(Window parent, string initialFileName,
     ArchivePasswordManagerCallbacks callbacks)
 {
@@ -55,7 +67,16 @@ void showArchivePasswordManager(Window parent, string initialFileName,
     dialog.destroy();
 }
 
-/** Ask for a password after an archive tool reports an encrypted entry. */
+/** Ask for a password after an archive tool reports an encrypted entry.
+ *
+ * Params:
+ *     parent = Parent window for the modal dialog.
+ *     archivePath = Archive path shown in the prompt.
+ *     reason = Optional explanation appended to the prompt; empty to omit it.
+ *     password = Set to the entered password when the dialog is accepted; empty
+ *         otherwise because `out` parameters start initialized.
+ * Returns: `true` when the user accepted the dialog, otherwise `false`.
+ */
 bool requestArchivePassword(Window parent, string archivePath, string reason,
     out string password)
 {

@@ -1,4 +1,9 @@
-/** Headless filter and tree-projection benchmark for representative row counts. */
+/** Headless filter and tree-projection benchmark for representative row counts.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module bench.filterbench;
 
 import core.memory : GC;
@@ -15,6 +20,12 @@ import model.blobrow : BlobRow;
 import model.treeprojection : FileInput, buildDirectoryTree;
 import view.textreport : filterRowsByText;
 
+/** Build synthetic rows for benchmarking filter and tree projections.
+ *
+ * Params:
+ *     count = Number of rows to create.
+ * Returns: A newly allocated array of `count` deterministic rows.
+ */
 private BlobRow[] syntheticRows(size_t count)
 {
     BlobRow[] rows;
@@ -33,6 +44,15 @@ private BlobRow[] syntheticRows(size_t count)
     return rows;
 }
 
+/** Build synthetic file inputs for benchmarking directory-tree projection.
+ *
+ * Paths are spread over a fixed number of album directories so the resulting
+ * tree has a representative shape.
+ *
+ * Params:
+ *     count = Number of file inputs to create.
+ * Returns: A newly allocated array of `count` deterministic inputs.
+ */
 private FileInput[] syntheticInputs(size_t count)
 {
     FileInput[] inputs;
@@ -50,6 +70,13 @@ private FileInput[] syntheticInputs(size_t count)
     return inputs;
 }
 
+/** Write a benchmark catalog containing `count` synthetic blobs.
+ *
+ * Params:
+ *     path = Destination path for the serialized catalog file.
+ *     count = Number of blob records to generate and serialize.
+ * Throws: File or serialization errors from `serializeDataClassWrapperFile`.
+ */
 private void writeBenchmarkCatalog(string path, size_t count)
 {
     NamedBinaryBlob[] blobs;
@@ -67,6 +94,17 @@ private void writeBenchmarkCatalog(string path, size_t count)
     writeln("wrote ", count, " records to ", path);
 }
 
+/** Run the headless filter and tree benchmark.
+ *
+ * With `--write-catalog <path> <count>` the command only writes a benchmark
+ * catalog. Otherwise it measures the configured row counts, which default to
+ * 1,000, 10,000, and 100,000 and can be overridden by numeric arguments.
+ *
+ * Params:
+ *     args = Process arguments, including the program name.
+ * Returns: Process exit code; `0` on success.
+ * Throws: Argument conversion or file errors are not caught.
+ */
 int main(string[] args)
 {
     if (args.length == 4 && args[1] == "--write-catalog")

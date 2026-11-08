@@ -1,4 +1,9 @@
-/** UI loader for the document page shell and status labels. */
+/** UI loader for the document page shell and status labels.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.documentpage;
 
 import gtk.Box;
@@ -14,8 +19,11 @@ import ui.documenttab : DocumentTab;
 /** Widgets from the document page layout. */
 struct DocumentPageUi
 {
+    /// Top-level page widget that hosts the filter bar and document content.
     Box pageRoot;
+    /// Container into which the main tree/table split view is placed.
     Box splitSlot;
+    /// Bottom navigation bar with paging buttons, sort controls, and status.
     Box pageBar;
 }
 

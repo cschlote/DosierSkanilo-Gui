@@ -1,4 +1,9 @@
-/** UI helpers for notebook and window lifecycle signal wiring. */
+/** UI helpers for notebook and window lifecycle signal wiring.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.windowlifecycle;
 
 import gdk.c.types : GdkEventConfigure;
@@ -12,13 +17,21 @@ import ui.mainsources : UiMainSource, scheduleUiTimeout, stopUiSource;
 /** Callbacks required by the lifecycle signal bindings. */
 struct WindowLifecycleCallbacks
 {
+    /// Persists the current UI state, optionally clearing saved window geometry.
     void delegate(bool) persistCurrentState;
+    /// Returns true when saved window geometry should be discarded on exit.
     bool delegate() clearSavedWindowGeometryOnExit;
+    /// Records the last observed window width and height in pixels.
     void delegate(int, int) setLastKnownWindowSize;
+    /// Returns true when resize-driven state persistence is currently allowed.
     bool delegate() allowRuntimeStatePersistence;
+    /// Enables or disables resize-driven state persistence.
     void delegate(bool) setAllowRuntimeStatePersistence;
+    /// Returns the pending window-size persistence timer, or `null` when none is scheduled.
     UiMainSource delegate() windowSizePersistTimer;
+    /// Stores or clears the pending window-size persistence timer.
     void delegate(UiMainSource) setWindowSizePersistTimer;
+    /// Stops all UI event sources before the application quits.
     void delegate() stopAllUiSources;
 }
 

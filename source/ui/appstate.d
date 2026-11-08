@@ -3,6 +3,10 @@
  * This module stores and restores the desktop frontend state in the user's
  * configuration directory so the application can reopen with the last-used
  * layout, document list, and preview settings.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
  */
 module ui.appstate;
 
@@ -16,78 +20,127 @@ import std.process : environment;
 /** Persisted source cursor for a document's selected TreeView file. */
 struct TreeCursorState
 {
+    /// Document tab path that owns this cursor.
     string documentPath;
+    /// Directory ID of the tree node that contains the selected file.
     string directoryId;
+    /// File path relative to the document root.
     string relativePath;
+    /// Opaque file cursor ID returned by the directory source.
     string cursorId;
+    /// Size of the selected file in bytes.
     ulong size;
 }
 
 /** Persisted filter state for one document tab. */
 struct DocumentFilterState
 {
+    /// Document tab path this filter state belongs to.
     string documentPath;
+    /// Whether the filter was applied when the state was saved.
     bool applied;
+    /// Case-insensitive or case-sensitive path text filter.
     string text;
+    /// Whether video files are selected.
     bool video;
+    /// Whether audio files are selected.
     bool audio;
+    /// Whether image files are selected.
     bool image;
+    /// Whether text/subtitle streams are selected.
     bool textStream;
+    /// Invert the combined media selection.
     bool mediaNegated;
+    /// Whether file type metadata is required.
     bool fileType;
+    /// Whether archive metadata is required.
     bool archive;
+    /// Whether torrent metadata is required.
     bool torrent;
 }
 
 /** Persisted GtkTreeSortable state for a document's Blob table. */
 struct TableSortState
 {
+    /// Document tab path this table sort state belongs to.
     string documentPath;
+    /// Whether table sorting is active.
     bool sorted;
+    /// Identifier of the sorted table column.
     int columnId;
+    /// GTK sort order value (ascending or descending).
     int order;
 }
 
 /** Persisted UI state stored below the user's config directory. */
 struct AppState
 {
+    /// Whether filters are applied automatically without pressing Apply.
     bool prefAutoApplyFilter = true;
+    /// Whether filter text matching is case sensitive.
     bool prefCaseSensitiveFilter;
+    /// Whether the details pane is placed below rather than beside the list.
     bool prefDetailsBelow = true;
+    /// Whether previously open document tabs are restored at startup.
     bool prefRestoreOpenFiles = true;
 
+    /// Pixel position of the main horizontal splitter.
     int splitPositionHorizontal = 720;
+    /// Pixel position of the main vertical splitter used when details are below.
     int splitPositionVertical = 420;
+    /// Pixel position of the preview/details splitter.
     int splitPositionPreview = 320;
+    /// Whether `splitPositionPreview` contains a saved position.
     bool hasSplitPositionPreview;
+    /// Integer value of the persisted preview scale mode.
     int previewScaleMode;
+    /// Command used to open files in an external application.
     string externalOpenProgram = "xdg-open";
+    /// Whether preview videos start playing automatically.
     bool previewVideoAutostart;
+    /// Preview video volume as a fraction between 0.0 and 1.0.
     double previewVideoVolume = 0.5;
     /// Archive member cache root; empty selects the system temporary directory.
     string archiveCacheDirectory;
     /// Archive member cache size limit in mebibytes.
     int archiveCacheSizeMiB = 1024;
 
+    /// Most-recently-used document paths, newest first.
     string[] recentFilePaths;
+    /// Maximum number of entries kept in `recentFilePaths`.
     int maxRecentFileCount = 10;
 
+    /// Whether `windowX` and `windowY` contain a saved position.
     bool hasWindowGeometry;
+    /// Saved window X coordinate in screen pixels.
     int windowX;
+    /// Saved window Y coordinate in screen pixels.
     int windowY;
+    /// Whether `windowWidth` and `windowHeight` contain a saved size.
     bool hasWindowSize;
+    /// Saved window width in pixels.
     int windowWidth = 960;
+    /// Saved window height in pixels.
     int windowHeight = 640;
+    /// Saved monitor index, or `-1` when no monitor preference is stored.
     int windowMonitorIndex = -1;
+    /// Paths of document tabs that were open when the state was saved.
     string[] openFilePaths;
+    /// Encoded expanded tree entries as `documentPath\tdirectoryId`.
     string[] expandedTreeStates;
+    /// Encoded selected tree entries as `documentPath\tfileId`.
     string[] selectedTreeStates;
+    /// Encoded tree sort entries as `documentPath\tsortOrder`.
     string[] treeSortStates;
     /// Legacy JSON key; values are now selected Directory/Blob notebook pages.
     string[] viewModeStates;
+    /// Per-document table sort states.
     TableSortState[] tableSortStates;
+    /// Per-document tree cursor states.
     TreeCursorState[] treeCursorStates;
+    /// Per-document filter states.
     DocumentFilterState[] documentFilterStates;
+    /// Index of the selected document notebook page.
     int activeTabIndex;
 }
 
@@ -107,6 +160,13 @@ string configDirPath()
     return resolveConfigDirPath(environment.get("HOME", ""));
 }
 
+/** Resolve the config directory from an explicit home directory.
+ *
+ * Params:
+ *     home = Home directory path; empty selects a working-directory fallback.
+ * Returns: `$HOME`-based config directory, or `./.config/...` when `home` is
+ *     empty.
+ */
 private string resolveConfigDirPath(string home)
 {
     if (home.length == 0)
@@ -127,6 +187,12 @@ string configFilePath()
     return resolveConfigFilePath(environment.get("HOME", ""));
 }
 
+/** Resolve the JSON state file path from an explicit home directory.
+ *
+ * Params:
+ *     home = Home directory path; empty selects a working-directory fallback.
+ * Returns: Path to `state.json` inside the resolved config directory.
+ */
 private string resolveConfigFilePath(string home)
 {
     return buildPath(resolveConfigDirPath(home), CONFIG_FILE_NAME);
@@ -208,6 +274,14 @@ string[] jsonToStringArray(JSONValue value)
     return result;
 }
 
+/** Read one string property from a JSON object.
+ *
+ * Params:
+ *     value = JSON node expected to be an object.
+ *     key = Property name to read.
+ * Returns: The string value, or an empty string when `value` is not an object,
+ *     the key is absent, or the property is not a string.
+ */
 private string jsonObjectString(JSONValue value, string key)
 {
     if (value.type != JSONType.object)
@@ -217,6 +291,13 @@ private string jsonObjectString(JSONValue value, string key)
     return "";
 }
 
+/** Convert a JSON non-negative integer into a `ulong`.
+ *
+ * Params:
+ *     value = JSON scalar to read.
+ * Returns: The stored unsigned value, a non-negative signed value, or `0` for
+ *     negative integers and non-integer nodes.
+ */
 private ulong jsonToUlong(JSONValue value)
 {
     if (value.type == JSONType.uinteger)
@@ -226,6 +307,16 @@ private ulong jsonToUlong(JSONValue value)
     return 0;
 }
 
+/** Parse persisted tree cursor entries from a JSON array.
+ *
+ * Entries are skipped when they are not objects or when either their document
+ * path or their cursor ID is empty.
+ *
+ * Params:
+ *     value = JSON node expected to be an array of cursor objects.
+ * Returns: One state per valid entry, or an empty array when `value` is not an
+ *     array.
+ */
 private TreeCursorState[] jsonToTreeCursorStates(JSONValue value)
 {
     TreeCursorState[] result;
@@ -248,6 +339,16 @@ private TreeCursorState[] jsonToTreeCursorStates(JSONValue value)
     return result;
 }
 
+/** Parse persisted document filter entries from a JSON array.
+ *
+ * Entries are skipped when they are not objects or have an empty document
+ * path. Missing properties keep their default (false/empty) values.
+ *
+ * Params:
+ *     value = JSON node expected to be an array of filter objects.
+ * Returns: One state per valid entry, or an empty array when `value` is not an
+ *     array.
+ */
 private DocumentFilterState[] jsonToDocumentFilterStates(JSONValue value)
 {
     DocumentFilterState[] result;
@@ -275,6 +376,16 @@ private DocumentFilterState[] jsonToDocumentFilterStates(JSONValue value)
     return result;
 }
 
+/** Parse persisted table sort entries from a JSON array.
+ *
+ * Entries are skipped when they are not objects or have an empty document
+ * path. Invalid `columnId` values fall back to `-1`.
+ *
+ * Params:
+ *     value = JSON node expected to be an array of table sort objects.
+ * Returns: One state per valid entry, or an empty array when `value` is not an
+ *     array.
+ */
 private TableSortState[] jsonToTableSortStates(JSONValue value)
 {
     TableSortState[] result;
@@ -295,6 +406,12 @@ private TableSortState[] jsonToTableSortStates(JSONValue value)
     return result;
 }
 
+/** Serialize tree cursor states as a compact JSON array string.
+ *
+ * Params:
+ *     states = Cursor states to encode.
+ * Returns: JSON array text containing all fields of every state.
+ */
 private string jsonTreeCursorStates(const(TreeCursorState)[] states)
 {
     JSONValue[] entries;
@@ -311,6 +428,12 @@ private string jsonTreeCursorStates(const(TreeCursorState)[] states)
     return JSONValue(entries).toString;
 }
 
+/** Serialize document filter states as a compact JSON array string.
+ *
+ * Params:
+ *     states = Filter states to encode.
+ * Returns: JSON array text containing all fields of every state.
+ */
 private string jsonDocumentFilterStates(const(DocumentFilterState)[] states)
 {
     JSONValue[] entries;
@@ -333,6 +456,12 @@ private string jsonDocumentFilterStates(const(DocumentFilterState)[] states)
     return JSONValue(entries).toString;
 }
 
+/** Serialize table sort states as a compact JSON array string.
+ *
+ * Params:
+ *     states = Table sort states to encode.
+ * Returns: JSON array text containing all fields of every state.
+ */
 private string jsonTableSortStates(const(TableSortState)[] states)
 {
     JSONValue[] entries;
@@ -348,7 +477,13 @@ private string jsonTableSortStates(const(TableSortState)[] states)
     return JSONValue(entries).toString;
 }
 
-/** Escape and serialize a string array as JSON. */
+/** Escape and serialize a string array as JSON.
+ *
+ * Params:
+ *     values = Strings to encode.
+ * Returns: JSON array text with quoted and escaped entries; an empty input
+ *     yields `[]`.
+ */
 string jsonStringArray(const(string)[] values)
 {
     auto result = appender!string();
@@ -419,6 +554,8 @@ string jsonEscapeString(string value)
 
 /** Load persisted preferences, splitter state, and window geometry hints.
  *
+ * Params:
+ *     path = JSON state file to read; a missing file yields defaults.
  * Returns: The stored UI state, or the default state when no readable state
  *     file is available.
  * Throws: Invalid, unreadable, or malformed state files are swallowed and
@@ -585,15 +722,24 @@ private AppState loadAppStateFromPath(string path)
     return state;
 }
 
+/** Load the persisted UI state from the default config file.
+ *
+ * Returns: The stored state, or a default-initialized `AppState` when the file
+ *     is missing, unreadable, or malformed.
+ * Throws: Only unexpected runtime failures may escape; parse and file-read
+ *     errors are swallowed.
+ */
 AppState loadAppState()
 {
     return loadAppStateFromPath(configFilePath());
 }
 
-/** Write the current application state to the JSON config file.
+/** Write an application state snapshot to a JSON file.
  *
  * Params:
  *     state = UI state snapshot to persist.
+ *     path = Destination JSON file; its parent directory is created when
+ *         needed.
  * Returns: Nothing.
  * Throws: File system errors from directory creation or writing are propagated.
  */
@@ -676,6 +822,13 @@ private void saveAppStateToPath(const(AppState) state, string path)
     write(path, payload);
 }
 
+/** Save the current UI state to the default config file.
+ *
+ * Params:
+ *     state = UI state snapshot to persist.
+ * Throws: File system errors from directory creation or writing are
+ *     propagated.
+ */
 void saveAppState(const(AppState) state)
 {
     saveAppStateToPath(state, configFilePath());

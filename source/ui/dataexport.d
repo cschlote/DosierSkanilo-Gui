@@ -1,4 +1,9 @@
-/** Filtered summary export helpers for CSV and JSON files. */
+/** Filtered summary export helpers for CSV and JSON files.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.dataexport;
 
 import std.array : appender;
@@ -13,7 +18,13 @@ import model.datasource : SourceQuery, isRepositorySource, loadCatalogRowPage,
     loadDocumentSource;
 import view.textreport : filterRowsByText;
 
-/** Filter rows with the GUI's text, media-negation, and presence semantics. */
+/** Filter rows with the GUI's text, media-negation, and presence semantics.
+ *
+ * Params:
+ *     rows = Source rows to filter.
+ *     query = Active filter criteria.
+ * Returns: Rows matching the text, media, and presence criteria in input order.
+ */
 BlobRow[] filterExportRows(const(BlobRow)[] rows, SourceQuery query)
 {
     auto textFiltered = filterRowsByText(rows, query.text, query.caseSensitive);
@@ -35,7 +46,17 @@ BlobRow[] filterExportRows(const(BlobRow)[] rows, SourceQuery query)
     return result;
 }
 
-/** Load all logical rows matching one tab's active filter state. */
+/** Load all logical rows matching one tab's active filter state.
+ *
+ * Repository sources are paged through the catalog backend while JSON documents
+ * are loaded whole; text filtering differs only in where it is applied.
+ *
+ * Params:
+ *     sourcePath = JSON document path or repository directory.
+ *     query = Active filter criteria.
+ * Returns: All matching rows from the source.
+ * Throws: Source loading, paging, or file errors are propagated.
+ */
 BlobRow[] loadFilteredExportRows(string sourcePath, SourceQuery query)
 {
     if (!isRepositorySource(sourcePath))
@@ -58,7 +79,12 @@ BlobRow[] loadFilteredExportRows(string sourcePath, SourceQuery query)
     return result;
 }
 
-/** Serialize the visible row projection as a stable CSV document. */
+/** Serialize the visible row projection as a stable CSV document.
+ *
+ * Params:
+ *     rows = Rows to serialize.
+ * Returns: A CSV document with a header row and one line per input row.
+ */
 string exportRowsCsv(const(BlobRow)[] rows)
 {
     auto output = appender!string();
@@ -75,11 +101,27 @@ string exportRowsCsv(const(BlobRow)[] rows)
     return output.data;
 }
 
+/** Render a boolean as the lowercase CSV token `true` or `false`.
+ *
+ * Params:
+ *     value = Boolean to render.
+ * Returns: `"true"` when `value` is true, otherwise `"false"`.
+ */
 private string csvBool(bool value)
 {
     return value ? "true" : "false";
 }
 
+/** Quote and escape a CSV field when it contains separators or quotes.
+ *
+ * Commas, double quotes, and line breaks trigger quoting; embedded double
+ * quotes are doubled as required by RFC 4180-style CSV.
+ *
+ * Params:
+ *     value = Raw field value.
+ * Returns: The field unchanged when no quoting is needed, otherwise a quoted
+ *     and escaped copy.
+ */
 private string csvField(string value)
 {
     bool needsQuotes;
@@ -91,7 +133,12 @@ private string csvField(string value)
     return "\"" ~ value.replace("\"", "\"\"") ~ "\"";
 }
 
-/** Serialize the visible row projection as a versioned JSON subset. */
+/** Serialize the visible row projection as a versioned JSON subset.
+ *
+ * Params:
+ *     rows = Rows to serialize.
+ * Returns: A JSON document tagged `dosierskanilo-gui-subset-v1`.
+ */
 string exportRowsJson(const(BlobRow)[] rows)
 {
     JSONValue[] jsonRows;
@@ -119,13 +166,25 @@ string exportRowsJson(const(BlobRow)[] rows)
     return JSONValue(document).toString ~ "\n";
 }
 
-/** Write selected row summaries to a CSV file. */
+/** Write selected row summaries to a CSV file.
+ *
+ * Params:
+ *     path = Destination file path.
+ *     rows = Rows to serialize.
+ * Throws: File errors from `std.file.write`.
+ */
 void writeRowsCsv(string path, const(BlobRow)[] rows)
 {
     write(path, exportRowsCsv(rows));
 }
 
-/** Write selected row summaries to a JSON file. */
+/** Write selected row summaries to a JSON file.
+ *
+ * Params:
+ *     path = Destination file path.
+ *     rows = Rows to serialize.
+ * Throws: File errors from `std.file.write`.
+ */
 void writeRowsJson(string path, const(BlobRow)[] rows)
 {
     write(path, exportRowsJson(rows));

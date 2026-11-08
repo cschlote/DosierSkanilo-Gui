@@ -2,6 +2,10 @@
  *
  * This module centralizes the GTK column layout so the rest of the UI can keep
  * table construction and sizing logic in one place.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
  */
 module ui.tablecolumns;
 

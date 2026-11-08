@@ -1,4 +1,9 @@
-/** GTK-independent lifecycle state for one document's backend operation. */
+/** GTK-independent lifecycle state for one document's backend operation.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.operationtaskstate;
 
 import dosierskanilo.operations : OperationKind, OperationProgress, OperationResult,
@@ -7,13 +12,28 @@ import dosierskanilo.operations : OperationKind, OperationProgress, OperationRes
 /** Mutable state reduced from value progress/result events for one operation. */
 struct OperationTaskState
 {
+    /// Identifier of the backend operation currently tracked by this state.
     ulong operationId;
+    /// Kind of backend operation currently tracked by this state.
     OperationKind operation;
+    /// Latest acknowledged lifecycle state, starting at `OperationState.queued`.
     OperationState state = OperationState.queued;
+    /// Whether the task is still live and therefore accepts progress and result events.
     bool running;
+    /// Whether the backend reports that pausing is currently possible.
     bool pauseAvailable;
+    /// Whether the task is in the acknowledged paused state.
     bool paused;
 
+    /** Reset the state to track a newly started operation.
+     *
+     * Clears pause flags and marks the task running again, so any events from a
+     * previous operation are ignored.
+     *
+     * Params:
+     *     id = Identifier of the new backend operation.
+     *     kind = Kind of the new backend operation.
+     */
     void begin(ulong id, OperationKind kind)
     {
         operationId = id;
@@ -24,7 +44,13 @@ struct OperationTaskState
         paused = false;
     }
 
-    /** Apply an event only when it belongs to this live task and has a valid transition. */
+    /** Apply an event only when it belongs to this live task and has a valid transition.
+     *
+     * Params:
+     *     event = Progress event to apply.
+     * Returns: `true` when the event was accepted, `false` for events from a
+     *     different or finished operation and for invalid state transitions.
+     */
     bool apply(OperationProgress event)
     {
         if (!running || event.operationId != operationId || event.operation != operation)
@@ -37,7 +63,13 @@ struct OperationTaskState
         return true;
     }
 
-    /** Apply the terminal result and reject any later progress for this operation. */
+    /** Apply the terminal result and reject any later progress for this operation.
+     *
+     * Params:
+     *     result = Terminal result to apply.
+     * Returns: `true` when the result belonged to this operation and was
+     *     applied; `false` for results from another or already finished task.
+     */
     bool complete(OperationResult result)
     {
         if (!running || result.operationId != operationId || result.operation != operation)
@@ -50,7 +82,13 @@ struct OperationTaskState
     }
 }
 
-/** Whether a terminal result may have changed persisted source state. */
+/** Whether a terminal result may have changed persisted source state.
+ *
+ * Params:
+ *     result = Terminal operation result to inspect.
+ * Returns: `true` when the operation completed or explicitly committed
+ *     changes; otherwise `false`.
+ */
 bool operationResultMayHaveChangedSource(OperationResult result)
 {
     if (result.state == OperationState.completed)

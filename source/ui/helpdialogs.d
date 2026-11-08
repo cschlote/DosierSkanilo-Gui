@@ -1,4 +1,9 @@
-/** UI helpers for the shortcuts and About dialogs. */
+/** UI helpers for the shortcuts and About dialogs.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.helpdialogs;
 
 import gtk.AboutDialog;
