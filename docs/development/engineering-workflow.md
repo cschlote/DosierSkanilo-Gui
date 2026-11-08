@@ -29,16 +29,19 @@ applies to human contributors and coding agents.
 
 Run the smallest relevant check after editing. Examples:
 
-| Change | Minimum check |
-| --- | --- |
-| Pure logic/model code | `DC=ldc2 ./scripts/test.sh` |
-| UI, tree, table, preview, or GTK lifecycle | `DC=ldc2 ./scripts/test.sh` plus `./scripts/test-display.sh` |
-| Filter or tree performance-sensitive code | the above plus `./scripts/benchmark-filters.sh` |
-| Build/package metadata | `./scripts/build.sh` and `./scripts/lint.sh` |
-| Markdown or repository metadata | `./scripts/lint.sh` |
+- Pure logic/model code: `DUB_COMPILER=ldc2 ./scripts/test.sh`.
+- UI, tree, table, preview, or GTK lifecycle: the unit suite plus
+  `DC=ldc2 ./scripts/test-display.sh`.
+- Filter or tree performance-sensitive code: the above plus
+  `DC=ldc2 ./scripts/benchmark-filters.sh`.
+- Build/package metadata: `./scripts/build.sh` and `./scripts/lint.sh`.
+- Markdown: no Markdown linter is configured yet; check links manually.
 
-- `test-display.sh` runs under Xvfb and includes JSON/repository self-tests,
-  splitter/video-sink checks, and the 95,001-record JSON/SQLite smoke loads.
+- `test-display.sh` runs under Xvfb (or an existing `DISPLAY`) and includes
+  JSON/repository self-tests, splitter/video-sink checks, and the
+  95,001-record JSON/SQLite smoke loads. Without a display server it exits
+  successfully without running the suite, so confirm the test lines in the log
+  rather than relying only on the exit code.
 - Report any check that could not be run and why. Do not claim a pass without
   running the command.
 - Prefer local verification during normal iteration. If remote CI is

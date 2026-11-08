@@ -1,7 +1,7 @@
 # DosierSkanilo Datenfile-Dokumentation (extrahiert)
 
 Quelle: [DosierSkanilo](https://github.com/cschlote/DosierSkanilo)
-Stand: 2026-11-02
+Stand: 2026-11-08
 
 ## 1. Zweck des Datenfiles
 
@@ -139,7 +139,7 @@ Schließen des Tabs aktiv. Der Haupt-Verzeichnisbaum zeigt virtuelle Member nich
 als physische Verzeichnisse an; Archivdateien lassen sich dort ebenfalls lazy
 und paginiert expandieren. Archiv-Member, die selbst Archive sind, können im
 gleichen Baum weiter expandiert werden. Cache-Einstellungen sind implementiert;
-Same-Directory-Prefetch bleibt optional und standardmäßig deaktiviert.
+Same-Directory-Prefetch ist geplant, aber noch nicht implementiert.
 
 - `BlobRow`
   - `sourceId` / `sourceKey` (Repository-ID bzw. katalogrelativer Pfad)

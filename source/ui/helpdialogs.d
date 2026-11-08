@@ -31,8 +31,11 @@ void showShortcutsHelp(Window window)
             "Ctrl+W  Close Current Tab\n" ~
             "Ctrl+R  Reload\n" ~
             "Ctrl+K  Cancel Current Operation\n" ~
+            "Ctrl+S  Save JSON Document\n" ~
             "Ctrl+F  Apply Filter\n" ~
             "Ctrl+L  Clear Filter\n" ~
+            "Left    Select Parent Tree Row\n" ~
+            "Right   Expand Tree Row and Select First Child\n" ~
             "Ctrl+,  Preferences\n" ~
             "Ctrl+Q  Quit"
     );

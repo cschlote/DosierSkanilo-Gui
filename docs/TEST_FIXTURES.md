@@ -48,13 +48,15 @@ occurrences, unsafe paths, nested archive pages, member previews through leased
 cache files, encrypted-container cancellation, concurrent request coalescing,
 maximum-byte eviction, active-preview pinning, normal shutdown cleanup, and
 stale-session cleanup after a simulated crash. Both JSON v5 and migrated SQLite
-schema-v5 sources verify virtual path references and that cache paths never enter
-catalog data. Same-directory sibling prefetch remains planned and disabled by
-default.
+schema-v6 sources verify virtual path references and that cache paths never enter
+catalog data. Same-directory sibling prefetch remains planned and is not
+implemented.
 
 GTK opt-in checks and their commands are listed in
-[`GUI-REDESIGN.md`](GUI-REDESIGN.md#verification-baseline). Tests create and
-remove their temporary repositories themselves.
+[`GUI-REDESIGN.md`](GUI-REDESIGN.md#verification-baseline). The filter-signal
+test runs with `DOSIER_GUI_FILTER_TEST=1` and
+`--include='per-tab filter toggles apply'`. Tests create and remove their
+temporary repositories themselves.
 
 ## Backend checked-in data fixtures
 
@@ -75,6 +77,7 @@ The backend's JSON compatibility and metadata fixtures live under
 - `dummy-audio-file.mp3`, `dummy-video-file.mp4.mkv`, image/text/subtitle files,
   and torrent files provide small metadata/scanner inputs.
 
-The serializer emits JSON version 5; there is no checked-in JSON-v5 fixture. The reader/writer behavior and the supported fixtures are described in
+The serializer emits JSON version 5; there is no checked-in JSON-v5 fixture.
+The reader/writer behavior and the supported fixtures are described in
 [`DATAFILE_EXTRACTION.md`](DATAFILE_EXTRACTION.md) and the backend
 [`JSON-FORMAT.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/JSON-FORMAT.md).

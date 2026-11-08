@@ -6471,7 +6471,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                             setLoadingState(document, false);
                         document.status.setText(format(
                             "Showing %s matching blobs; more rows load while scrolling. "
-                            ~ "Choose 'All rows' to sort.", result.pageTotal));
+                            ~ "Paged results keep backend order.", result.pageTotal));
                     }
                     else
                     {
