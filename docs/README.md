@@ -7,6 +7,8 @@ This directory contains project documentation for the GTK frontend.
 - `ARCHITECTURE.md`: high-level architecture and module boundaries
 - `development/engineering-workflow.md`: change, verification, versioning, and
   release rules for contributors and coding agents
+- `development/testing.md`: unit, display-backed, integration, and CI test
+  layers
 - `GUI-REDESIGN.md`: current directory-tree implementation and source-opaque
   query plan
 - `../CHANGELOG.md`: user-visible and engineering changes by release

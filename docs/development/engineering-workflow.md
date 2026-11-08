@@ -25,18 +25,28 @@ applies to human contributors and coding agents.
 - If ambiguity or an environment limitation could affect correctness, stop and
   state the assumption instead of guessing.
 
+## Documentation gaps and approval
+
+If a goal, rule, or procedure cannot be derived logically from `AGENTS.md` and
+the linked documentation, do not invent a new workflow. Stop, explain the gap,
+and ask for approval. After approval, update `AGENTS.md` or the appropriate
+linked document in the same change so the rule is explicit for the next
+contributor. Documentation is part of the implementation, not an optional
+afterthought.
+
 ## Verification
 
-Run the smallest relevant check after editing. Examples:
+The test layers and their exact commands are documented in
+[`testing.md`](testing.md). Summary:
 
-- Pure logic/model code: `DUB_COMPILER=ldc2 ./scripts/test.sh`.
-- UI, tree, table, preview, or GTK lifecycle: the unit suite plus
-  `DC=ldc2 ./scripts/test-display.sh`.
-- Filter or tree performance-sensitive code: the above plus
-  `DC=ldc2 ./scripts/benchmark-filters.sh`.
-- Build/package metadata: `./scripts/build.sh` and `./scripts/lint.sh`.
-- Markdown: no Markdown linter is configured yet; check links manually.
-
+- Run the smallest relevant check after editing. Examples:
+  - Pure logic/model code: `DUB_COMPILER=ldc2 ./scripts/test.sh`.
+  - UI, tree, table, preview, or GTK lifecycle: the unit suite plus
+    `DC=ldc2 ./scripts/test-display.sh`.
+  - Filter or tree performance-sensitive code: the above plus
+    `DC=ldc2 ./scripts/benchmark-filters.sh`.
+  - Build/package metadata: `./scripts/build.sh` and `./scripts/lint.sh`.
+  - Markdown: no Markdown linter is configured yet; check links manually.
 - `test-display.sh` runs under Xvfb (or an existing `DISPLAY`) and includes
   JSON/repository self-tests, splitter/video-sink checks, and the
   95,001-record JSON/SQLite smoke loads. Without a display server it exits
@@ -47,6 +57,8 @@ Run the smallest relevant check after editing. Examples:
 - Prefer local verification during normal iteration. If remote CI is
   intentionally disabled, run the equivalent local checks and use `[skip ci]`
   only where it is appropriate.
+- Before merging a feature branch into `main` or preparing a release, run the
+  full unit suite and the display suite, not only the targeted tests.
 
 ## Changelog, docs, and planning
 
@@ -86,7 +98,9 @@ Run the smallest relevant check after editing. Examples:
 ## Releases
 
 Follow the backend [release checklist](https://github.com/cschlote/DosierSkanilo/blob/main/docs/RELEASE-CHECKLIST.md).
-The non-negotiable points are:
+Before creating a release commit, review that checklist explicitly and confirm
+that documentation, scripts, package metadata, changelog, and tests all describe
+the same intended state. The non-negotiable points are:
 
 - Create the release commit on the integration branch: move `## Unreleased` to
   `## Release X.Y.Z`, update package metadata, and keep the summary in simple
