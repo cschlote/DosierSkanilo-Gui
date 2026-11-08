@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Contributor documentation now defines the approval path for undocumented
+  workflow gaps, the release-checklist review, the internal/external test
+  layers, and the full-test merge gate.
+
 - Documentation was refreshed against the current implementation: paged
   repository sorting limitations, tree keyboard navigation, moved repository
   roots, archive cache behavior, test commands, and release status.

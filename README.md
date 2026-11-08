@@ -136,6 +136,7 @@ JSON tabs keep the complete catalog and derived index in memory.
 - `docs/ARCHITECTURE.md`
 - `docs/development/engineering-workflow.md` - change, verification,
   versioning, and release rules
+- `docs/development/testing.md` - test layers and local/CI commands
 - [Shared D language guide](https://github.com/cschlote/DosierSkanilo/blob/main/docs/development/d-language-guide.md)
 - `CHANGELOG.md`
 - `TODO.md`
