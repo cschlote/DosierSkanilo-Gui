@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+- SQLite repositories on sshfs, FUSE, SMB/CIFS, NFS, 9p, and similar network
+  filesystems are now rejected before opening with a clear error. These mounts
+  cannot provide SQLite's required locking and durability guarantees.
+
 ## Release 0.13.0 - 2026-11-08
 
 - Branch workflow now uses short-lived, intent-named feature branches from
