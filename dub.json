@@ -8,6 +8,7 @@
     ],
     "copyright": "Created 2026, Carsten Schlote",
     "license": "GPL-3.0-only",
+    "systemDependencies": "Build: GTK3, GStreamer 1.0 core/plugin-base, and SQLite development headers plus a sibling ../DosierSkanilo checkout. Runtime: GTK3, GStreamer 1.0 core/plugin-base, and libsqlite3; optional MediaInfo, GStreamer plugin packs, file, and archive tools.",
     "dependencies": {
         "silly": "~>1.2.0-dev.2",
         "gtk-d:gstreamer": "*",

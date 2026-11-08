@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Packaging metadata now separates mandatory GTK/GStreamer/SQLite runtime
+  libraries from recommended MediaInfo/codec/archive tools, and documents the
+  build/runtime dependencies per distribution.
+
 - Contributor documentation now defines the approval path for undocumented
   workflow gaps, the release-checklist review, the internal/external test
   layers, and the full-test merge gate.
