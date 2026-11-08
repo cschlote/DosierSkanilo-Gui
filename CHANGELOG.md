@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Branch workflow now uses short-lived, intent-named feature branches from
+  `main`; `testing` is a deployment-free mirror, and changelog updates happen
+  before merge.
+
 - Packaging metadata now separates mandatory GTK/GStreamer/SQLite runtime
   libraries from recommended MediaInfo/codec/archive tools, and documents the
   build/runtime dependencies per distribution.
