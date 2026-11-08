@@ -6,7 +6,7 @@ in the backend's
 completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
 [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md).
 
-## Current status (2026-11-07)
+## Current status (2026-11-08)
 
 - Version `0.12.1`; JSON and repository tabs both use `CatalogBackend`.
 - JSON tabs have explicit document sessions with modified markers,
@@ -23,28 +23,25 @@ completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
 
 ## P0 — Prepare the next GUI release
 
-Target: `0.12.1` (patch release for large-directory page loading and the
-reverted GtkD model cleanup since `0.12.0`).
+Target: next version after `0.12.1`; choose patch or minor at release time based
+on the user-facing changes since the last tag.
 
-- [x] Confirm the paired backend release version and run
-      [`DosierSkanilo/docs/RELEASE-CHECKLIST.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/RELEASE-CHECKLIST.md)
-      end to end.
-- [x] Move `## Unreleased` to `## Release 0.11.0` in `CHANGELOG.md`, update the
-      package version, and commit the release notes.
-- [x] Create the annotated `v0.11.0` tag after the backend tag is ready; verify
-      that the tag workflow validates tag/VERSION/CHANGELOG and publishes the
-      release.
-- [x] Re-run the Xvfb display suite and the 95,001-row JSON/SQLite smoke loads
+- [x] Release `0.12.1` is complete: changelog, paired backend release,
+      Arch/Fedora/Debian/Flatpak metadata, and the Flatpak source hash are
+      committed.
+- [ ] Run the
+      [`backend release checklist`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/RELEASE-CHECKLIST.md)
+      end to end for the next paired release.
+- [ ] Re-run the Xvfb display suite and the 95,001-row JSON/SQLite smoke loads
       as release evidence.
-- [ ] Update packaging metadata (Arch, Fedora, Flatpak) for `0.11.0`, verify
-      the paired Flatpak/source archive hashes, and launch the installed
-      package.
+- [ ] Verify installation from the packaged artifacts after the next release.
 
 ## P1 — Finish verification and performance work
 
 - [ ] Profile per-batch rendering of the 95,001-row table on a display and
       record the result in `TODO.md`/the benchmark notes. Headless filter/tree
-      and allocation numbers are already recorded.
+      and allocation measurements can be reproduced with
+      `./scripts/benchmark-filters.sh`.
 - [ ] Confirm the final WP-09.5 CLI/GUI result, progress, cancellation, error,
       refresh, and explicit storage-mode parity evidence stays complete when
       either HMI changes; keep the backend parity table in sync.
@@ -88,9 +85,10 @@ verbose diagnostics make future allocation/sink failures understandable.
 
 ## P2 — Optional and delivery work
 
-- [ ] Implement optional same-directory sibling prefetch, disabled by default,
-      with cancellable bounded requests and the same cache leases as foreground
-      preview/extraction. Add the sibling-prefetch cancellation test.
+- [ ] Implement optional same-directory sibling prefetch with cancellable
+      bounded requests and the same cache leases as foreground
+      preview/extraction. Keep it disabled by default and add the
+      sibling-prefetch cancellation test.
 - [ ] Manually verify the `gtksink` → `ximagesink` preference on a Wayland
       session.
 - [ ] Extend the release workflow with distribution artifacts and installation
@@ -98,8 +96,8 @@ verbose diagnostics make future allocation/sink failures understandable.
 - [ ] Investigate the previously noted CLI stdout/stderr ordering concern around
       `argsArray`; only add synchronization if a reproducible interleaving is
       found.
-- [ ] Make module-level Ddoc headers consistent across all GUI modules
-      (`Authors`/`License`), not only the recently touched files.
+- [x] Make module-level Ddoc headers consistent across all GUI modules
+      (`Authors`/`Copyright`/`License`); verified across all tracked `.d` files.
 - [ ] Add a size guard/warning when opening very large JSON catalogs directly
       and point users to repository import; direct JSON tabs keep the whole
       catalog and derived index in memory.

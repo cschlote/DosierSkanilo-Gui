@@ -43,6 +43,8 @@ JSON supports scan/analyze with optional metadata phases.
    tabs.
 2. The source adapter opens both JSON catalogs and SQLite repositories through
    the shared `CatalogBackend`; JSON sessions bind a derived filesystem root.
+   SQLite references are root-relative, so a copied, moved, or remounted
+   repository opens at its current path and refreshes the advisory root metadata.
 3. Backend directory queries are exposed through `CatalogDirectorySource`.
 4. Directory children are loaded lazily with bounded backend pages on background
    workers.
@@ -57,13 +59,17 @@ JSON supports scan/analyze with optional metadata phases.
 - `source/cli/commandline.d`: startup parser
 - `source/ui/mainwindow.d`: GTK shell, loading, filtering, rendering, and menu actions
 - `source/ui/documenttab.d`: per-tab state and table column constants
+- `source/ui/documentpage.d`: notebook/document page widgets
+- `source/ui/detailpreview.d`: preview surface and progress state
+- `source/ui/detailswidgets.d`: detail and preview widget helpers
+- `source/ui/virtualblobtable.d`: bounded cursor-backed repository Blob model
 - `source/ui/operationdialogs.d`: source-aware operation option dialogs
 - `source/ui/operationrequests.d`: pure request mapping from GUI options/targets
 - `source/ui/operationtaskstate.d`: GTK-independent progress/lifecycle reduction
-- `source/ui/detailswidgets.d`: detail widget helpers
 - `source/ui/tablecolumns.d`: table column setup
 - `source/ui/appstate.d`: persisted preferences and window state
 - `source/model/blobrow.d`: presentation model (`BlobRow`)
+- `source/model/catalogsource.d`: catalog-backed directory source
 - `source/model/treeprojection.d`: directory/file projection and `DirectorySource`
 - `source/model/datasource.d`: JSON/repository source adapter
 - `source/view/textreport.d`: filtering and helper transformations
@@ -96,15 +102,17 @@ pattern. Known file references can be navigated independently of the blob row.
 ## 4. UI Composition
 
 - classic menu bar
-  - `File`: open, reload, close tab, cancel operation, quit
+  - `File`: open, save/revert JSON documents, reload, export, close tab,
+    archive passwords, scan archives, recent files, cancel operation, quit
   - `Tools`: start supported operations, pause/resume at safe checkpoints, and
     cancel
   - `Edit`: filter actions, metrics reset, preferences
   - `Help`: shortcuts, about
 - toolbar with load/filter controls
-- primary lazy directory `TreeView`
-- alternative blob table: ListStore rows for JSON tabs and a virtual
-  cursor-backed model for repositories
+- primary lazy directory `TreeView`; `Left` selects the parent row and `Right`
+  expands a directory/archive row and selects its first materialized child
+- alternative blob table: sortable ListStore rows for JSON and full-list views,
+  plus a non-sortable virtual cursor-backed model for paged repositories
 - split-view details column and Previewer, separated by a horizontal splitter
 - vertically scrollable detail expanders for metadata and known-file information
 - large scrollable text content in the Previewer, with filesystem attributes in
@@ -136,8 +144,8 @@ Matching and index construction run off the GTK thread. GTK model writes and
 precomputed ID lookup and never calls a backend query. Tests cover filter
 predicates, stable IDs, ancestor visibility, and canonical-row retention.
 Headless filter/tree latency, allocation, and peak-memory measurements are
-recorded in `TODO.md`; per-batch 95,001-row display profiling remains a
-follow-up.
+recorded with the benchmark scripts; per-batch 95,001-row display profiling
+remains a follow-up in `TODO.md`.
 
 ## 6. GC-Friendly GUI Algorithms
 
@@ -153,12 +161,13 @@ and peak memory on representative JSON and SQLite sources.
 
 The shared archive extraction cache is used by member scraping, checksums, file
 type, MediaInfo, and preview; optional same-directory sibling prefetch remains
-planned. Cache leases pin entries while a preview or extractor uses them;
-eviction must not interrupt an active user. The cache uses an application-owned per-session directory, is
-removed after workers and previews stop at shutdown, and is never represented as
-a persistent catalog file reference. JSON defaults to OS temporary storage;
-SQLite uses a configurable cache base. A RAM-backed filesystem may be selected as
-that base.
+planned and is not implemented. Cache leases pin entries while a preview or
+extractor uses them; eviction must not interrupt an active user. The cache uses
+one application-wide, user-configurable base directory and size limit for both
+JSON and SQLite sources, plus an application-owned per-session subdirectory that
+is removed after workers and previews stop at shutdown. It is never represented
+as a persistent catalog file reference. A RAM-backed filesystem may be selected
+as the cache base.
 
 ## 7. Design Principles
 

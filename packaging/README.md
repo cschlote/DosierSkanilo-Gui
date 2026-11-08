@@ -18,9 +18,11 @@ the executable and requires GTK3/GTKD runtime libraries; it does not require
 the `dosierskanilo` CLI package at runtime. The project is licensed under
 `GPL-3.0-only`; package recipes should install the repository's `LICENSE.md`.
 
-Build and validate recipes in clean native environments. The Flatpak draft uses
-the backend as a sibling source module and needs an offline/vendorable DUB
-dependency strategy before Flathub submission.
+Build and validate recipes in clean native environments. The current Flatpak
+draft installs a prebuilt `build/bin/dosierskanilo-gui` and the license file; it
+does not yet build the GUI or the sibling backend from source. A complete
+manifest must add both sources and an offline/vendorable DUB dependency strategy
+before Flathub submission.
 
 ## Release tags and Flatpak hashes
 

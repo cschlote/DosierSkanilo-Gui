@@ -39,7 +39,9 @@ Implemented:
 - Asynchronous details for repository files outside the current table page,
   rendered directly from the selected Tree file.
 - Repository Blob-table view uses a virtual GTK TreeModel with a bounded async
-  cursor-page cache instead of retaining a GTK row per catalog result.
+  cursor-page cache instead of retaining a GTK row per catalog result. Because
+  it is not a `GtkTreeSortable`, its columns are not clickable for sorting; the
+  backend does not yet accept a content-query sort order.
 - Virtual blob rows support direct GTK value lookups, requested distant chunks
   continue through intermediate cursors, and backward requests remain queued
   while a chunk is loading.
@@ -71,10 +73,12 @@ Implemented:
 - Long preview summaries use a size-bounded two-axis scroll area and preserve
   long lines without expanding the containing window.
 - Per-tab filter toggles are captured in the query state before applying filters.
-- Per-document filters and Blob-table sorting are persisted. On reload, JSON
-  sources are filtered after the source projection is attached and expanded
-  directories are restored against the resulting tree. The directory/Blob
-  notebook tabs are the view switch; there is no separate view-mode dropdown.
+- Per-document filters and sort state for sortable table views are persisted.
+  Paged repository Blob tables keep backend order and do not apply the saved
+  sort state. On reload, JSON sources are filtered after the source projection
+  is attached and expanded directories are restored against the resulting tree.
+  The directory/Blob notebook tabs are the view switch; there is no separate
+  view-mode dropdown.
 - Tree-to-Blob selection resolves the displayed row identity rather than using
   its unsorted array position. An empty JSON filter takes the unfiltered fast
   path instead of copying and rebuilding the same catalog projection.
@@ -110,9 +114,9 @@ Known limitations:
 - Several window splitters and video-preview layout behaviors remain on the
   open-issues list in `TODO.md`.
 - General scan, metadata, and analysis are available from the Tools menu through
-  shared backend requests. The remaining CLI/GUI parity matrix and process-level
-  lifecycle verification are tracked in the backend plan at
-  `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09`.
+  shared backend requests. The CLI/GUI parity matrix and process-level lifecycle
+  verification are tracked in the backend plan at
+  `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09-shared-long-running-operations-for-cli-and-gui`.
 
 ## Verification Baseline
 
@@ -134,6 +138,9 @@ Earlier display-backed verification also covered:
   --include='scrolls through evicted chunks'` — GTK TreeView long-scroll check.
 - `DOSIER_GUI_TREE_LOAD_TEST=1 dub test --compiler=ldc2 -- --threads=1` — the
   expanded loading-placeholder recovery check is enabled in the full suite.
+- `DOSIER_GUI_FILTER_TEST=1 dub test --compiler=ldc2 -- --threads=1
+  --include='per-tab filter toggles apply'` — GTK filter-signal and per-tab
+  filter-state checks with a usable display.
 - GTK self-tests under `G_DEBUG=fatal-warnings` for an audio-plus-cover fixture,
   repository archive/torrent fixtures, and a large repository. Self-test mode
   selects the first row and expands remote archive/torrent roots when present.
@@ -141,8 +148,8 @@ Earlier display-backed verification also covered:
 The virtual-table test uses a temporary 1,000-row repository with 50-row chunks.
 It queues a backward request during a forward load, reads all rows in both
 directions, verifies stable reference paths after cache eviction, and asserts
-that no more than four chunks remain cached. An opt-in GTK TreeView test scrolls through
-distant rows and back to evicted chunks. Audio classification and GStreamer
+that no more than four chunks remain cached. An opt-in GTK TreeView test scrolls
+through distant rows and back to evicted chunks. Audio classification and GStreamer
 preroll were tested with an MP3 fixture and fake sinks; audible output through a
 physical audio device has not been smoke-tested.
 
@@ -265,7 +272,10 @@ The primary view is a GTK `TreeView` backed by a lazy tree model:
 - child nodes are loaded when a directory is expanded
 - large file lists are fetched in internal chunks and appended below the
   selected directory; user-visible pagination controls are not required
-- sorting is explicit and stable
+- `Left` selects the parent row; `Right` expands a directory/archive row and
+  selects its first materialized child
+- sorting is explicit and stable for sortable views; paged repository Blob
+  tables keep backend order
 - loading and error placeholder nodes are visible states
 
 ### Reuse Nodes When Filters Change (Implemented)
@@ -293,8 +303,8 @@ refresh already materialized directories, and restore the same canonical nodes.
 Unit/model tests cover filter parity, stable IDs, ancestor visibility, and
 retention of underlying rows. A display-backed JSON filter smoke test passed with
 `G_DEBUG=fatal-warnings`. Large-tree latency, allocation, and peak-memory
-measurements are recorded in `TODO.md`; per-batch Blob-table rendering at 95,001
-JSON rows remains a follow-up.
+measurements can be reproduced with `scripts/benchmark-filters.sh`; per-batch
+Blob-table rendering at 95,001 JSON rows remains a follow-up.
 
 ## GC-Friendly Algorithms
 
@@ -391,7 +401,7 @@ stays virtual, while the cache lease pins the temporary preview file for the
 active document. The main Directory Tree also expands physical archive rows
 lazily, pages member rows, and supports nested archive rows without projecting
 virtual member paths as ordinary directories. Cache preferences are implemented;
-same-directory sibling prefetch remains planned and disabled by default.
+same-directory sibling prefetch remains planned and is not implemented.
 
 The archive file remains the TreeView file row and is expandable when it has an
 archive index or a recognized archive extension. Expansion lists safe member
@@ -406,16 +416,16 @@ locator and occurrence. JSON v5 stores scraped members as ordinary content
 records with virtual `FileSpec` paths. SQLite schema v4 migrates existing archive
 rows to virtual `file_refs` and removes `archive_entries`/`archive_indexes`
 without adding archive-specific tables; schema v5 adds the generated
-`is_virtual` classification column.
+`is_virtual` classification column, and schema v6 stores directory paths in the
+same escaped namespace.
 
 One session extraction cache is shared by archive scraping, checksums, file-type
-and MediaInfo extraction, preview, and optional prefetch. JSON defaults to an OS
-temporary cache root; SQLite uses a configurable local cache base. Each run owns
-a session subdirectory that is removed at normal exit, and stale owned sessions
-are cleaned at startup. A maximum cache size and pinned active previews bound
-retention. Same-directory sibling prefetch is a preference, disabled by default
-until cancellation and resource-bound tests pass; a RAM-backed cache can be
-selected by choosing a RAM-disk path.
+and MediaInfo extraction, and preview. The GUI uses one application-wide,
+configurable cache base directory and size limit for both JSON and SQLite
+sources. Each run owns a session subdirectory that is removed at normal exit,
+and stale owned sessions are cleaned at startup. A maximum cache size and pinned
+active previews bound retention. Same-directory sibling prefetch is planned but
+not implemented; a RAM-backed cache can be selected by choosing a RAM-disk path.
 
 ### GUI work packages
 
@@ -428,9 +438,10 @@ selected by choosing a RAM-disk path.
   logical selected path remains virtual; external preview paths are cache paths
   only.
 - **Cache preferences/lifecycle:** configure the cache base and maximum size,
-  default prefetch off, coalesce repeated requests, pin files used by previews,
-  stop previews and cancel/join workers before shutdown cleanup, and sweep only
-  stale session folders carrying the application's ownership marker.
+  keep prefetch off until it is implemented, coalesce repeated requests, pin
+  files used by previews, stop previews and cancel/join workers before shutdown
+  cleanup, and sweep only stale session folders carrying the application's
+  ownership marker.
 - **Archive scraping:** explicit deep scans process every safely selectable
   member, reuse one cache lease per member for the enabled metadata extractors,
   and persist results on the content blob. Do not create durable filesystem
@@ -453,7 +464,8 @@ a compatibility layer around the current table UI:
    **Tree-first navigation is implemented; the blob table remains an
    alternative view.**
 5. Move filter, sort, selection, and paging state into each tab. **Filter,
-   sort, and TreeView cursor state now persist per document.**
+   sort state for sortable views, and TreeView cursor state persist per
+   document.**
 6. Add lazy file details and specialized detail renderers. **Repository details,
    structured MediaInfo streams, file-type signatures, fallback overview, and
    audio/image/video previews are implemented.**
@@ -469,17 +481,18 @@ a compatibility layer around the current table UI:
 The archive-member TreeView/extraction workflow and the shared CLI/GTK operation
 matrix are implemented. Open GUI work is tracked in [`TODO.md`](../TODO.md):
 
-- release preparation for `0.11.0`
+- release preparation after `0.12.1`
 - per-batch display profiling of the 95,001-row table
 - splitter persistence/sizing and video-preview realization/window-growth fixes
 - optional sibling prefetch and Wayland sink verification
-- distribution/install smoke checks and consistent module Ddoc headers
+- distribution/install smoke checks
 
-Large-catalog latency, GC allocation, and peak-memory measurements are recorded
-in `TODO.md`; per-batch display profiling remains follow-up verification.
+Large-catalog latency, GC allocation, and peak-memory measurements are produced
+with `scripts/benchmark-filters.sh`; per-batch display profiling remains
+follow-up verification in `TODO.md`.
 
 The shared CLI/GTK operation work is recorded as WP-09 in the backend's
-[`SQLITE-IMPLEMENTATION-PLAN.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09).
+[`SQLITE-IMPLEMENTATION-PLAN.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09-shared-long-running-operations-for-cli-and-gui).
 The parity evidence is current; GTK must not introduce a second scanner or
 analysis implementation.
 

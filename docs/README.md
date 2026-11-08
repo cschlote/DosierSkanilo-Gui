@@ -31,6 +31,7 @@ Or run stages individually:
 ./scripts/lint.sh
 ./scripts/build.sh
 ./scripts/test.sh
+./scripts/test-display.sh
 ./scripts/build-docs.sh
 ```
 

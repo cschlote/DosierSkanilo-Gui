@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Documentation was refreshed against the current implementation: paged
+  repository sorting limitations, tree keyboard navigation, moved repository
+  roots, archive cache behavior, test commands, and release status.
+
 - Contributor and agent guidance is now organized in a compact `AGENTS.md`,
   with detailed change, verification, versioning, and release rules in
   `docs/development/engineering-workflow.md`.
@@ -14,8 +18,9 @@ All notable changes to this project are documented in this file.
 
 - Paged repository blob tables no longer mark their columns as GTK-sortable
   while the cursor-backed virtual model is active. This removes the GTK
-  sorting warnings; choosing the "All rows" page size restores sortable
-  columns.
+  sorting warnings. The paged view keeps backend order; sortable columns are
+  available for JSON and other full-list table views. Backend-side sorting for
+  paged content queries remains future work.
 
 - The directory tree now supports keyboard navigation: `Left` selects the
   parent row, while `Right` expands a directory or archive directory and

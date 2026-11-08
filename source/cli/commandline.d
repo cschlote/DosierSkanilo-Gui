@@ -59,6 +59,7 @@ Startup options:
             --no-auto-filter    Disable auto-apply after load/reload
             --self-test         Start, load queued files, then quit after a short delay
             --self-test-operation  Run scan, metadata, or analyze before the self-test quits
+                              (synthetic-pause/synthetic-cancel drive display tests)
             --self-test-save    Save modified JSON documents before the self-test quits
             --self-test-check-splitter  Verify restored splitter positions are usable
             --self-test-check-video-sinks  Verify an embedded video sink is available

@@ -24,7 +24,8 @@ The GUI currently supports:
   inversion and hit counters
 - presence filters for file type, archive, and torrent metadata
 - sortable table columns for index, size, checksum state, file type, media
-  info, archive, and torrent flags
+  info, archive, and torrent flags in JSON and full-list views; the paged
+  cursor-backed repository Blob table is not sortable
 - detail panes for checksums, known file names, MediaInfo, file type, archive,
   and torrent metadata
 - archive and torrent entry trees in their respective scrollable Previewers;
@@ -54,8 +55,8 @@ The GUI currently supports:
   save/discard/cancel prompts; SQLite tabs remain transactional without a dirty
   marker
 - archive files expand lazily in the main tree, including synthesized inner
-  directories and nested archives; member rows can be previewed or extracted
-  through the shared member-content cache
+  directories and nested archives; selecting a member extracts it internally
+  into the shared member-content cache and previews it
 
 For the filtered TreeView model and GC-friendly GUI algorithm design, see
 [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md).
@@ -63,12 +64,18 @@ For the filtered TreeView model and GC-friendly GUI algorithm design, see
 The GUI focuses on a traditional desktop workflow:
 
 - menu bar (`File`, `Edit`, `Tools`, `Help`)
-- keyboard shortcuts
+- keyboard shortcuts, including tree navigation with `Left` (select parent) and
+  `Right` (expand and select the first child)
 - preferences dialog
-- sortable table view
+- sortable table view for JSON and full-list results; paged repository Blob
+  tables keep backend order
 - row selection details
 
 ## Build
+
+The build needs a sibling `../DosierSkanilo` checkout, a D compiler with DUB,
+and GTK3/GStreamer development packages. `scripts/install-dependencies.sh`
+installs the supported local dependencies.
 
 ```bash
 dub build --compiler=ldc2
@@ -83,8 +90,10 @@ dub build --compiler=ldc2
 Open JSON files from `File` > `Open JSON File`, or repository directories from
 `File` > `Open Repository Directory`. A selected directory may be the repository
 root or any directory below it; the nearest `.dosierskanilo` directory is used.
-For multi-million-record catalogs, import the JSON into a repository first:
-direct JSON tabs keep the complete catalog and derived index in memory.
+Catalog paths are root-relative, so a copied, moved, or remounted repository
+opens at its current path even when the stored advisory root differs. For
+multi-million-record catalogs, import the JSON into a repository first: direct
+JSON tabs keep the complete catalog and derived index in memory.
 
 ## Startup Controls
 
@@ -95,9 +104,10 @@ direct JSON tabs keep the complete catalog and derived index in memory.
 - `--case-sensitive`: case-sensitive filter matching
 - `--no-auto-filter`: disable auto-apply filter after load
 - `--self-test`, `--self-test-operation <scan|metadata|analyze>`,
-  `--self-test-save`, `--self-test-delay <ms>`,
-  `--self-test-check-splitter`, `--self-test-check-video-sinks`: automation and
-  CI smoke-test controls; use `--help` for the complete list
+  `--self-test-operation synthetic-pause|synthetic-cancel`, `--self-test-save`,
+  `--self-test-delay <ms>`, `--self-test-check-splitter`,
+  `--self-test-check-video-sinks`: automation and CI smoke-test controls; use
+  `--help` for the complete list
 - `-h`, `--help`: print CLI help and exit
 
 ## Current Features
@@ -107,10 +117,14 @@ direct JSON tabs keep the complete catalog and derived index in memory.
 - browse a tree-first directory view backed by `CatalogBackend` for both JSON
   and SQLite sources
 - expand archive files lazily, including nested archives and synthesized inner
-  directories, and preview or extract members through the shared cache
+  directories; selecting a member extracts it internally into the shared cache
+  and previews it
+- navigate the tree with `Left` (select parent) and `Right` (expand and select
+  the first child)
 - text filter by file name and SHA1
 - media, file type, archive, and torrent presence filters
-- sortable table columns
+- sortable table columns in JSON and full-list views; paged repository Blob
+  tables are not sortable
 - detailed record panes with copy actions and raw JSON inspection
 - JSON document sessions with modified markers, Save/Revert, and conflict
   prompts
