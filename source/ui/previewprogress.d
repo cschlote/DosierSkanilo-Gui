@@ -1,4 +1,9 @@
-/** UI helpers for the periodic video preview progress timer. */
+/** UI helpers for the periodic video preview progress timer.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.previewprogress;
 
 import gstreamer.GStreamer : GstState;
@@ -10,9 +15,13 @@ import ui.mainsources : UiMainSource, scheduleUiTimeout;
 /** Callbacks required by the preview progress timer. */
 struct PreviewProgressCallbacks
 {
+    /// Return the document whose preview is currently shown.
     DocumentTab delegate() currentDocument;
+    /// Update the preview position slider for the given document.
     void delegate(DocumentTab) syncVideoPreviewPosition;
+    /// Refresh the audio/video track selectors for the given document.
     void delegate(DocumentTab) syncVideoTrackSelectors;
+    /// Update the play/pause button for the given document and playing flag.
     void delegate(DocumentTab, bool) syncVideoPlaybackButton;
 }
 

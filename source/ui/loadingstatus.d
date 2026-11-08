@@ -1,4 +1,9 @@
-/** UI helpers for loading-state feedback and progress phases. */
+/** UI helpers for loading-state feedback and progress phases.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.loadingstatus;
 
 import gtk.ProgressBar;
@@ -11,13 +16,21 @@ import ui.mainsources : UiMainSource, scheduleUiIdle, scheduleUiTimeout, stopUiS
 /** Callbacks and widget hooks required to publish loading feedback. */
 struct LoadingStatusCallbacks
 {
+    /// Returns true while a document load is in progress.
     bool delegate() isLoading;
+    /// Sets the global loading flag.
     void delegate(bool) setIsLoading;
+    /// Returns the document tab that owns the current load, or `null` when idle.
     DocumentTab delegate() busyDocument;
+    /// Sets the document tab that owns the current load, or clears it with `null`.
     void delegate(DocumentTab) setBusyDocument;
+    /// Returns the pending progress-pulse timer, or `null` when none is scheduled.
     UiMainSource delegate() progressPulseTimer;
+    /// Stores or clears the progress-pulse timer.
     void delegate(UiMainSource) setProgressPulseTimer;
+    /// Refreshes toolbar sensitivity to match the current loading state.
     void delegate() syncToolbarSensitivity;
+    /// Enables or disables resizable table columns for the given document.
     void delegate(DocumentTab, bool) setTableColumnsResizable;
 }
 

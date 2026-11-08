@@ -1,4 +1,9 @@
-/** Pure splitter-position math for the document panes. */
+/** Pure splitter-position math for the document panes.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.splitterlayout;
 
 /** Minimum primary pane extent kept visible in pixels. */

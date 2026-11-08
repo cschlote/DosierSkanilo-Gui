@@ -1,4 +1,9 @@
-/** Structured presentation rows for MediaInfo streams. */
+/** Structured presentation rows for MediaInfo streams.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.mediainforenderer;
 
 import std.format : format;
@@ -9,18 +14,34 @@ import dosierskanilo.metadata.mediainfosig : MediaInfoSig;
 /** One concise row in the MediaInfo stream table. */
 struct MediaInfoStreamRow
 {
+    /// Human-readable stream label such as `Video 1` or `Audio 2`.
     string stream;
+    /// Codec or container format name reported for the stream.
     string format;
+    /// Preformatted properties joined with a middle dot separator.
     string properties;
 }
 
+/** Append `label` and `value` to `properties` when the value is non-empty.
+ *
+ * Params:
+ *     properties = Accumulator that receives the combined label and value.
+ *     label = Prefix text, including any trailing separator such as `": "`.
+ *     value = Value to append; empty values are ignored.
+ */
 private void appendProperty(ref string[] properties, string label, string value)
 {
     if (value.length > 0)
         properties ~= label ~ value;
 }
 
-/** Project image, video, audio, and text streams into display-ready rows. */
+/** Project image, video, audio, and text streams into display-ready rows.
+ *
+ * Params:
+ *     signature = MediaInfo signature to project; may be null.
+ * Returns: One row per stream in video, audio, image, text order, or an empty
+ *     array when `signature` is null.
+ */
 MediaInfoStreamRow[] mediaInfoStreamRows(const(MediaInfoSig) signature)
 {
     MediaInfoStreamRow[] rows;

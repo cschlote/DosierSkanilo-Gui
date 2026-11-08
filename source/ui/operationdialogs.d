@@ -1,4 +1,9 @@
-/** Target-aware option dialogs for shared backend operations. */
+/** Target-aware option dialogs for shared backend operations.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.operationdialogs;
 
 import gtk.Box;
@@ -11,23 +16,43 @@ import gtk.c.types : DialogFlags, Orientation, ResponseType;
 import dosierskanilo.repository.types : MetadataScanOptions,
     RepositoryAnalysisOptions, RepositoryScanOptions;
 
+/** Backend operation whose options are shown in the modal dialog. */
 enum OperationDialogKind
 {
+    /// Directory scan; offers recursion, hidden files, and missing-file cleanup.
     scan,
+    /// Metadata extraction; offers checksums, file types, media, archives, and torrents.
     metadata,
+    /// Repository analysis; offers missing-file cleanup for repository sources.
     analyze
 }
 
 /** User-selected backend options for one operation. */
 struct OperationDialogOptions
 {
+    /// True when the user confirmed the dialog with the start button.
     bool accepted;
+    /// Scan options populated only for `OperationDialogKind.scan`.
     RepositoryScanOptions scanOptions;
+    /// Metadata extraction options populated when the operation needs metadata.
     MetadataScanOptions metadataOptions;
+    /// Analysis options populated for `OperationDialogKind.analyze`.
     RepositoryAnalysisOptions analysisOptions;
 }
 
-/** Show only options supported by the active source and operation. */
+/** Show only options supported by the active source and operation.
+ *
+ * Params:
+ *     parent = Parent window that owns the modal dialog.
+ *     title = Dialog title shown in the window decoration.
+ *     sourceDescription = Human-readable description of the operation target.
+ *     repositorySource = True when the source is a repository, enabling
+ *         repository-only options such as missing-file cleanup.
+ *     kind = Backend operation whose options are shown.
+ * Returns: The user-selected options. `accepted` is false when the dialog was
+ *     cancelled, in which case the option fields keep their default values.
+ * Throws: GTK runtime errors may propagate while creating or running the dialog.
+ */
 OperationDialogOptions showOperationOptions(Window parent, string title,
     string sourceDescription, bool repositorySource, OperationDialogKind kind)
 {

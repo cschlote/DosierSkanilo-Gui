@@ -1,4 +1,9 @@
-/** Shared GtkBuilder helpers for UI module loaders and widget lookup. */
+/** Shared GtkBuilder helpers for UI module loaders and widget lookup.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.builderutils;
 
 import gtk.Builder;

@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Source documentation is now complete for every public, package, and private
+  declaration, including fields, enum members, constructors, callbacks, and
+  helper functions with their parameter and return contracts.
+
 - Paged repository blob tables no longer mark their columns as GTK-sortable
   while the cursor-backed virtual model is active. This removes the GTK
   sorting warnings; choosing the "All rows" page size restores sortable

@@ -18,7 +18,8 @@ completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
 - The GUI Xvfb display job and the shared CLI/GTK operation matrix are green on
   `testing` and `main`. GUI verification: 76 tests, coverage 36.43 %, build
   clean.
-- Documentation and Ddoc headers were refreshed on 2026-11-06.
+- Documentation and Ddoc headers are complete: every documentable public,
+  package, and private declaration has Ddoc (verified 2026-11-08).
 
 ## P0 — Prepare the next GUI release
 

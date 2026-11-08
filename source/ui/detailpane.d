@@ -1,4 +1,9 @@
-/** UI loader and signal wiring for the detail pane layout. */
+/** UI loader and signal wiring for the detail pane layout.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.detailpane;
 
 import gtk.Box;
@@ -30,17 +35,24 @@ import ui.tablecolumns : configureKnownFilesColumns;
 /** Widgets from the detail pane layout. */
 struct DetailPaneUi
 {
+    /// Top-level container box that holds the detail pane layout.
     Box detailsPane;
+    /// Paned widget separating the detail visuals from the preview slot.
     Paned detailsContent;
+    /// Container that receives the file preview widget for the active document.
     Box previewSlot;
 }
 
 /** Callbacks needed to wire detail pane UI signals. */
 struct DetailPaneCallbacks
 {
+    /// Opens a known file name of the document with the system default handler.
     void delegate(DocumentTab, string) openKnownFileExternally;
+    /// Copies `value` to the clipboard and reports it under the given label.
     void delegate(string, string, DocumentTab) copyTextToClipboard;
+    /// Refreshes the detail widgets for the row selected in the main tree view.
     void delegate(DocumentTab) updateSelectedRowDetails;
+    /// Requests a preview of the archive member at the given path and identity.
     void delegate(DocumentTab, string, string) previewArchiveMember;
 }
 
@@ -135,6 +147,14 @@ DetailPaneUi loadDetailPaneUi(DocumentTab document)
     return ui;
 }
 
+/** Configure a tree view to show nested archive or torrent entries.
+ *
+ * The model is expected to provide the entry name in column 0 and a
+ * human-readable size in column 1. Both columns are appended to `treeView`.
+ *
+ * Params:
+ *     treeView = Tree view that receives an "Entry" and a "Size" column.
+ */
 void configureNestedEntryTree(TreeView treeView)
 {
     auto nameRenderer = new CellRendererText();
@@ -153,6 +173,11 @@ void configureNestedEntryTree(TreeView treeView)
     treeView.appendColumn(sizeColumn);
 }
 
+/** Add the Stream, Format and Properties columns used for media info rows.
+ *
+ * Params:
+ *     treeView = Tree view that receives the three resizable columns.
+ */
 private void configureMediaInfoTree(TreeView treeView)
 {
     void addColumn(string title, int modelColumn, bool expand)
@@ -173,6 +198,12 @@ private void configureMediaInfoTree(TreeView treeView)
     treeView.setHeadersClickable(false);
 }
 
+/** Add the Property/Value columns used for fallback metadata rows.
+ *
+ * Params:
+ *     treeView = Tree view that receives two resizable columns; the value
+ *         column expands to fill available width.
+ */
 private void configureFallbackTree(TreeView treeView)
 {
     auto propertyRenderer = new CellRendererText();
@@ -194,6 +225,18 @@ private void configureFallbackTree(TreeView treeView)
     treeView.setHeadersClickable(false);
 }
 
+/** Wire row activation to copy the full nested entry path to the clipboard.
+ *
+ * The model must provide the row kind in column 3 (only `"File"` rows resolve
+ * to a path) and the full nested path in column 2. Activation of a non-file
+ * row is ignored.
+ *
+ * Params:
+ *     treeView = Nested entry tree whose rows are activated.
+ *     document = Document tab passed through to the clipboard callback.
+ *     entryLabel = Human-readable label describing what was copied.
+ *     callbacks = Hooks used to copy the resolved path.
+ */
 private void bindNestedEntryActivation(TreeView treeView, DocumentTab document,
     string entryLabel, DetailPaneCallbacks callbacks)
 {

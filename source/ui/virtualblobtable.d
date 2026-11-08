@@ -1,4 +1,9 @@
-/** Bounded-cache GtkTreeModel for cursor-backed repository blob summaries. */
+/** Bounded-cache GtkTreeModel for cursor-backed repository blob summaries.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.virtualblobtable;
 
 import core.thread : Thread;
@@ -32,25 +37,58 @@ import ui.documenttab : COL_CHECKSUM_SET, COL_FILE_SIZE, COL_FILE_SIZE_SORT,
 final class VirtualBlobTableModel : TreeModel
 {
 private:
+    /// Magic stamp stored in every `TreeIter` issued by this model.
     enum int iteratorStamp = 0x44534B47;
+    /// Maximum number of row chunks retained in `chunks` before the oldest is evicted.
     enum size_t maxCachedChunks = 4;
 
+    /// Source path identifying the catalog displayed by this model.
     string sourcePath;
+    /// Catalog backend used to load chunks on worker threads.
     CatalogBackend backend;
+    /// Filter query forwarded unchanged with every chunk load request.
     SourceQuery query;
+    /// Number of rows per chunk; the constructor substitutes 250 for zero.
     size_t chunkSize;
+    /// Total number of rows exposed by the model, including rows not yet loaded.
     size_t rowCount;
+    /// Number of chunks initially considered loaded; the constructor supplies the first one.
     size_t loadedChunkCount = 1;
+    /// Cursor used to load each chunk by index; element zero is `CatalogPageCursor.init`.
     CatalogPageCursor[] chunkCursors;
+    /// Loaded row chunks keyed by chunk index; entries are evicted in cache order.
     BlobRow[][size_t] chunks;
+    /// Chunk indexes in the order they were loaded, oldest first.
     size_t[] cacheOrder;
+    /// True while a background chunk load is in flight; at most one runs at a time.
     bool requestActive;
+    /// Chunk index to load once the active request finishes, when queued.
     size_t requestedTargetChunk;
+    /// Index of the chunk currently being loaded; meaningful while `requestActive` is true.
     size_t activeChunkIndex;
+    /// Whether `requestedTargetChunk` holds a pending follow-up request.
     bool hasRequestedTargetChunk;
+    /// Message from the most recent failed chunk load; empty when no error occurred.
     string loadError;
 
 public:
+    /** Construct a model over the first chunk of a cursor-backed row set.
+     *
+     * The first chunk is copied and shown immediately; later chunks are fetched
+     * lazily. Iterators handed out by this model remain valid only while the
+     * model lives.
+     *
+     * Params:
+     *     sourcePath = Source path used for subsequent chunk loads.
+     *     backend = Catalog backend used for subsequent chunk loads.
+     *     query = Filter query applied to every chunk load.
+     *     chunkSize = Rows per chunk; zero selects the default of 250.
+     *     firstChunk = Already loaded rows for chunk zero.
+     *     totalRows = Total row count reported to the view.
+     *     nextCursor = Cursor for the second chunk, used only when `hasMore`
+     *         is true.
+     *     hasMore = Whether the source has rows beyond the first chunk.
+     */
     this(string sourcePath, CatalogBackend backend, SourceQuery query,
         size_t chunkSize, BlobRow[] firstChunk, size_t totalRows,
         CatalogPageCursor nextCursor, bool hasMore)
@@ -68,18 +106,43 @@ public:
             this.chunkCursors ~= nextCursor;
     }
 
+    /** Return the model flags.
+     *
+     * Returns: Zero; the model exposes a flat list rather than persistent
+     *     iterators.
+     */
     override GtkTreeModelFlags getFlags() const
     {
         return cast(GtkTreeModelFlags) 0;
     }
 
+    /** Return the number of columns exposed by the model.
+     *
+     * Returns: The fixed column count, 18.
+     */
     override int getNColumns() const { return 18; }
 
+    /** Return the data type of a column.
+     *
+     * Params:
+     *     column = Zero-based column index.
+     * Returns: `GType.STRING` for a valid column, otherwise `GType.INVALID`.
+     */
     override GType getColumnType(int column)
     {
         return column >= 0 && column < getNColumns() ? GType.STRING : GType.INVALID;
     }
 
+    /** Fill `iter` from a tree path.
+     *
+     * Only single-index paths into the flat row list are accepted.
+     *
+     * Params:
+     *     iter = Iterator to initialize.
+     *     path = Path whose first index is the row number.
+     * Returns: `1` on success, `0` when the iterator or path is null or the
+     *     index is out of range.
+     */
     override int getIter(TreeIter iter, TreePath path)
     {
         if (iter is null || path is null)
@@ -91,6 +154,13 @@ public:
         return 1;
     }
 
+    /** Build a tree path for an iterator.
+     *
+     * Params:
+     *     iter = Iterator previously issued by this model.
+     * Returns: A new path containing the row index, or `null` when the
+     *     iterator is not valid for this model.
+     */
     override TreePath getPath(TreeIter iter)
     {
         size_t index;
@@ -101,6 +171,20 @@ public:
         return path;
     }
 
+    /** Return the cell value for a row and column.
+     *
+     * Uncached rows yield an empty value for most columns and a `Loading...`
+     * or `Load failed` placeholder for the index column. Requesting a value
+     * may start a background chunk load or prefetch the next chunk.
+     *
+     * Params:
+     *     iter = Iterator previously issued by this model.
+     *     column = Zero-based column index.
+     *     value = Optional value object to reuse; a new one is allocated when
+     *         null.
+     * Returns: The value object with a string payload; invalid iterators and
+     *     columns produce an empty string.
+     */
     override Value getValue(TreeIter iter, int column, Value value = null)
     {
         if (value is null)
@@ -136,6 +220,13 @@ public:
         return value;
     }
 
+    /** Advance an iterator to the next row.
+     *
+     * Params:
+     *     iter = Iterator to advance in place.
+     * Returns: `true` if a next row existed, `false` at the end or for an
+     *     invalid iterator.
+     */
     override bool iterNext(TreeIter iter)
     {
         size_t index;
@@ -145,6 +236,14 @@ public:
         return true;
     }
 
+    /** Return the first child of the root (or invalidate the iterator).
+     *
+     * Params:
+     *     iter = Output iterator set to the first row.
+     *     parent = Parent iterator; must be null for the flat list.
+     * Returns: `true` when a first row exists, otherwise `false` with `iter`
+     *     bound to this model but unusable.
+     */
     override bool iterChildren(out TreeIter iter, TreeIter parent)
     {
         if (parent !is null || rowCount == 0)
@@ -159,13 +258,35 @@ public:
         return true;
     }
 
+    /** Report whether the node behind an iterator has children.
+     *
+     * Params:
+     *     iter = Iterator to inspect; null denotes the root.
+     * Returns: `true` only for the root when the model has rows.
+     */
     override bool iterHasChild(TreeIter iter) { return iter is null && rowCount > 0; }
 
+    /** Return the number of children of a node.
+     *
+     * Params:
+     *     iter = Iterator to inspect; null denotes the root.
+     * Returns: The row count for the root, otherwise zero. Values above
+     *     `int.max` saturate.
+     */
     override int iterNChildren(TreeIter iter)
     {
         return iter is null ? cast(int) min(rowCount, cast(size_t) int.max) : 0;
     }
 
+    /** Return the indexed child of a node.
+     *
+     * Params:
+     *     iter = Output iterator for the requested row.
+     *     parent = Parent iterator; must be null for the flat list.
+     *     n = Zero-based child index.
+     * Returns: `true` when the index is a valid row, otherwise `false` with
+     *     `iter` bound to this model but unusable.
+     */
     override bool iterNthChild(out TreeIter iter, TreeIter parent, int n)
     {
         if (parent !is null || n < 0 || cast(size_t) n >= rowCount)
@@ -180,6 +301,15 @@ public:
         return true;
     }
 
+    /** Return the parent of a node.
+     *
+     * The model is a flat list, so no node has a parent.
+     *
+     * Params:
+     *     iter = Output iterator; always initialized and bound to this model.
+     *     child = Child whose parent is requested.
+     * Returns: Always `false`.
+     */
     override bool iterParent(out TreeIter iter, TreeIter child)
     {
         iter = new TreeIter();
@@ -188,6 +318,15 @@ public:
     }
 
 private:
+    /** Store a row index in a `TreeIter`.
+     *
+     * The index is encoded as `index + 1` so that row zero has non-null user
+     * data, distinguishing it from an uninitialized iterator.
+     *
+     * Params:
+     *     iter = Iterator to initialize.
+     *     index = Zero-based row index to store.
+     */
     void setIter(TreeIter iter, size_t index)
     {
         auto raw = iter.getTreeIterStruct();
@@ -198,6 +337,14 @@ private:
         iter.setModel(this);
     }
 
+    /** Decode and validate a row index stored in a `TreeIter`.
+     *
+     * Params:
+     *     iter = Iterator to inspect.
+     *     index = Receives the zero-based row index.
+     * Returns: `true` when the stamp matches and the index is within
+     *     `rowCount`; `false` for null, stale, or out-of-range iterators.
+     */
     bool getIndex(TreeIter iter, out size_t index) const
     {
         if (iter is null)
@@ -209,6 +356,15 @@ private:
         return index < rowCount;
     }
 
+    /** Render one cell of a loaded row as display text.
+     *
+     * Params:
+     *     row = Row supplying the cell data.
+     *     column = Zero-based column index.
+     *     index = Zero-based row index, used for index and sort columns.
+     * Returns: Human-readable text; the index column is one-based and missing
+     *     flags are shown as an em dash.
+     */
     string columnText(const(BlobRow) row, int column, size_t index) const
     {
         final switch (column)
@@ -243,6 +399,16 @@ private:
         }
     }
 
+    /** Ensure a chunk is loaded, queueing or starting a background request.
+     *
+     * The call is a no-op when the chunk is already cached or lies beyond
+     * `rowCount`; when another load is active the request is remembered as the
+     * follow-up target. Progress is reported through `rowChanged` on the UI
+     * thread, and failures are stored in `loadError`.
+     *
+     * Params:
+     *     wantedChunk = Zero-based chunk index to load.
+     */
     void requestChunk(size_t wantedChunk)
     {
         if (wantedChunk * chunkSize >= rowCount || wantedChunk in chunks)
@@ -336,6 +502,20 @@ private:
         }).start();
     }
 
+    /** Convert loaded blobs into table rows with IDs and summary flags.
+     *
+     * The returned rows are detached from their source blobs; only scalar
+     * summary data is retained.
+     *
+     * Params:
+     *     blobs = Blobs to project, in display order.
+     *     blobIds = Repository IDs aligned with `blobs`; missing entries leave
+     *         the row ID unchanged.
+     *     flags = Summary flags aligned with `blobs`; missing entries leave the
+     *         row without summary flags.
+     * Returns: One row per input blob, with `detailsLoaded` cleared where a
+     *     repository ID is available.
+     */
     BlobRow[] projectRows(NamedBinaryBlob[] blobs, long[] blobIds,
         RepositoryBlobFlags[] flags)
     {

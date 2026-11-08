@@ -1,4 +1,9 @@
-/** Shared status and selection helpers for document tabs. */
+/** Shared status and selection helpers for document tabs.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.selectionstatus;
 
 import std.format : format;

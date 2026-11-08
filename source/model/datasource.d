@@ -1,6 +1,7 @@
 /** Shared data-source adapter for JSON files and SQLite repositories.
  *
  * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
  * License: GPL-3.0-only
  */
 module model.datasource;
@@ -52,54 +53,95 @@ import model.treeprojection : DirectoryNode, DirectorySource, FileCursor, FileFi
 /** One lazy archive member projected into the main Directory Tree. */
 struct ArchiveMemberTreeEntry
 {
+    /// Reference identity of the member or synthesized directory.
     string referenceId;
+    /// Catalog content identity of the containing row, or empty when unknown.
     string contentId;
+    /// Display name of the member or directory.
     string name;
+    /// Path relative to the containing archive or directory layer.
     string relativePath;
+    /// Complete virtual path used to address the entry.
     string virtualPath;
+    /// Uncompressed size in bytes, or zero when unknown.
     ulong size;
+    /// Whether the member is itself or contains an archive.
     bool hasArchive;
+    /// Whether the entry is a synthesized directory rather than a file.
     bool isDirectory;
 }
 
 /** Bounded archive-member page and continuation position. */
 struct ArchiveMemberTreePage
 {
+    /// Entries included in this page.
     ArchiveMemberTreeEntry[] entries;
+    /// Offset of the first entry after this page.
     size_t nextOffset;
+    /// Whether more entries exist after this page.
     bool hasMore;
 }
 
 /** Extracted bytes and logical path for one archive-member preview. */
 struct AcquiredArchiveMemberPreview
 {
+    /// Lease holding the extracted member; release it when finished.
     MemberContentLease lease;
+    /// Logical virtual path of the member as requested by the caller.
     string virtualPath;
+    /// Size of the extracted member in bytes.
     ulong size;
 }
 
 /** Filter state translated into repository query options. */
 struct SourceQuery
 {
+    /// Text matched against displayed paths; empty disables the search.
     string text;
+    /// Whether the text search is case sensitive.
     bool caseSensitive;
+    /// Whether only files with a video stream match.
     bool video;
+    /// Whether only files with an audio stream match.
     bool audio;
+    /// Whether only files with an image stream match.
     bool image;
+    /// Whether only files with a text stream match.
     bool textStream;
+    /// Inverts the media-stream match: media files are excluded instead.
     bool mediaNegated;
+    /// Whether only files with a resolved file type match.
     bool fileType;
+    /// Whether only files with archive content match.
     bool archive;
+    /// Whether only files with torrent content match.
     bool torrent;
 }
 
-/** Return whether `path` is inside a DosierSkanilo repository. */
+/** Return whether `path` is inside a DosierSkanilo repository.
+ *
+ * Params:
+ *     path = Filesystem path to inspect; relative paths are resolved by
+ *         `Repository.findRoot`.
+ * Returns: `true` when the path exists, is a directory, and has a repository
+ *     root at or above it.
+ */
 bool isRepositorySource(string path)
 {
     return exists(path) && isDir(path) && !Repository.findRoot(path).empty;
 }
 
-/** Build the legacy in-memory directory projection for a JSON catalog. */
+/** Build the legacy in-memory directory projection for a JSON catalog.
+ *
+ * Virtual archive member references are skipped; only physical file paths are
+ * projected. Blobs without file specs fall back to their first file name.
+ *
+ * Params:
+ *     path = Path of the JSON catalog to load.
+ * Returns: A deterministic directory tree built from the catalog's file
+ *     references.
+ * Throws: Any exception raised while reading or decoding the catalog.
+ */
 DirectoryTree loadDocumentTree(string path)
 {
     auto blobs = loadDocumentSource(path);
@@ -134,30 +176,53 @@ DirectoryTree loadDocumentTree(string path)
     return buildDirectoryTree(inputs);
 }
 
-/** Open a repository-backed directory source for the GUI tree. */
+/** Open a repository-backed directory source for the GUI tree.
+ *
+ * Params:
+ *     path = Path of the repository root or a directory inside it.
+ * Returns: A directory source backed by a newly opened catalog backend; the
+ *     caller owns it and must call `close` when done.
+ * Throws: Any exception raised while opening the catalog backend.
+ */
 DirectorySource openRepositoryDirectorySource(string path)
 {
     return new CatalogDirectorySource(openCatalogBackend(path));
 }
 
+/** Mutable result slot shared by the concurrent tree and detail test threads. */
 private class ConcurrentSourceQueryResults
 {
+    /// Number of child directories observed by the tree thread.
     size_t directoryCount;
+    /// Number of files observed by the tree thread.
     size_t fileCount;
+    /// Number of successful detail loads performed by the detail thread.
     size_t detailLoads;
+    /// Error message from the tree thread, or empty on success.
     string treeError;
+    /// Error message from the detail thread, or empty on success.
     string detailError;
 }
 
 /** One page of deduplicated catalog content rows for table projections. */
 struct CatalogRowPage
 {
+    /// Representative content rows in the requested order.
     BlobRow[] rows;
+    /// Opaque position for fetching the next page.
     CatalogPageCursor nextCursor;
+    /// Total number of matching rows across all pages.
     size_t total;
+    /// Whether more rows exist after this page.
     bool hasMore;
 }
 
+/** Translate a display filter into a catalog-backend filter.
+ *
+ * Params:
+ *     query = GUI filter state to convert.
+ * Returns: A catalog filter with corresponding fields populated.
+ */
 private CatalogFilter catalogFilterFor(SourceQuery query)
 {
     CatalogFilter filter;
@@ -174,6 +239,14 @@ private CatalogFilter catalogFilterFor(SourceQuery query)
     return filter;
 }
 
+/** Encode one named digest in Base64 for display.
+ *
+ * Params:
+ *     fingerprint = Content fingerprint holding zero or more digests.
+ *     algorithm = Digest algorithm name to select, for example `"md5"`.
+ * Returns: Base64 text of the matching digest, or empty when that algorithm
+ *     is not present.
+ */
 private string digestBase64(const CatalogContentFingerprint fingerprint,
     string algorithm)
 {
@@ -183,6 +256,15 @@ private string digestBase64(const CatalogContentFingerprint fingerprint,
     return "";
 }
 
+/** Render media streams as one human-readable line per stream.
+ *
+ * Each line lists the stream kind, index, and format, followed by dimensions,
+ * channel count, frame rate, bit rate, duration, and language when available.
+ *
+ * Params:
+ *     streams = Media streams to render, in catalog order.
+ * Returns: Newline-terminated detail text, or empty when there are no streams.
+ */
 private string renderMediaDetails(const CatalogMediaStream[] streams)
 {
     string result;
@@ -222,6 +304,15 @@ private string renderMediaDetails(const CatalogMediaStream[] streams)
     return result;
 }
 
+/** Convert one deduplicated catalog content row into a table row.
+ *
+ * Only summary fields and fingerprints are populated; full details remain
+ * unloaded until requested.
+ *
+ * Params:
+ *     row = Representative catalog content row.
+ * Returns: A display row carrying summary flags and encoded digests.
+ */
 private BlobRow blobRowForContent(const CatalogContentRow row)
 {
     BlobRow result;
@@ -245,7 +336,17 @@ private BlobRow blobRowForContent(const CatalogContentRow row)
     return result;
 }
 
-/** Load one content-row page through the storage-neutral catalog backend. */
+/** Load one content-row page through the storage-neutral catalog backend.
+ *
+ * Params:
+ *     path = Path of the catalog or repository to open.
+ *     cursor = Opaque position returned by a previous page, or
+ *         `CatalogPageCursor.init` for the first page.
+ *     limit = Maximum number of rows to return.
+ *     query = Optional display filter translated into a catalog filter.
+ * Returns: The requested page of deduplicated table rows.
+ * Throws: Any exception raised while opening or querying the backend.
+ */
 CatalogRowPage loadCatalogRowPage(string path, CatalogPageCursor cursor,
     size_t limit, SourceQuery query = SourceQuery())
 {
@@ -255,7 +356,17 @@ CatalogRowPage loadCatalogRowPage(string path, CatalogPageCursor cursor,
     return loadCatalogRowPage(backend, cursor, limit, query);
 }
 
-/** Load one content-row page from an already opened catalog backend. */
+/** Load one content-row page from an already opened catalog backend.
+ *
+ * Params:
+ *     backend = Open catalog backend to query; it remains owned by the caller.
+ *     cursor = Opaque position returned by a previous page, or
+ *         `CatalogPageCursor.init` for the first page.
+ *     limit = Maximum number of rows to return.
+ *     query = Optional display filter translated into a catalog filter.
+ * Returns: The requested page of deduplicated table rows.
+ * Throws: Any exception raised by the backend query.
+ */
 CatalogRowPage loadCatalogRowPage(CatalogBackend backend,
     CatalogPageCursor cursor, size_t limit, SourceQuery query = SourceQuery())
 {
@@ -275,7 +386,17 @@ CatalogRowPage loadCatalogRowPage(CatalogBackend backend,
     return result;
 }
 
-/** Load an offset-addressed content-row page through the catalog backend. */
+/** Load an offset-addressed content-row page through the catalog backend.
+ *
+ * Params:
+ *     path = Path of the catalog or repository to open.
+ *     offset = Zero-based index of the first row to return.
+ *     limit = Maximum number of rows to return.
+ *     query = Optional display filter translated into a catalog filter.
+ * Returns: The selected rows together with the total and continuation state of
+ *     the underlying catalog scan.
+ * Throws: Any exception raised while opening or querying the backend.
+ */
 CatalogRowPage loadCatalogRowOffsetPage(string path, size_t offset,
     size_t limit, SourceQuery query = SourceQuery())
 {
@@ -285,7 +406,20 @@ CatalogRowPage loadCatalogRowOffsetPage(string path, size_t offset,
     return loadCatalogRowOffsetPage(backend, offset, limit, query);
 }
 
-/** Load an offset-addressed page from an already opened catalog backend. */
+/** Load an offset-addressed page from an already opened catalog backend.
+ *
+ * Rows before `offset` are skipped without being materialized. The returned
+ * `nextCursor` and `hasMore` describe the page that was read, not the
+ * requested offset.
+ *
+ * Params:
+ *     backend = Open catalog backend to query; it remains owned by the caller.
+ *     offset = Zero-based index of the first row to return.
+ *     limit = Maximum number of rows to return.
+ *     query = Optional display filter translated into a catalog filter.
+ * Returns: The selected rows together with the total and continuation state.
+ * Throws: Any exception raised by the backend query.
+ */
 CatalogRowPage loadCatalogRowOffsetPage(CatalogBackend backend, size_t offset,
     size_t limit, SourceQuery query = SourceQuery())
 {
@@ -317,7 +451,16 @@ CatalogRowPage loadCatalogRowOffsetPage(CatalogBackend backend, size_t offset,
     return result;
 }
 
-/** Load full display details for one catalog reference path. */
+/** Load full display details for one catalog reference path.
+ *
+ * Params:
+ *     path = Path of the catalog or repository to open.
+ *     relativePath = Reference path identifying the file within the catalog.
+ * Returns: A fully loaded display row with fingerprint, media, archive, and
+ *     torrent details.
+ * Throws: `Exception` when the reference no longer exists, or any exception
+ *     raised while opening or querying the backend.
+ */
 BlobRow loadCatalogFileDetails(string path, string relativePath)
 {
     auto backend = openCatalogBackend(path);
@@ -326,7 +469,16 @@ BlobRow loadCatalogFileDetails(string path, string relativePath)
     return loadCatalogFileDetails(backend, relativePath);
 }
 
-/** Load full display details from an already opened catalog backend. */
+/** Load full display details from an already opened catalog backend.
+ *
+ * Params:
+ *     backend = Open catalog backend to query; it remains owned by the caller.
+ *     relativePath = Reference path identifying the file within the catalog.
+ * Returns: A fully loaded display row with fingerprint, media, archive, and
+ *     torrent details.
+ * Throws: `Exception` when the reference no longer exists, or any exception
+ *     raised by the backend query.
+ */
 BlobRow loadCatalogFileDetails(CatalogBackend backend, string relativePath)
 {
     const referenceId = backend.resolveReference(relativePath);
@@ -390,7 +542,22 @@ BlobRow loadCatalogFileDetails(CatalogBackend backend, string relativePath)
     return row;
 }
 
-/** Load a bounded page of JSON-v5 virtual members for one archive reference. */
+/** Load a bounded page of JSON-v5 virtual members for one archive reference.
+ *
+ * When `containerIsVirtual` is false and no virtual child matches, the
+ * container's own archive spec is enumerated as a fallback.
+ *
+ * Params:
+ *     containerVirtualPath = Virtual path of the container, or its physical
+ *         path when `containerIsVirtual` is false.
+ *     catalogRows = Catalog rows whose blobs supply the member references.
+ *     offset = Zero-based index of the first member to return.
+ *     limit = Maximum number of members to return; must be greater than zero.
+ *     containerIsVirtual = Whether `containerVirtualPath` already uses virtual
+ *         archive grammar.
+ * Returns: The requested member page and the offset of the next page.
+ * Throws: `Exception` when `limit` is zero.
+ */
 ArchiveMemberTreePage loadJsonArchiveMemberTreePage(string containerVirtualPath,
     const(BlobRow)[] catalogRows, size_t offset = 0, size_t limit = 250,
     bool containerIsVirtual = false)
@@ -502,6 +669,14 @@ ArchiveMemberTreePage loadJsonArchiveMemberTreePage(string containerVirtualPath,
     return page;
 }
 
+/** Test whether one virtual path is a direct child of a container.
+ *
+ * Params:
+ *     container = Parsed path of the containing archive or directory layer.
+ *     candidate = Parsed path to test.
+ * Returns: `true` when `candidate` shares the container's physical path and
+ *     layer prefixes and adds exactly one layer.
+ */
 private bool isDirectArchiveChild(ParsedArchiveVirtualPath container,
     ParsedArchiveVirtualPath candidate)
 {
@@ -519,7 +694,23 @@ private bool isDirectArchiveChild(ParsedArchiveVirtualPath container,
     return true;
 }
 
-/** Acquire one member from a JSON archive using its physical container path. */
+/** Acquire one member from a JSON archive using its physical container path.
+ *
+ * Relative container paths are resolved against the document's directory. The
+ * returned lease must be released by the caller.
+ *
+ * Params:
+ *     documentPath = Path of the JSON catalog that owns the archive.
+ *     containerPath = Physical archive path, absolute or relative to the
+ *         document.
+ *     memberPath = Path of the member inside the container.
+ *     occurrence = Zero-based occurrence used to disambiguate duplicate member
+ *         names.
+ *     password = Optional archive password.
+ * Returns: The extracted member preview and its logical virtual path.
+ * Throws: `Exception` when the container or member path is empty, or when
+ *     extraction fails.
+ */
 AcquiredArchiveMemberPreview acquireJsonArchiveMemberPreview(string documentPath,
     string containerPath, string memberPath, size_t occurrence = 0,
     string password = "")
@@ -535,7 +726,20 @@ AcquiredArchiveMemberPreview acquireJsonArchiveMemberPreview(string documentPath
         password);
 }
 
-/** Acquire a JSON-v5 archive member by its complete virtual path. */
+/** Acquire a JSON-v5 archive member by its complete virtual path.
+ *
+ * Relative physical paths in `virtualPath` are resolved against the document's
+ * directory before extraction. The returned lease must be released by the
+ * caller.
+ *
+ * Params:
+ *     documentPath = Path of the JSON catalog that owns the archive.
+ *     virtualPath = Complete virtual member path.
+ *     password = Optional archive password.
+ * Returns: The extracted member preview; its `virtualPath` is the path that
+ *     was requested, not the resolved physical form.
+ * Throws: `Exception` when parsing or extraction fails.
+ */
 AcquiredArchiveMemberPreview acquireJsonVirtualArchiveMemberPreview(
     string documentPath, string virtualPath, string password = "")
 {
@@ -559,6 +763,23 @@ AcquiredArchiveMemberPreview acquireJsonVirtualArchiveMemberPreview(
     return preview;
 }
 
+/** Extract a virtual archive member through every nested container layer.
+ *
+ * Each layer is extracted into the shared member-content cache. Intermediate
+ * leases are released as the descent advances; the returned lease owns the
+ * final extracted member and must be released by the caller.
+ *
+ * Params:
+ *     sourceRoot = Base directory used for relative physical paths.
+ *     virtualPath = Complete virtual member path, including layer separators.
+ *     sourceIdentity = Source identity used in cache keys.
+ *     expectedSize = Size used when the final descriptor has no recorded size.
+ *     password = Optional archive password.
+ * Returns: The lease for the extracted member, or `null` when the path has no
+ *     layers.
+ * Throws: `Exception` when the path is not virtual, a container format is
+ *     unavailable, descriptors cannot be listed, or a member is missing.
+ */
 private MemberContentLease acquireVirtualArchiveMember(string sourceRoot,
     string virtualPath, string sourceIdentity, ulong expectedSize,
     string password)
@@ -632,7 +853,18 @@ private MemberContentLease acquireVirtualArchiveMember(string sourceRoot,
     return previousLease;
 }
 
-/** Load a bounded page of catalog archive entries for one container reference. */
+/** Load a bounded page of catalog archive entries for one container reference.
+ *
+ * Params:
+ *     path = Path of the catalog or repository to open.
+ *     containerPath = Reference path of the archive container.
+ *     offset = Zero-based index of the first entry to return.
+ *     limit = Maximum number of entries to return.
+ * Returns: The requested entry slice in catalog order; empty when the offset is
+ *     past the end.
+ * Throws: `Exception` when the container no longer exists, or any exception
+ *     raised while opening or querying the backend.
+ */
 NestedFileNode[] loadCatalogArchiveEntries(string path, string containerPath,
     size_t offset = 0, size_t limit = 250)
 {
@@ -642,7 +874,21 @@ NestedFileNode[] loadCatalogArchiveEntries(string path, string containerPath,
     return loadCatalogArchiveEntries(backend, containerPath, offset, limit);
 }
 
-/** Load archive entries from an already opened catalog backend. */
+/** Load archive entries from an already opened catalog backend.
+ *
+ * Entries without a safe path or that denote directories receive an empty
+ * node identity.
+ *
+ * Params:
+ *     backend = Open catalog backend to query; it remains owned by the caller.
+ *     containerPath = Reference path of the archive container.
+ *     offset = Zero-based index of the first entry to return.
+ *     limit = Maximum number of entries to return.
+ * Returns: The requested entry slice in catalog order; empty when the offset is
+ *     past the end.
+ * Throws: `Exception` when the container no longer exists, or any exception
+ *     raised by the backend query.
+ */
 NestedFileNode[] loadCatalogArchiveEntries(CatalogBackend backend,
     string containerPath, size_t offset = 0, size_t limit = 250)
 {
@@ -692,7 +938,18 @@ NestedFileNode[] loadCatalogArchiveEntries(CatalogBackend backend,
     return result;
 }
 
-/** Load a bounded page of catalog torrent entries for one container reference. */
+/** Load a bounded page of catalog torrent entries for one container reference.
+ *
+ * Params:
+ *     path = Path of the catalog or repository to open.
+ *     containerPath = Reference path of the torrent container.
+ *     offset = Zero-based index of the first entry to return.
+ *     limit = Maximum number of entries to return.
+ * Returns: The requested entry slice in catalog order; empty when the offset is
+ *     past the end.
+ * Throws: `Exception` when the torrent reference no longer exists, or any
+ *     exception raised while opening or querying the backend.
+ */
 NestedFileNode[] loadCatalogTorrentEntries(string path, string containerPath,
     size_t offset = 0, size_t limit = 250)
 {
@@ -702,7 +959,21 @@ NestedFileNode[] loadCatalogTorrentEntries(string path, string containerPath,
     return loadCatalogTorrentEntries(backend, containerPath, offset, limit);
 }
 
-/** Load torrent entries from an already opened catalog backend. */
+/** Load torrent entries from an already opened catalog backend.
+ *
+ * Path components are joined with `/` to form each entry's relative path, and
+ * the entry identity prefixes it with the container path and archive separator.
+ *
+ * Params:
+ *     backend = Open catalog backend to query; it remains owned by the caller.
+ *     containerPath = Reference path of the torrent container.
+ *     offset = Zero-based index of the first entry to return.
+ *     limit = Maximum number of entries to return.
+ * Returns: The requested entry slice in catalog order; empty when the offset is
+ *     past the end.
+ * Throws: `Exception` when the torrent reference no longer exists, or any
+ *     exception raised by the backend query.
+ */
 NestedFileNode[] loadCatalogTorrentEntries(CatalogBackend backend,
     string containerPath, size_t offset = 0, size_t limit = 250)
 {
@@ -743,7 +1014,18 @@ NestedFileNode[] loadCatalogTorrentEntries(CatalogBackend backend,
     return result;
 }
 
-/** Load direct catalog archive members for one container reference path. */
+/** Load direct catalog archive members for one container reference path.
+ *
+ * Params:
+ *     path = Path of the catalog or repository to open.
+ *     containerPath = Reference path of the archive or a directory inside it.
+ *     offset = Zero-based index of the first entry to return.
+ *     limit = Maximum number of entries to return; must be greater than zero.
+ * Returns: Direct files and synthesized child directories, with directories
+ *     sorted first.
+ * Throws: `Exception` when `limit` is zero, or any exception raised while
+ *     opening or querying the backend.
+ */
 ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(string path,
     string containerPath, size_t offset = 0, size_t limit = 250)
 {
@@ -753,7 +1035,13 @@ ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(string path,
     return loadCatalogArchiveMemberTreePage(backend, containerPath, offset, limit);
 }
 
-/** Decode one escaped virtual-layer path component for display. */
+/** Decode one escaped virtual-layer path component for display.
+ *
+ * Params:
+ *     component = Encoded path component from a virtual archive path.
+ * Returns: The decoded relative path, or `component` unchanged when it is not
+ *     a single valid escaped layer.
+ */
 private string decodedArchiveComponent(string component)
 {
     try
@@ -769,7 +1057,23 @@ private string decodedArchiveComponent(string component)
     return component;
 }
 
-/** Load direct archive children (files and synthesized directories). */
+/** Load direct archive children (files and synthesized directories).
+ *
+ * The containing archive is resolved by trimming path components from
+ * `containerPath` until an indexed archive reference is found. Older explicit
+ * directory references that collide with synthesized directories are dropped in
+ * favor of the synthesized node.
+ *
+ * Params:
+ *     backend = Open catalog backend to query; it remains owned by the caller.
+ *     containerPath = Reference path of the archive or a directory inside it.
+ *     offset = Zero-based index of the first entry to return.
+ *     limit = Maximum number of entries to return; must be greater than zero.
+ * Returns: Direct files and synthesized child directories, with directories
+ *     sorted first; empty when the container cannot be resolved.
+ * Throws: `Exception` when `limit` is zero, or any exception raised by the
+ *     backend query.
+ */
 ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(CatalogBackend backend,
     string containerPath, size_t offset = 0, size_t limit = 250)
 {
@@ -930,7 +1234,15 @@ ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(CatalogBackend backend,
     return result;
 }
 
-/** Acquire one catalog archive member into the shared preview cache. */
+/** Acquire one catalog archive member into the shared preview cache.
+ *
+ * Params:
+ *     path = Path of the catalog or repository to open.
+ *     memberRelativePath = Reference path of the archive member.
+ * Returns: The preview; its lease must be released by the caller.
+ * Throws: `Exception` when the member no longer exists, or any exception raised
+ *     while opening the backend or acquiring content.
+ */
 AcquiredArchiveMemberPreview acquireCatalogArchiveMemberPreview(string path,
     string memberRelativePath)
 {
@@ -940,7 +1252,15 @@ AcquiredArchiveMemberPreview acquireCatalogArchiveMemberPreview(string path,
     return acquireCatalogArchiveMemberPreview(backend, memberRelativePath);
 }
 
-/** Acquire a member preview from an already opened catalog backend. */
+/** Acquire a member preview from an already opened catalog backend.
+ *
+ * Params:
+ *     backend = Open catalog backend to query; it remains owned by the caller.
+ *     memberRelativePath = Reference path of the archive member.
+ * Returns: The preview; its lease must be released by the caller.
+ * Throws: `Exception` when the member no longer exists, or any exception raised
+ *     while acquiring content.
+ */
 AcquiredArchiveMemberPreview acquireCatalogArchiveMemberPreview(
     CatalogBackend backend, string memberRelativePath)
 {
@@ -955,13 +1275,29 @@ AcquiredArchiveMemberPreview acquireCatalogArchiveMemberPreview(
     return preview;
 }
 
-/** Load one JSON catalog document. */
+/** Load one JSON catalog document.
+ *
+ * Params:
+ *     path = Path of the JSON catalog to read.
+ * Returns: The catalog blobs in stored order.
+ * Throws: Any exception raised while acquiring the read lease or decoding the
+ *     file.
+ */
 NamedBinaryBlob[] loadDocumentSource(string path)
 {
     return readJsonCatalog(path);
 }
 
-/** Store or remove one password after resolving the user's filename to a blob. */
+/** Store or remove one password after resolving the user's filename to a blob.
+ *
+ * Params:
+ *     sourcePath = Path of the JSON catalog or repository that owns the file.
+ *     fileName = User-facing filename resolved by the backend to a catalog
+ *         blob.
+ *     password = Password to store, or empty to clear it.
+ * Throws: Any exception raised while opening the backend or updating the
+ *     password.
+ */
 void setDocumentArchivePassword(string sourcePath, string fileName, string password)
 {
     auto backend = isRepositorySource(sourcePath)
@@ -971,9 +1307,20 @@ void setDocumentArchivePassword(string sourcePath, string fileName, string passw
     backend.setArchivePassword(fileName, password);
 }
 
+/** Monotonic process-wide counter used to allocate archive-scan operation ids. */
 private shared ulong nextArchiveScanOperationId;
 
-/** Run an archive rescan against a repository through the operation API. */
+/** Run an archive rescan against a repository through the operation API.
+ *
+ * Params:
+ *     sourcePath = Path of the repository to rescan.
+ *     filePath = Restrict the scan to this file path, or empty to scan all
+ *         files.
+ *     passwordCallback = Callback used to request archive passwords.
+ *     cancellation = Optional shared flag polled to cancel the operation.
+ * Returns: The metadata summary reported by the completed operation.
+ * Throws: `Exception` when the operation does not reach the completed state.
+ */
 private MetadataSummary runRepositoryArchiveScan(string sourcePath,
     string filePath, ArchivePasswordCallback passwordCallback,
     shared(bool)* cancellation = null)
@@ -998,7 +1345,20 @@ private MetadataSummary runRepositoryArchiveScan(string sourcePath,
     return result.metadataSummary;
 }
 
-/** Scan archive entries in a JSON catalog or SQLite repository. */
+/** Scan archive entries in a JSON catalog or SQLite repository.
+ *
+ * JSON catalogs are rewritten after the scan; repositories go through the
+ * shared operation API. A set cancellation flag stops JSON processing after the
+ * current blob.
+ *
+ * Params:
+ *     sourcePath = Path of the JSON catalog or repository to scan.
+ *     passwordCallback = Callback used to request archive passwords.
+ *     cancellation = Optional shared flag polled to cancel the scan.
+ * Returns: Counts of visited blobs, updated archives, and failures.
+ * Throws: Any exception raised while acquiring leases, reading, scanning, or
+ *     writing the catalog.
+ */
 MetadataSummary scanDocumentArchives(string sourcePath,
     ArchivePasswordCallback passwordCallback,
     shared(bool)* cancellation = null)
@@ -1056,7 +1416,21 @@ MetadataSummary scanDocumentArchives(string sourcePath,
     return summary;
 }
 
-/** Scan archive entries for the single file selected in a source context menu. */
+/** Scan archive entries for the single file selected in a source context menu.
+ *
+ * Exactly one catalog blob must match the requested path. Repositories report a
+ * summary from the operation API; JSON catalogs are rewritten after scanning.
+ *
+ * Params:
+ *     sourcePath = Path of the JSON catalog or repository to scan.
+ *     filePath = User-facing path of the single file to rescan.
+ *     passwordCallback = Callback used to request archive passwords.
+ *     cancellation = Optional shared flag polled to cancel the scan.
+ * Returns: Counts of visited blobs, updated archives, and failures.
+ * Throws: `Exception` when no file or more than one file matches, when a
+ *     repository operation does not complete, or when reading or writing the
+ *     catalog fails.
+ */
 MetadataSummary scanDocumentArchive(string sourcePath, string filePath,
     ArchivePasswordCallback passwordCallback,
     shared(bool)* cancellation = null)
@@ -1132,6 +1506,13 @@ MetadataSummary scanDocumentArchive(string sourcePath, string filePath,
     return summary;
 }
 
+/** Read and deserialize a JSON catalog while holding a read lease.
+ *
+ * Params:
+ *     sourcePath = Path of the JSON catalog to read.
+ * Returns: The catalog blobs in stored order.
+ * Throws: Any exception raised while acquiring the lease or decoding the file.
+ */
 private NamedBinaryBlob[] readJsonCatalog(string sourcePath)
 {
     auto readLease = TargetReadLease.acquireJsonCatalog(sourcePath);
@@ -1140,6 +1521,18 @@ private NamedBinaryBlob[] readJsonCatalog(string sourcePath)
     return deserializeDataClassJsonFile(sourcePath);
 }
 
+/** Safely replace a JSON catalog with the supplied blobs.
+ *
+ * The caller's write lease must match the target path. The file is written
+ * through a catalog replacement lease so readers never observe a partial
+ * catalog.
+ *
+ * Params:
+ *     sourcePath = Path of the JSON catalog to replace.
+ *     blobs = Catalog blobs to serialize.
+ *     targetLease = Write lease that must own the target path.
+ * Throws: `Exception` when the lease does not match or the safe write fails.
+ */
 private void writeJsonCatalog(string sourcePath, NamedBinaryBlob[] blobs,
     TargetWriteLease targetLease)
 {

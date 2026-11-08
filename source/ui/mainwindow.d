@@ -5,6 +5,7 @@
  * backend operations, and classic desktop menu actions.
  *
  * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
  * License: GPL-3.0-only
  */
 module ui.mainwindow;
@@ -181,21 +182,38 @@ import ui.operationrequests : buildAnalysisOperationRequest,
 import ui.operationtaskstate : operationResultMayHaveChangedSource;
 import cli.logging;
 
+/// Column holding the stable node id used to find tree rows.
 enum int TREE_COL_NODE_ID = treeNodeIdColumn;
+/// Column holding the boolean visibility flag for directory tree filtering.
 enum int TREE_COL_VISIBLE = treeVisibleColumn;
+/// Column holding a zero-padded sort key derived from the entry size.
 enum int TREE_COL_SORT_SIZE = 18;
+/// Column holding the unfiltered "files | bytes" summary for a directory row.
 enum int TREE_COL_BASE_SUMMARY = 19;
+/// Column holding the unfiltered zero-padded size sort key for a directory row.
 enum int TREE_COL_BASE_SORT_SIZE = 20;
+/// Column holding the projection index that maps a row back to its source.
 enum int TREE_COL_PROJECTION_INDEX = 21;
 
+/** Shared state used to hand an archive password from a dialog back to a worker.
+ *
+ * The worker thread blocks on `condition` while the GTK thread shows the
+ * dialog and publishes `completed`, `accepted` and `password` under `mutex`.
+ */
 private final class ArchivePasswordRequestState
 {
+    /// Guards all mutable fields shared with the requesting worker thread.
     Mutex mutex;
+    /// Signalled when the password dialog finishes or is dismissed.
     Condition condition;
+    /// True once the dialog resolved the request.
     bool completed;
+    /// True when the user supplied a password rather than cancelling.
     bool accepted;
+    /// Password entered by the user; meaningful only when `accepted` is true.
     string password;
 
+    /// Create the mutex and condition used to coordinate with the worker thread.
     this()
     {
         mutex = new Mutex();
@@ -203,6 +221,15 @@ private final class ArchivePasswordRequestState
     }
 }
 
+/** Set the visibility flag on a directory tree row.
+ *
+ * Params:
+ *     store = Tree store that owns the row.
+ *     iter = Row whose visibility should change.
+ *     visible = New visibility flag.
+ *     reusableValue = Optional preallocated boolean value reused to avoid
+ *         allocating a `Value` per row.
+ */
 private void setTreeNodeVisible(TreeStore store, TreeIter iter, bool visible,
     Value reusableValue = null)
 {
@@ -215,6 +242,15 @@ private void setTreeNodeVisible(TreeStore store, TreeIter iter, bool visible,
     }
 }
 
+/** Find a direct child row by its stable node id.
+ *
+ * Params:
+ *     store = Tree store to search.
+ *     parent = Parent row whose direct children are inspected.
+ *     nodeId = Node id stored in `TREE_COL_NODE_ID`.
+ *     result = Receives the matching row when found.
+ * Returns: True when a direct child with `nodeId` exists.
+ */
 private bool findTreeChildById(TreeStore store, TreeIter parent, string nodeId,
     out TreeIter result)
 {
@@ -233,6 +269,13 @@ private bool findTreeChildById(TreeStore store, TreeIter parent, string nodeId,
     return false;
 }
 
+/** Remove the first direct child row that matches a stable node id.
+ *
+ * Params:
+ *     store = Tree store to modify.
+ *     parent = Parent row whose direct children are inspected.
+ *     nodeId = Node id stored in `TREE_COL_NODE_ID`.
+ */
 private void removeTreeChildById(TreeStore store, TreeIter parent, string nodeId)
 {
     TreeIter child;
@@ -251,6 +294,18 @@ private void removeTreeChildById(TreeStore store, TreeIter parent, string nodeId
     while (true);
 }
 
+/** Reorder the direct children of a tree row for the given sort order.
+ *
+ * Directories are always placed before files and placeholder rows. Size
+ * orders compare the preformatted sort key in `TREE_COL_SORT_SIZE`; name
+ * orders compare the display name. Ties fall back to the node id so the order
+ * stays deterministic.
+ *
+ * Params:
+ *     store = Tree store that owns the rows.
+ *     parent = Parent row whose direct children are reordered.
+ *     order = Sort order requested by the tree view.
+ */
 private void reorderTreeChildren(TreeStore store, TreeIter parent, TreeSortOrder order)
 {
     struct SortRow
@@ -302,6 +357,14 @@ private void reorderTreeChildren(TreeStore store, TreeIter parent, TreeSortOrder
     store.reorder(parent, newOrder);
 }
 
+/** Convert a tree-view row iter to the underlying store iter when filtered.
+ *
+ * Params:
+ *     document = Document tab that owns the optional filter model.
+ *     viewIter = Row iter in the view model.
+ * Returns: The corresponding store iter, or `viewIter` when no filter model is
+ *     active.
+ */
 private TreeIter treeStoreIter(DocumentTab document, TreeIter viewIter)
 {
     if (document.directoryTreeFilterModel is null)
@@ -311,6 +374,14 @@ private TreeIter treeStoreIter(DocumentTab document, TreeIter viewIter)
     return storeIter;
 }
 
+/** Convert a store row iter to the tree-view iter when filtered.
+ *
+ * Params:
+ *     document = Document tab that owns the optional filter model.
+ *     storeIter = Row iter in the store model.
+ * Returns: The corresponding view iter, `storeIter` when no filter model is
+ *     active, or `null` when the row is currently filtered out.
+ */
 private TreeIter treeViewIter(DocumentTab document, TreeIter storeIter)
 {
     if (document.directoryTreeFilterModel is null)
@@ -321,7 +392,12 @@ private TreeIter treeViewIter(DocumentTab document, TreeIter storeIter)
     return viewIter;
 }
 
-/** Configure the transitional directory tree columns. */
+/** Configure the transitional directory tree columns.
+ *
+ * Params:
+ *     treeView = Directory tree view that receives the Name, Kind and Size
+ *         columns.
+ */
 void configureDirectoryTreeColumns(TreeView treeView)
 {
     void addColumn(string title, int modelColumn, bool expand)
@@ -342,7 +418,13 @@ void configureDirectoryTreeColumns(TreeView treeView)
     treeView.setHeadersClickable(false);
 }
 
-/** Map a visible blob-table column to its sortable model column. */
+/** Map a visible blob-table column to its sortable model column.
+ *
+ * Params:
+ *     index = Zero-based visible column index.
+ * Returns: The model column used for sorting, mapping the index and size
+ *     columns to their dedicated sort columns.
+ */
 private int blobTableSortColumnForView(int index)
 {
     switch (index)
@@ -358,6 +440,10 @@ private int blobTableSortColumnForView(int index)
  * The cursor-backed `VirtualBlobTableModel` is deliberately not a
  * `TreeSortable`. Clear the column sort IDs before attaching it so GTK does
  * not try to sort a model that only keeps a few pages in memory.
+ *
+ * Params:
+ *     treeView = Blob table whose header sorting is toggled.
+ *     enabled = True to attach sort column ids, false to clear them.
  */
 private void setBlobTableSortEnabled(TreeView treeView, bool enabled)
 {
@@ -378,6 +464,16 @@ private void setBlobTableSortEnabled(TreeView treeView, bool enabled)
     treeView.setHeadersClickable(enabled);
 }
 
+/** Switch the blob table between fixed virtual-mode columns and autosized ones.
+ *
+ * Virtual mode fixes every column width so the cursor-backed model can render
+ * a few pages with stable geometry. Disabling it restores automatic sizing
+ * except for the two archive and torrent status columns, which stay fixed.
+ *
+ * Params:
+ *     treeView = Blob table whose columns are adjusted.
+ *     virtualMode = True to use fixed widths, false for autosizing.
+ */
 private void setBlobTableVirtualMode(TreeView treeView, bool virtualMode)
 {
     treeView.setFixedHeightMode(false);
@@ -408,6 +504,13 @@ private void setBlobTableVirtualMode(TreeView treeView, bool virtualMode)
         treeView.setFixedHeightMode(true);
 }
 
+/** Build the tree filter from a document tab's saved filter state.
+ *
+ * Params:
+ *     document = Document tab whose filter flags are read.
+ *     caseSensitive = True to match text case-sensitively.
+ * Returns: A filter value carrying the document's text and media criteria.
+ */
 private FileFilter treeFilterForDocument(DocumentTab document, bool caseSensitive)
 {
     FileFilter filter;
@@ -424,6 +527,13 @@ private FileFilter treeFilterForDocument(DocumentTab document, bool caseSensitiv
     return filter;
 }
 
+/** Compare two tree filters field by field.
+ *
+ * Params:
+ *     left = First filter to compare.
+ *     right = Second filter to compare.
+ * Returns: True when all filter criteria, including case sensitivity, match.
+ */
 private bool sameTreeFilter(FileFilter left, FileFilter right)
 {
     return left.text == right.text && left.caseSensitive == right.caseSensitive
@@ -433,6 +543,13 @@ private bool sameTreeFilter(FileFilter left, FileFilter right)
         && left.archive == right.archive && left.torrent == right.torrent;
 }
 
+/** Decide whether a model column id is a supported blob table sort key.
+ *
+ * Params:
+ *     columnId = Column id reported by the tree view sort mechanism.
+ * Returns: True for index, size, checksum, file type, media info, archive and
+ *     torrent status columns.
+ */
 private bool validBlobTableSortColumn(int columnId)
 {
     return columnId == COL_INDEX_SORT || columnId == COL_FILE_SIZE_SORT
@@ -441,6 +558,12 @@ private bool validBlobTableSortColumn(int columnId)
         || columnId == COL_HAS_TORRENT;
 }
 
+/** Translate a directory tree sort order to the source file sort order.
+ *
+ * Params:
+ *     order = Tree view sort order.
+ * Returns: The matching path- or size-based file sort order.
+ */
 private FileSortOrder sourceFileSortOrder(TreeSortOrder order)
 {
     final switch (order)
@@ -452,6 +575,13 @@ private FileSortOrder sourceFileSortOrder(TreeSortOrder order)
     }
 }
 
+/** Build a source query from a document tab's saved filter state.
+ *
+ * Params:
+ *     document = Document tab whose filter flags are read.
+ *     caseSensitive = True to match text case-sensitively.
+ * Returns: A query value carrying the document's text and media criteria.
+ */
 private SourceQuery sourceQueryForDocument(DocumentTab document, bool caseSensitive)
 {
     SourceQuery query;
@@ -468,6 +598,21 @@ private SourceQuery sourceQueryForDocument(DocumentTab document, bool caseSensit
     return query;
 }
 
+/** Insert or update one directory row and add a loading placeholder if needed.
+ *
+ * Existing rows are matched by node id so repeated calls update in place. A
+ * placeholder child is added when the directory may contain visible children
+ * but has no loaded children yet.
+ *
+ * Params:
+ *     store = Tree store that receives the row.
+ *     source = Directory source used to probe for matching children.
+ *     node = Directory metadata to render.
+ *     parent = Parent row, or null for a root row.
+ *     filter = Active tree filter used to decide whether children may exist.
+ *     order = Sort order passed through for later population.
+ *     visibilityValue = Optional reusable boolean value for the visible column.
+ */
 private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
     const DirectoryNode node, TreeIter parent, FileFilter filter = FileFilter(),
     TreeSortOrder order = TreeSortOrder.nameAscending, Value visibilityValue = null)
@@ -510,6 +655,18 @@ private void appendDirectoryTreeNode(TreeStore store, DirectorySource source,
     }
 }
 
+/** Load one directory page of subdirectories and files into a tree row.
+ *
+ * Params:
+ *     store = Tree store that owns the row.
+ *     source = Directory source to query.
+ *     parent = Row whose children are populated.
+ *     directoryId = Source directory id taken from the parent row.
+ *     cursor = Page cursor; `FileCursor.init` requests the first page.
+ *     includeDirectories = True to also insert child directory rows.
+ *     filter = Active tree filter.
+ *     order = Sort order requested by the tree view.
+ */
 private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
     TreeIter parent, string directoryId, FileCursor cursor = FileCursor(), bool includeDirectories = true,
     FileFilter filter = FileFilter(), TreeSortOrder order = TreeSortOrder.nameAscending)
@@ -525,6 +682,23 @@ private void populateDirectoryTreeNode(TreeStore store, DirectorySource source,
         visibilityValue);
 }
 
+/** Reconcile one directory's child rows with a batch of directories and files.
+ *
+ * Existing sibling rows are reused by node id, new rows are created as needed,
+ * children are sorted, and a "more files" page marker is added or removed
+ * based on `hasMore`. At most 250 file rows are materialized per call.
+ *
+ * Params:
+ *     store = Tree store that owns the rows.
+ *     parent = Directory row whose children are reconciled.
+ *     directories = Child directory metadata to render.
+ *     files = File metadata to render.
+ *     includeDirectories = True to insert child directory rows.
+ *     order = Sort order requested by the tree view.
+ *     hasMore = True when the source reported another file page.
+ *     nextCursor = Cursor for the next page; stored on the page marker.
+ *     visibilityValue = Optional reusable boolean value for the visible column.
+ */
 private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
     const(DirectoryNode)[] directories, const(FileNode)[] files,
     bool includeDirectories = true, TreeSortOrder order = TreeSortOrder.nameAscending,
@@ -695,6 +869,15 @@ private void populateDirectoryTreeRows(TreeStore store, TreeIter parent,
     reorderTreeChildren(store, parent, order);
 }
 
+/** Find a direct child directory row by its relative path.
+ *
+ * Params:
+ *     model = Tree model to search.
+ *     parent = Parent row whose direct children are inspected.
+ *     relativePath = Directory path stored in column 2.
+ *     match = Receives the matching row when found.
+ * Returns: True when a child directory with `relativePath` exists.
+ */
 private bool findNestedDirectoryChild(TreeModelIF model, TreeIter parent, string relativePath,
     out TreeIter match)
 {
@@ -714,6 +897,19 @@ private bool findNestedDirectoryChild(TreeModelIF model, TreeIter parent, string
     return false;
 }
 
+/** Insert one nested file entry into an archive or torrent tree.
+ *
+ * Missing directory rows are created using the model lookup so paths shared by
+ * earlier entries reuse their parents. The blob id is stored in column 4 and
+ * the entry id in column 5.
+ *
+ * Params:
+ *     store = Tree store that owns the rows.
+ *     model = Model used to look up existing directory rows.
+ *     rootParent = Root row under which the entry is inserted.
+ *     entry = Nested entry with its relative path and size.
+ *     blobId = Source blob identifier attached to the new rows.
+ */
 private void appendNestedEntry(TreeStore store, TreeModelIF model, TreeIter rootParent,
     NestedFileNode entry, string blobId)
 {
@@ -752,6 +948,16 @@ private void appendNestedEntry(TreeStore store, TreeModelIF model, TreeIter root
     store.setValue(file, 5, entry.id);
 }
 
+/** Add a "more entries" marker row for another nested entry page.
+ *
+ * Params:
+ *     store = Tree store that owns the rows.
+ *     parent = Row that receives the page marker.
+ *     blobId = Source blob identifier stored in column 4.
+ *     archive = True for an archive page marker, false for a torrent one.
+ *     offset = Zero-based offset of the next entry page.
+ *     requestToken = Token used to match an asynchronous page reply.
+ */
 private void appendNestedPageMarker(TreeStore store, TreeIter parent, string blobId,
     bool archive, size_t offset, string requestToken)
 {
@@ -765,6 +971,16 @@ private void appendNestedPageMarker(TreeStore store, TreeIter parent, string blo
     store.setValue(marker, 6, requestToken);
 }
 
+/** Recursively find a directory row by its node id.
+ *
+ * Params:
+ *     model = Tree model to search.
+ *     parent = Starting parent row, used when `hasParent` is true.
+ *     hasParent = True to search below `parent`, false to search all roots.
+ *     id = Directory id stored in column 3.
+ *     result = Receives the matching row when found.
+ * Returns: True when a directory row with `id` exists.
+ */
 private bool findDirectoryTreeIter(TreeModelIF model, TreeIter parent, bool hasParent,
     string id, ref TreeIter result)
 {
@@ -794,6 +1010,15 @@ private bool findDirectoryTreeIter(TreeModelIF model, TreeIter parent, bool hasP
     return false;
 }
 
+/** Locate a directory and its loading/placeholder child, if present.
+ *
+ * Params:
+ *     model = Tree model to search.
+ *     directoryId = Directory id to find.
+ *     directory = Receives the directory row when found.
+ *     placeholder = Receives the loading placeholder child when found.
+ * Returns: True when both the directory and its placeholder child exist.
+ */
 private bool findLoadingDirectoryPlaceholder(TreeModelIF model, string directoryId,
     ref TreeIter directory, ref TreeIter placeholder)
 {
@@ -816,6 +1041,17 @@ private bool findLoadingDirectoryPlaceholder(TreeModelIF model, string directory
     return false;
 }
 
+/** Recursively find a row whose string value in a column matches.
+ *
+ * Params:
+ *     model = Tree model to search.
+ *     parent = Starting parent row, used when `hasParent` is true.
+ *     hasParent = True to search below `parent`, false to search all roots.
+ *     column = Model column whose string value is compared.
+ *     value = Exact value to match.
+ *     result = Receives the matching row when found.
+ * Returns: True when a row with the requested value exists.
+ */
 private bool findTreeIterByValue(TreeModelIF model, TreeIter parent, bool hasParent,
     int column, string value, ref TreeIter result)
 {
@@ -844,6 +1080,13 @@ private bool findTreeIterByValue(TreeModelIF model, TreeIter parent, bool hasPar
     return false;
 }
 
+/** Re-expand directory rows that were expanded in a previous session.
+ *
+ * Params:
+ *     treeView = Directory tree view to expand rows in.
+ *     expandedIds = Directory node ids that should be expanded; unknown ids are
+ *         ignored.
+ */
 private void restoreExpandedDirectories(TreeView treeView, string[] expandedIds)
 {
     auto model = treeView.getModel();
@@ -856,6 +1099,11 @@ private void restoreExpandedDirectories(TreeView treeView, string[] expandedIds)
     }
 }
 
+/** Expand the first root row of a directory tree when one exists.
+ *
+ * Params:
+ *     treeView = Directory tree view to update.
+ */
 private void expandFirstTreeRoot(TreeView treeView)
 {
     auto model = treeView.getModel();
@@ -864,6 +1112,18 @@ private void expandFirstTreeRoot(TreeView treeView)
         treeView.expandRow(model.getPath(root), false);
 }
 
+/** Find the directory id path from a root to a file.
+ *
+ * The returned path is the breadcrumb of directory ids ending at the file's
+ * parent; an empty array means the file was not found.
+ *
+ * Params:
+ *     source = Directory source to search.
+ *     parentId = Directory id to search below.
+ *     fileId = File id to locate.
+ * Returns: Directory ids from `parentId` to the containing directory, or an
+ *     empty array when the file is not reachable.
+ */
 private string[] findDirectoryPathForFile(DirectorySource source, string parentId,
     string fileId)
 {
@@ -881,6 +1141,15 @@ private string[] findDirectoryPathForFile(DirectorySource source, string parentI
     return [];
 }
 
+/** Select the file that was requested for reveal once its row exists.
+ *
+ * The pending file id is matched against node ids first, then against the
+ * relative path of the current tree cursor. The pending id is cleared after a
+ * successful selection.
+ *
+ * Params:
+ *     document = Document tab whose pending reveal should be applied.
+ */
 private void selectPendingTreeFile(DocumentTab document)
 {
     if (document.pendingTreeRevealFileId.length == 0)
@@ -904,8 +1173,13 @@ private void selectPendingTreeFile(DocumentTab document)
 
 /** Select the first real child row below a tree node.
  *
- * Loading, page, info, and error markers are skipped. Returns false when no
- * materialized child exists yet, so asynchronous loaders can retry later.
+ * Loading, page, info, and error markers are skipped.
+ *
+ * Params:
+ *     document = Document tab whose tree selection is changed.
+ *     parentNodeId = Node id of the parent row to search below.
+ * Returns: False when no materialized child exists yet, so asynchronous
+ *     loaders can retry later.
  */
 private bool selectFirstMaterializedTreeChild(DocumentTab document,
     string parentNodeId)
@@ -939,6 +1213,18 @@ private bool selectFirstMaterializedTreeChild(DocumentTab document,
     return false;
 }
 
+/** Update a tree row and its subtree for the current filter and sort order.
+ *
+ * Directory summaries are recomputed from the visible aggregates when the
+ * source is locally filtered, and restored from the base columns when the
+ * filter is cleared. Rows then receive the visibility flag computed from the
+ * filter mode, and size-sorted directories are reordered.
+ *
+ * Params:
+ *     document = Document tab that owns the tree.
+ *     iter = Row whose subtree is updated.
+ *     visibilityValue = Reusable boolean value for the visible column.
+ */
 private void updateTreeNodeVisibility(DocumentTab document, TreeIter iter,
     Value visibilityValue)
 {
@@ -1002,6 +1288,18 @@ private void updateTreeNodeVisibility(DocumentTab document, TreeIter iter,
         reorderTreeChildren(store, iter, document.treeSortOrder);
 }
 
+/** Mark materialized rows that match the filter and keep their ancestors visible.
+ *
+ * Used for remote sources where the backend already filtered the results and
+ * only loaded rows need to be reconciled locally.
+ *
+ * Params:
+ *     document = Document tab whose visible id set is updated.
+ *     iter = Row whose subtree is inspected.
+ *     parentDirectoryId = Id of the containing directory row.
+ *     filter = Active tree filter.
+ * Returns: True when this row or any descendant is visible.
+ */
 private bool collectMaterializedTreeMatches(DocumentTab document, TreeIter iter,
     string parentDirectoryId, FileFilter filter)
 {
@@ -1043,6 +1341,12 @@ private bool collectMaterializedTreeMatches(DocumentTab document, TreeIter iter,
     return false;
 }
 
+/** Recompute visibility for every materialized tree row and refilter the view.
+ *
+ * Params:
+ *     document = Document tab whose tree rows are updated.
+ *     filter = Active tree filter used for remote match collection.
+ */
 private void updateTreeModelVisibility(DocumentTab document, FileFilter filter)
 {
     if (document.directorySourceFiltered && document.directorySourceRemote)
@@ -1064,6 +1368,14 @@ private void updateTreeModelVisibility(DocumentTab document, FileFilter filter)
     document.directoryTreeFilterModel.refilter();
 }
 
+/** Set the visibility flag for a row and every descendant row.
+ *
+ * Params:
+ *     store = Tree store that owns the rows.
+ *     iter = Root of the subtree to update.
+ *     visible = New visibility flag.
+ *     visibilityValue = Optional reusable boolean value for the visible column.
+ */
 private void setTreeSubtreeVisible(TreeStore store, TreeIter iter, bool visible,
     Value visibilityValue = null)
 {
@@ -1082,7 +1394,15 @@ private void setTreeSubtreeVisible(TreeStore store, TreeIter iter, bool visible,
     }
 }
 
-/** Render or update a source projection while preserving materialized JSON nodes. */
+/** Render or update a source projection while preserving materialized JSON nodes.
+ *
+ * Params:
+ *     document = Document tab whose directory tree is rendered.
+ *     source = Directory source providing the root and child pages.
+ *     expandedIds = Directory ids that should remain expanded.
+ *     filter = Active tree filter.
+ *     order = Sort order requested by the tree view.
+ */
 void renderDirectoryTree(DocumentTab document, DirectorySource source,
     string[] expandedIds, FileFilter filter = FileFilter(),
     TreeSortOrder order = TreeSortOrder.nameAscending)
@@ -1154,13 +1474,21 @@ void renderDirectoryTree(DocumentTab document, DirectorySource source,
         " rootChildren=", store.iterNChildren(root));
 }
 
-/** Keep the current tree visible while its background filter runs. */
+/** Keep the current tree visible while its background filter runs.
+ *
+ * Params:
+ *     document = Document tab whose status text is updated.
+ */
 private void showFilteringTreePlaceholder(DocumentTab document)
 {
     document.status.setText("Filtering files...");
 }
 
-/** Show a non-expandable loading row until a document source is attached. */
+/** Show a non-expandable loading row until a document source is attached.
+ *
+ * Params:
+ *     document = Document tab whose directory tree receives the loading row.
+ */
 private void showDocumentTreeLoadingPlaceholder(DocumentTab document)
 {
     document.directoryTreeStore.clear();
@@ -1171,6 +1499,16 @@ private void showDocumentTreeLoadingPlaceholder(DocumentTab document)
     setTreeNodeVisible(document.directoryTreeStore, iter, true);
 }
 
+/** Collect ids of directory rows that are expanded or already have children.
+ *
+ * Params:
+ *     store = Tree store to scan.
+ *     parent = Starting parent row, used when `hasParent` is true.
+ *     hasParent = True to scan below `parent`, false to scan all roots.
+ *     ids = Receives the collected ids.
+ *     seen = Tracks ids already appended so each id is reported once.
+ *     expandedIds = Set of ids the user explicitly expanded.
+ */
 private void collectDirectoryTreeNodeIds(TreeStore store, TreeIter parent,
     bool hasParent, ref string[] ids, ref bool[string] seen,
     const(bool[string]) expandedIds)
@@ -1219,6 +1557,16 @@ private void collectDirectoryTreeNodeIds(TreeStore store, TreeIter parent,
     while (store.iterNext(iter));
 }
 
+/** Build the directory id list that should be refreshed after a filter change.
+ *
+ * Explicitly expanded ids come first, followed by materialized directories that
+ * already have loaded children. Duplicate ids are removed.
+ *
+ * Params:
+ *     store = Tree store to scan.
+ *     expandedIds = Ids the user explicitly expanded.
+ * Returns: Directory ids to reload, in a stable order.
+ */
 private string[] directoryTreeIdsToRefresh(TreeStore store,
     const(string)[] expandedIds)
 {
@@ -1242,79 +1590,141 @@ private string[] directoryTreeIdsToRefresh(TreeStore store,
 /** Worker result payload for background document loading. */
 struct AsyncLoadResult
 {
+    /// All content rows loaded for the document.
     BlobRow[] allRows;
+    /// Projected directory tree, or `null` when the source has no tree.
     DirectoryTree directoryTree;
+    /// Directory source backing the tree and its paging.
     DirectorySource directorySource;
+    /// Node ids that pass the filter, used for remote sources.
     bool[string] visibleTreeNodeIds;
+    /// Refreshed pages for directories that were expanded before the load.
     AsyncExpandedDirectoryRows[] expandedDirectoryRows;
+    /// Document path the result belongs to.
     string filePath;
+    /// Monotonic data version, or `-1` when no version was assigned.
     int dataVersion = -1;
+    /// Short description of the JSON root shape, when the source is JSON.
     string rootShape;
+    /// Summary of the JSON root keys, when the source is JSON.
     string rootKeysSummary;
+    /// Error text; empty when the load succeeded.
     string error;
+    /// Wall-clock load duration in milliseconds.
     long elapsedMs;
+    /// Offset of the loaded row page in the full result set.
     size_t pageOffset;
+    /// Total number of rows reported by the paged source.
     size_t pageTotal;
+    /// True when the source delivers rows in pages rather than all at once.
     bool pagedSource;
+    /// Opaque cursor for the next content page when `hasMore` is true.
     CatalogPageCursor nextContentCursor;
+    /// True when another content page is available.
     bool hasMore;
+    /// Catalog backend backing a JSON document, or `null`.
     CatalogBackend jsonBackend;
+    /// Parsed JSON catalog document, or `null`.
     CatalogDocument jsonDocument;
+    /// Root path of the loaded source.
     string sourceRoot;
 }
 
+/** Worker result payload for loading one directory page. */
 struct AsyncDirectoryResult
 {
+    /// Document path the result belongs to.
     string filePath;
+    /// Source directory id that was loaded.
     string directoryId;
+    /// True when this was the first page for the directory.
     bool initial;
+    /// Filter that was active for the request.
     FileFilter filter;
+    /// Sort order that was active for the request.
     TreeSortOrder sortOrder;
+    /// Child directories listed for the directory.
     DirectoryNode[] directories;
+    /// Files in the loaded page.
     FileNode[] files;
+    /// Error text; empty when the load succeeded.
     string error;
 }
 
+/** Worker result payload for loading one nested archive or torrent page. */
 struct AsyncNestedEntryResult
 {
+    /// Document path the result belongs to.
     string filePath;
+    /// Source blob whose nested entries were loaded.
     string blobId;
+    /// True for archive entries, false for torrent entries.
     bool archive;
+    /// Offset of the requested page within the entry list.
     size_t offset;
+    /// Offset of the next page, meaningful only when `hasMore` is true.
     size_t nextOffset;
+    /// Entries in the loaded page.
     NestedFileNode[] entries;
+    /// True when another nested entry page is available.
     bool hasMore;
+    /// Error text; empty when the load succeeded.
     string error;
 }
 
+/// Maximum number of content rows requested per repository page.
 enum size_t repositoryPageSize = 250;
 
 /** Expanded-directory page rows refreshed during load or filtering. */
 struct AsyncExpandedDirectoryRows
 {
+    /// Source directory id whose children were refreshed.
     string directoryId;
+    /// Child directories listed for the directory.
     DirectoryNode[] directories;
+    /// Loaded file page for the directory.
     FilePage filePage;
 }
 
+/** Worker result payload for a background filter pass. */
 struct AsyncFilterResult
 {
+    /// Content rows that match the filter.
     BlobRow[] filteredRows;
+    /// Indices of visible tree file rows, parallel to the source files.
     bool[] visibleTreeFileIndexes;
+    /// Indices of visible tree directory rows.
     bool[] visibleTreeDirectoryIndexes;
+    /// Visible file count per directory index.
     size_t[] visibleDirectoryFileCounts;
+    /// Visible aggregate size per directory index.
     ulong[] visibleDirectoryAggregateSizes;
+    /// Visible child count per directory index.
     size_t[] visibleDirectoryChildCounts;
+    /// True when at least one materialized tree row matches the filter.
     bool hasVisibleTreeMatches;
+    /// Refreshed pages for directories that were expanded before filtering.
     AsyncExpandedDirectoryRows[] expandedDirectoryRows;
+    /// Filter text that produced this result.
     string query;
+    /// True when the filter text was matched case-sensitively.
     bool caseSensitive;
+    /// Preformatted media statistics shown in the status bar.
     string mediaStats;
+    /// Error text; empty when filtering succeeded.
     string error;
+    /// Wall-clock filtering duration in milliseconds.
     long elapsedMs;
 }
 
-/** Reconcile only already-expanded JSON directories without rebuilding the tree. */
+/** Reconcile only already-expanded JSON directories without rebuilding the tree.
+ *
+ * Params:
+ *     document = Document tab whose expanded directory rows are refreshed.
+ *     filter = Active tree filter.
+ *     order = Sort order requested by the tree view.
+ *     caseSensitive = True to match filter text case-sensitively.
+ */
 private void refreshExpandedJsonDirectories(DocumentTab document, FileFilter filter,
     TreeSortOrder order, bool caseSensitive)
 {
@@ -1685,6 +2095,17 @@ string mediaHitStats(const(BlobRow)[] rows)
     return format("hits V:%s A:%s I:%s T:%s FT:%s AR:%s TO:%s", videoCount, audioCount, imageCount, textCount, fileTypeCount, archiveCount, torrentCount);
 }
 
+/** Build the tree node id used for a content row's primary file.
+ *
+ * The id combines the row's source ordinal (or a fallback ordinal when the row
+ * has none) with the index of the matching file spec. When no spec matches the
+ * primary file name, the first reference index is used.
+ *
+ * Params:
+ *     row = Content row whose primary file should be identified.
+ *     fallbackOrdinal = Ordinal used when `row.sourceOrdinal` is unset.
+ * Returns: A JSON tree file node id.
+ */
 private string primaryTreeFileNodeId(const(BlobRow) row, size_t fallbackOrdinal)
 {
     auto sourceOrdinal = row.sourceOrdinal == size_t.max
@@ -1733,6 +2154,7 @@ string digestBase64ToHex(string digest)
     }
 }
 
+/// Threads extracting archive members for the preview; joined before cache release.
 private Thread[] archivePreviewWorkers;
 
 /** Wait for in-flight archive preview extractions before releasing the cache. */
@@ -1744,7 +2166,15 @@ private void joinArchivePreviewWorkers()
     archivePreviewWorkers.length = 0;
 }
 
-/** Extract one selected archive member off the GTK thread and preview its lease. */
+/** Extract one selected archive member off the GTK thread and preview its lease.
+ *
+ * Params:
+ *     document = Document tab that requested the member preview.
+ *     memberPath = Member path inside the archive.
+ *     memberIdentity = Reference identity used to look up the member.
+ *     isRepository = True when the source is a repository catalog.
+ *     virtualPath = Optional virtual archive path used for display and lookup.
+ */
 private void previewArchiveTreeMember(DocumentTab document, string memberPath,
     string memberIdentity, bool isRepository, string virtualPath = "")
 {
@@ -1843,6 +2273,17 @@ private void previewArchiveTreeMember(DocumentTab document, string memberPath,
     previewWorker.start();
 }
 
+/** Find the archive password for the container of a virtual member path.
+ *
+ * The container path is rebuilt from the parsed virtual path without its last
+ * entry, then matched against the reference file names of the supplied rows.
+ *
+ * Params:
+ *     rows = Content rows that may carry the container's password.
+ *     memberVirtualPath = Virtual archive path of the member being previewed.
+ * Returns: The container's archive password, or an empty string when the path
+ *     is not virtual or no matching container row exists.
+ */
 private string jsonArchivePasswordForMemberContainer(const(BlobRow)[] rows,
     string memberVirtualPath)
 {
@@ -1873,6 +2314,7 @@ private string jsonArchivePasswordForMemberContainer(const(BlobRow)[] rows,
  *
  * Params:
  *     args = Process command-line arguments.
+ *     cli = Parsed command-line options that select startup behavior.
  * Returns: Exit code for the application process.
  * Throws: Unexpected startup or runtime failures may propagate.
  */

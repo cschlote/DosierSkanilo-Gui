@@ -1,13 +1,23 @@
-/** GTK-independent generation and pending state for asynchronous filters. */
+/** GTK-independent generation and pending state for asynchronous filters.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.filterrequeststate;
 
 /** Tracks one latest-wins asynchronous request and rejects stale replies. */
 struct FilterRequestState
 {
+    /// Current request generation token, advanced on begin/invalidate and never zero.
     private ulong generation;
+    /// Whether a request has been started and not yet completed or invalidated.
     private bool hasPendingRequest;
 
-    /** Start a new request, invalidating any older request token. */
+    /** Start a new request, invalidating any older request token.
+     *
+     * Returns: The new non-zero request token to pass back on completion.
+     */
     ulong begin()
     {
         ++generation;
@@ -17,13 +27,25 @@ struct FilterRequestState
         return generation;
     }
 
-    /** Return whether `requestId` is the current, still-pending request. */
+    /** Return whether `requestId` is the current, still-pending request.
+     *
+     * Params:
+     *     requestId = Token returned by `begin`.
+     * Returns: `true` only when a request is pending and `requestId` matches
+     *     its generation.
+     */
     bool isCurrent(ulong requestId) const
     {
         return hasPendingRequest && requestId != 0 && requestId == generation;
     }
 
-    /** Complete only the matching pending request. */
+    /** Complete only the matching pending request.
+     *
+     * Params:
+     *     requestId = Token returned by `begin`.
+     * Returns: `true` when the token was current and the pending state was
+     *     cleared; `false` for stale or already completed tokens.
+     */
     bool complete(ulong requestId)
     {
         if (!isCurrent(requestId))
@@ -32,7 +54,10 @@ struct FilterRequestState
         return true;
     }
 
-    /** Invalidate the current request and report whether one was pending. */
+    /** Invalidate the current request and report whether one was pending.
+     *
+     * Returns: `true` when a request was pending before invalidation.
+     */
     bool invalidate()
     {
         auto wasPending = hasPendingRequest;
@@ -43,6 +68,11 @@ struct FilterRequestState
         return wasPending;
     }
 
+    /** Whether a request is currently pending.
+     *
+     * Returns: `true` while a request started by `begin` has not been completed
+     *     or invalidated.
+     */
     @property bool pending() const
     {
         return hasPendingRequest;

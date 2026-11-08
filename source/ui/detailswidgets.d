@@ -5,6 +5,7 @@
  * leases, and image/video preview management.
  *
  * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
  * License: GPL-3.0-only
  */
 module ui.detailswidgets;
@@ -61,17 +62,31 @@ enum size_t PREVIEW_HEX_DUMP_BYTES = 512;
 /// Maximum bytes shown in a text preview prefix.
 enum size_t PREVIEW_TEXT_BYTES = 8192;
 
+/** Kind of preview handler selected for a content row. */
 private enum PreviewContentKind
 {
+    /// Rendered with the image preview widget.
     image,
+    /// Rendered with the embedded video player.
     video,
+    /// Rendered with the embedded audio player.
     audio,
+    /// Rendered as a bounded UTF-8 text prefix.
     text,
+    /// Rendered as torrent metadata and a file tree.
     torrent,
+    /// Rendered as an archive overview and entry tree.
     archive,
+    /// Shown as a hex dump.
     binary
 }
 
+/** Add or remove the monospace styling class used by preview summaries.
+ *
+ * Params:
+ *     label = Summary label to restyle.
+ *     enabled = True to enable monospace text, false to restore the default.
+ */
 private void setPreviewSummaryMonospace(Label label, bool enabled)
 {
     auto context = label.getStyleContext();
@@ -83,6 +98,15 @@ private void setPreviewSummaryMonospace(Label label, bool enabled)
     label.setYalign(0);
 }
 
+/** Decide whether a row can be shown as a UTF-8 text preview.
+ *
+ * The row qualifies when it carries text content, when its `file` type hints
+ * at text, or when its file name uses a known text extension.
+ *
+ * Params:
+ *     row = Content row to classify.
+ * Returns: True when the text preview handler should be used.
+ */
 private bool isTextPreviewCandidate(const(BlobRow) row)
 {
     if (row.hasText)
@@ -102,6 +126,13 @@ private bool isTextPreviewCandidate(const(BlobRow) row)
     }
 }
 
+/** Decide whether a row should use the torrent preview.
+ *
+ * Params:
+ *     row = Content row to classify.
+ * Returns: True when torrent metadata is indexed or the file name ends in
+ *     `.torrent`.
+ */
 private bool isTorrentPreviewCandidate(const(BlobRow) row)
 {
     auto type = row.sourceBlob is null ? "" : row.sourceBlob.fileType.toLower;
@@ -109,6 +140,13 @@ private bool isTorrentPreviewCandidate(const(BlobRow) row)
         || extension(row.primaryFileName.toLower) == ".torrent";
 }
 
+/** Decide whether a row should use the archive preview.
+ *
+ * Params:
+ *     row = Content row to classify.
+ * Returns: True when archive entries are indexed, when the `file` type looks
+ *     like an archive, or when the file name uses a known archive extension.
+ */
 private bool isArchivePreviewCandidate(const(BlobRow) row)
 {
     if (row.hasArchive)
@@ -130,6 +168,16 @@ private bool isArchivePreviewCandidate(const(BlobRow) row)
     }
 }
 
+/** Choose the preview handler kind for a content row.
+ *
+ * Video and audio take precedence over image so embedded cover art does not
+ * replace a playable stream; structured torrent and archive previews are
+ * preferred over text and hex output.
+ *
+ * Params:
+ *     row = Content row to classify.
+ * Returns: The selected preview kind.
+ */
 private PreviewContentKind previewContentKind(const(BlobRow) row)
 {
     if (isVideoPreviewCandidate(row))
@@ -147,6 +195,14 @@ private PreviewContentKind previewContentKind(const(BlobRow) row)
     return PreviewContentKind.binary;
 }
 
+/** Build the header text shown above a torrent or archive preview tree.
+ *
+ * Params:
+ *     row = Content row that supplies the name, size and indexed metadata.
+ *     kind = Preview kind; only `torrent` and `archive` are expected.
+ * Returns: Multi-line summary text; fields without data fall back to a short
+ *     explanatory line rather than being omitted silently.
+ */
 private string containerPreviewSummary(const(BlobRow) row, PreviewContentKind kind)
 {
     auto fileName = row.primaryFileName.length > 0 ? row.primaryFileName : "-";
@@ -197,7 +253,13 @@ private string containerPreviewSummary(const(BlobRow) row, PreviewContentKind ki
     return lines.join("\n");
 }
 
-/** Compact archive metadata for the details expander; full paths live in the preview tree. */
+/** Compact archive metadata for the details expander; full paths live in the preview tree.
+ *
+ * Params:
+ *     row = Content row whose indexed archive entries are summarized.
+ * Returns: Multi-line summary, or an empty string when no archive metadata is
+ *     available.
+ */
 string archiveMetadataSummary(const(BlobRow) row)
 {
     if (row.sourceBlob is null)
@@ -237,7 +299,13 @@ string archiveMetadataSummary(const(BlobRow) row)
     return lines.join("\n");
 }
 
-/** Compact torrent metadata for the details expander; the previewer owns the file tree. */
+/** Compact torrent metadata for the details expander; the previewer owns the file tree.
+ *
+ * Params:
+ *     row = Content row whose indexed torrent metadata is summarized.
+ * Returns: Multi-line summary, or an empty string when no torrent details are
+ *     available.
+ */
 string torrentMetadataSummary(const(BlobRow) row)
 {
     auto torrent = row.sourceBlob is null ? null : row.sourceBlob.torrentInfo;
@@ -323,13 +391,25 @@ void setMetadataDetails(Expander expander, TextView view, string title, string d
     view.setVisible(hasDetails);
 }
 
-/** Present the `file` utility signature as a wrapped, selectable description. */
+/** Present the `file` utility signature as a wrapped, selectable description.
+ *
+ * Params:
+ *     signature = Raw `file` signature text; surrounding whitespace is ignored.
+ * Returns: The trimmed signature, or a placeholder when it is blank.
+ */
 string fileTypeDisplayText(string signature)
 {
     auto normalized = signature.strip;
     return normalized.length > 0 ? normalized : "No file type signature available.";
 }
 
+/** Show a row's `file` type signature in the file type expander.
+ *
+ * Params:
+ *     expander = Expander gating the file type block.
+ *     label = Label that receives the wrapped, selectable signature text.
+ *     signature = Raw signature text; blank input shows the placeholder text.
+ */
 void setFileTypeDetails(Expander expander, Label label, string signature)
 {
     auto hasDetails = signature.strip.length > 0;
@@ -343,7 +423,12 @@ void setFileTypeDetails(Expander expander, Label label, string signature)
     expander.setVisible(true);
 }
 
-/** Render structured MediaInfo stream rows instead of its generic text dump. */
+/** Render structured MediaInfo stream rows instead of its generic text dump.
+ *
+ * Params:
+ *     document = Active document tab whose MediaInfo tree is updated.
+ *     row = Content row that supplies the MediaInfo signature.
+ */
 void setMediaInfoStreamDetails(DocumentTab document, const(BlobRow) row)
 {
     document.detailMediaInfoStore.clear();
@@ -362,7 +447,11 @@ void setMediaInfoStreamDetails(DocumentTab document, const(BlobRow) row)
     document.detailMediaInfoTreeView.setVisible(true);
 }
 
-/** Clear the structured MediaInfo stream view when no row is selected. */
+/** Clear the structured MediaInfo stream view when no row is selected.
+ *
+ * Params:
+ *     document = Active document tab whose MediaInfo tree is cleared.
+ */
 void clearMediaInfoStreamDetails(DocumentTab document)
 {
     document.detailMediaInfoStore.clear();
@@ -372,7 +461,12 @@ void clearMediaInfoStreamDetails(DocumentTab document)
     document.detailMediaInfoTreeView.setVisible(true);
 }
 
-/** Render the file-identity fallback when no specialized metadata is available. */
+/** Render the file-identity fallback when no specialized metadata is available.
+ *
+ * Params:
+ *     document = Active document tab whose fallback tree is updated.
+ *     row = Content row whose fallback property rows are rendered.
+ */
 void setFallbackDetails(DocumentTab document, const(BlobRow) row)
 {
     document.detailFallbackStore.clear();
@@ -391,6 +485,11 @@ void setFallbackDetails(DocumentTab document, const(BlobRow) row)
     document.detailFallbackTreeView.setVisible(true);
 }
 
+/** Reset the fallback details section when no row is selected.
+ *
+ * Params:
+ *     document = Active document tab whose fallback widgets should be cleared.
+ */
 void clearFallbackDetails(DocumentTab document)
 {
     document.detailFallbackStore.clear();
@@ -453,6 +552,22 @@ void setKnownFilesTable(DocumentTab document, const(BlobRow) row)
     }
 }
 
+/** Insert one file path into a nested entry tree, creating missing directories.
+ *
+ * Paths are normalized to `/` separators. Directory rows are cached in
+ * `directories` by relative path so repeated calls reuse existing parents.
+ * File rows store the display name in column 0, the size text in column 1, the
+ * normalized path in column 2, `"File"` in column 3 and `identity` in column 5
+ * when supplied.
+ *
+ * Params:
+ *     store = Tree store that receives directory and file rows.
+ *     path = Entry path to insert, possibly using backslash separators.
+ *     sizeText = Pre-formatted size shown for the file row.
+ *     directories = Cache of already created directory rows by relative path;
+ *         updated in place.
+ *     identity = Optional occurrence or member identity stored in column 5.
+ */
 private void appendNestedPath(TreeStore store, string path, string sizeText,
     ref TreeIter[string] directories, string identity = "")
 {
@@ -494,6 +609,16 @@ private void appendNestedPath(TreeStore store, string path, string sizeText,
     store.setValue(fileIter, 5, identity);
 }
 
+/** Fill the archive entry tree from the current row's indexed entries.
+ *
+ * Remote sources get a single expandable root that the directory tree loads
+ * lazily. Local entries are nested by path, capped at 250 shown entries, and a
+ * hint row explains how to browse the remaining members.
+ *
+ * Params:
+ *     document = Active document tab whose archive tree is repopulated.
+ *     row = Content row that supplies archive specs and the source key.
+ */
 private void populateArchiveEntryTree(DocumentTab document, const(BlobRow) row)
 {
     document.detailArchiveTreeStore.clear();
@@ -549,6 +674,15 @@ private void populateArchiveEntryTree(DocumentTab document, const(BlobRow) row)
     document.detailArchiveTreeView.setVisible(document.detailArchiveTreeStore.iterNChildren(null) > 0);
 }
 
+/** Fill the torrent file tree from the current row's indexed file list.
+ *
+ * Remote sources get a lazily loaded root node similar to the archive tree;
+ * local torrents are nested by their path components.
+ *
+ * Params:
+ *     document = Active document tab whose torrent tree is repopulated.
+ *     row = Content row that supplies torrent metadata and the source key.
+ */
 private void populateTorrentFileTree(DocumentTab document, const(BlobRow) row)
 {
     document.detailTorrentTreeStore.clear();
@@ -583,7 +717,17 @@ private void populateTorrentFileTree(DocumentTab document, const(BlobRow) row)
     document.detailTorrentTreeView.setVisible(document.detailTorrentTreeStore.iterNChildren(null) > 0);
 }
 
-/** Return the most likely filesystem path for preview loading. */
+/** Return the most likely filesystem path for preview loading.
+ *
+ * Backend rows use the exact tree selection while the tree drives the
+ * selection, otherwise the row's representative reference path. Legacy blob
+ * rows prefer a file spec that resolves to the current tree selection.
+ *
+ * Params:
+ *     document = Document tab that supplies the selection and repository root.
+ *     row = Content row whose preview path should be resolved.
+ * Returns: Absolute or repository-relative path to the referenced file.
+ */
 private string resolvePreviewPath(DocumentTab document, const(BlobRow) row)
 {
     const auto repositoryRoot = document.repositoryStorage
@@ -658,7 +802,13 @@ private string resolvePreviewPath(DocumentTab document, const(BlobRow) row)
         repositoryRoot);
 }
 
-/** Decide whether the selected row is likely to represent an image file. */
+/** Decide whether the selected row is likely to represent an image file.
+ *
+ * Params:
+ *     row = Content row to classify.
+ * Returns: False for audio or video containers, true for rows with an image
+ *     flag or a known image extension.
+ */
 private bool isImagePreviewCandidate(const(BlobRow) row)
 {
     // Embedded cover art in an audio container must not steal the audio preview.
@@ -683,7 +833,13 @@ private bool isImagePreviewCandidate(const(BlobRow) row)
         || ext == ".svg";
 }
 
-/** Decide whether the selected row should use the audio player. */
+/** Decide whether the selected row should use the audio player.
+ *
+ * Params:
+ *     row = Content row to classify.
+ * Returns: False for video containers, true for rows with an audio flag, an
+ *     audio `file` type, or a known audio extension.
+ */
 private bool isAudioPreviewCandidate(const(BlobRow) row)
 {
     if (row.hasVideo)
@@ -812,7 +968,12 @@ unittest
     assert(!torrentSummary.canFind("payload.bin"));
 }
 
-/** Decide whether the selected row should use the embedded video preview. */
+/** Decide whether the selected row should use the embedded video preview.
+ *
+ * Params:
+ *     row = Content row to classify.
+ * Returns: True for rows with a video flag or a known video extension.
+ */
 private bool isVideoPreviewCandidate(const(BlobRow) row)
 {
     if (row.hasVideo)
@@ -833,7 +994,14 @@ private bool isVideoPreviewCandidate(const(BlobRow) row)
         || ext == ".flv";
 }
 
-/** Explain why a selected file cannot be shown in the preview pane. */
+/** Explain why a selected file cannot be shown in the preview pane.
+ *
+ * Params:
+ *     row = Content row whose media type determines the explanation.
+ *     fileName = Display name of the selected file.
+ *     previewPath = Resolved source path, or an empty string when unknown.
+ * Returns: Multi-line summary suitable for the preview pane.
+ */
 private string unavailablePreviewSummary(const(BlobRow) row, string fileName,
     string previewPath)
 {
@@ -859,6 +1027,13 @@ private string unavailablePreviewSummary(const(BlobRow) row, string fileName,
         fileName, previewPath.length > 0 ? previewPath : "-", row.fileSize, type, reason);
 }
 
+/** Build the message shown when a referenced preview file cannot be checked.
+ *
+ * Params:
+ *     path = Filesystem path that was probed.
+ *     error = OS error text; an empty string indicates a missing file.
+ * Returns: User-facing multi-line explanation.
+ */
 private string previewFileCheckFailure(string path, string error)
 {
     return error.length > 0
@@ -866,6 +1041,14 @@ private string previewFileCheckFailure(string path, string error)
         : format("Referenced file is missing:\n%s", path);
 }
 
+/** Format up to `PREVIEW_HEX_DUMP_BYTES` bytes as a pretty hex dump.
+ *
+ * Params:
+ *     bytes = Byte buffer to render; an empty buffer yields an explicit note.
+ *     truncated = True when the caller already truncated the buffer and the
+ *         output should mention the limit.
+ * Returns: Hex dump text, or an empty-file message.
+ */
 private string previewHexDump(const(ubyte)[] bytes, bool truncated)
 {
     if (bytes.length == 0)
@@ -878,6 +1061,18 @@ private string previewHexDump(const(ubyte)[] bytes, bool truncated)
     return output;
 }
 
+/** Render a byte buffer as text, falling back to a hex dump for invalid UTF-8.
+ *
+ * Embedded NUL bytes are replaced with the Unicode replacement character so
+ * the result can be shown in a GTK text view.
+ *
+ * Params:
+ *     bytes = Text bytes to display.
+ *     truncated = True when the caller truncated the buffer at
+ *         `PREVIEW_TEXT_BYTES` and the output should mention the limit.
+ * Returns: Preview text, an empty-file message, or a hex dump for invalid
+ *     UTF-8.
+ */
 private string previewText(const(ubyte)[] bytes, bool truncated)
 {
     if (bytes.length == 0)
@@ -894,6 +1089,15 @@ private string previewText(const(ubyte)[] bytes, bool truncated)
     return text;
 }
 
+/** Format POSIX permission bits as an octal mode and an `rwx` string.
+ *
+ * On non-POSIX platforms the raw attribute value is shown in hex instead.
+ *
+ * Params:
+ *     attributes = Platform file attributes; only the low nine permission
+ *         bits are interpreted on POSIX.
+ * Returns: A string such as `0640 (rw-r-----)`.
+ */
 private string textFilePermissions(uint attributes)
 {
     version (Posix)
@@ -915,7 +1119,23 @@ private string textFilePermissions(uint attributes)
         return format("platform attributes 0x%08X", attributes);
 }
 
-/** Compact lower-pane attributes for a text preview. */
+/** Compact lower-pane attributes for a text preview.
+ *
+ * Optional values are omitted when empty; the indexed modified time is only
+ * shown when it differs from the filesystem modified time.
+ *
+ * Params:
+ *     path = File path shown to the user.
+ *     size = File size in bytes.
+ *     permissions = Preformatted permission text, or an empty string.
+ *     accessedAt = Preformatted access time, or an empty string.
+ *     modifiedAt = Preformatted modification time, or an empty string.
+ *     indexedModifiedAt = Preformatted catalog modification time, or an empty
+ *         string.
+ *     fileType = `file` signature text, or an empty string.
+ *     checksumSummary = Checksum coverage text, or an empty string.
+ * Returns: Multi-line metadata summary.
+ */
 string textFileMetadataSummary(string path, ulong size, string permissions,
     string accessedAt, string modifiedAt, string indexedModifiedAt,
     string fileType, string checksumSummary)
@@ -978,7 +1198,15 @@ unittest
         .canFind("limited to the first"));
 }
 
-/** Convert a local filesystem path into a file URI. */
+/** Convert a local filesystem path into a file URI.
+ *
+ * Existing `file://`, `http://` and `https://` URIs are returned unchanged.
+ * Relative local paths are made absolute before URI-encoding.
+ *
+ * Params:
+ *     path = Local path or already-formed URI.
+ * Returns: A URI, or an empty string when `path` is empty.
+ */
 private string toFileUri(string path)
 {
     if (path.length == 0)
@@ -994,7 +1222,15 @@ private string toFileUri(string path)
     return "file://" ~ encode(absolutePath(path));
 }
 
-/** Load or reuse the source pixbuf for the current image preview. */
+/** Load or reuse the source pixbuf for the current image preview.
+ *
+ * The cached pixbuf is reused while the selected path is unchanged. A decode
+ * failure clears the cache entry.
+ *
+ * Params:
+ *     document = Active document tab whose cached source pixbuf is ensured.
+ * Returns: True when a source pixbuf is available for the selected image.
+ */
 private bool ensureImagePreviewSource(DocumentTab document)
 {
     if (document.selectedPreviewPath.length == 0 || !document.selectedPreviewIsImage)
@@ -1046,7 +1282,13 @@ void stopVideoPreview(DocumentTab document)
     document.previewVideoPendingPlaybackOverride = false;
 }
 
-/** Resolve the GtkWidget exposed by gtksink. */
+/** Resolve the GtkWidget exposed by gtksink.
+ *
+ * Params:
+ *     sink = GStreamer sink whose `widget` property is read.
+ * Returns: The wrapped widget, or `null` when the sink or its widget is
+ *     missing.
+ */
 private Widget resolveGtkVideoSinkWidget(Element sink)
 {
     if (sink is null)
@@ -1065,7 +1307,16 @@ private Widget resolveGtkVideoSinkWidget(Element sink)
     return ObjectG.getDObject!(Widget)(cast(GtkWidget*) object.getObjectGStruct());
 }
 
-/** Replace the overlay drawing area with the widget provided by gtksink. */
+/** Replace the overlay drawing area with the widget provided by gtksink.
+ *
+ * The sink widget is reparented into the preview frame and remembered so the
+ * overlay path knows not to attach a window handle.
+ *
+ * Params:
+ *     document = Active document tab that owns the preview widgets.
+ *     sink = GStreamer sink whose child widget is attached.
+ * Returns: True when a widget was found and attached.
+ */
 private bool attachGtkVideoSinkWidget(DocumentTab document, Element sink)
 {
     if (document is null || document.detailPreviewVideoFrame is null)
@@ -1108,7 +1359,11 @@ private bool attachGtkVideoSinkWidget(DocumentTab document, Element sink)
     return true;
 }
 
-/** Restore the original drawing area used by overlay-based sinks. */
+/** Restore the original drawing area used by overlay-based sinks.
+ *
+ * Params:
+ *     document = Active document tab whose preview frame is restored.
+ */
 private void restoreOverlayVideoArea(DocumentTab document)
 {
     if (document is null || document.detailPreviewVideoFrame is null || document.detailPreviewVideoArea is null)
@@ -1175,7 +1430,15 @@ bool syncVideoPreviewWindow(DocumentTab document, int renderWidth = -1, int rend
     return true;
 }
 
-/** Create the playbin-backed preview player on demand. */
+/** Create the playbin-backed preview player on demand.
+ *
+ * An existing player is reused only while its audio-only mode still matches the
+ * selection; otherwise it is stopped and rebuilt with a suitable sink.
+ *
+ * Params:
+ *     document = Active document tab whose preview player is ensured.
+ * Returns: True when a player and sink are available.
+ */
 private bool ensureVideoPreviewPlayer(DocumentTab document)
 {
     auto audioOnly = document.selectedPreviewIsAudio;
@@ -1242,7 +1505,12 @@ private bool ensureVideoPreviewPlayer(DocumentTab document)
     return true;
 }
 
-/** Clamp the stream volume to a sane range. */
+/** Clamp the stream volume to a sane range.
+ *
+ * Params:
+ *     volume = Requested volume, possibly outside the supported range.
+ * Returns: `volume` clamped to the inclusive range 0.0 to 1.0.
+ */
 private double clampVideoPreviewVolume(double volume)
 {
     if (volume < 0.0)
@@ -1256,7 +1524,13 @@ private double clampVideoPreviewVolume(double volume)
     return volume;
 }
 
-/** Format a video position in a compact time string. */
+/** Format a video position in a compact time string.
+ *
+ * Params:
+ *     nanoseconds = Position or duration in nanoseconds; negative values are
+ *         treated as zero.
+ * Returns: `MM:SS`, or `HH:MM:SS` when the position is at least one hour.
+ */
 private string formatVideoPreviewTime(long nanoseconds)
 {
     if (nanoseconds < 0)
@@ -1384,6 +1658,14 @@ void syncVideoPlaybackButton(DocumentTab document, bool playing)
     document.detailPreviewPlayButton.setTooltipText(playing ? "Wiedergabe pausieren" : "Wiedergabe starten");
 }
 
+/** Read an integer GStreamer property, using a fallback for a missing element.
+ *
+ * Params:
+ *     element = Element to query; null returns `fallback`.
+ *     propertyName = Name of the integer property.
+ *     fallback = Value returned when the element is null.
+ * Returns: The property's current integer value, or `fallback`.
+ */
 private int getElementIntProperty(Element element, string propertyName, int fallback = -1)
 {
     if (element is null)
@@ -1415,6 +1697,12 @@ void setElementIntProperty(Element element, string propertyName, int propertyVal
     element.setProperty(propertyName, new Value(propertyValue));
 }
 
+/** Remove all entries from a track selector and hide its row.
+ *
+ * Params:
+ *     combo = Selector to clear; ignored when null.
+ *     row = Container box to hide; ignored when null.
+ */
 private void clearTrackSelector(ComboBoxText combo, Box row)
 {
     if (combo !is null)
@@ -1428,6 +1716,14 @@ private void clearTrackSelector(ComboBoxText combo, Box row)
     }
 }
 
+/** Read a non-empty string tag from a GStreamer tag list.
+ *
+ * Params:
+ *     tags = Tag list to query; null yields `false`.
+ *     tagName = Tag name to look up.
+ *     value = Receives the tag value, or an empty string when absent.
+ * Returns: True when the tag exists and its value is not empty.
+ */
 private bool tryGetTrackTagString(TagList tags, string tagName, out string value)
 {
     value = "";
@@ -1439,6 +1735,18 @@ private bool tryGetTrackTagString(TagList tags, string tagName, out string value
     return tags.getString(tagName, value) && value.length > 0;
 }
 
+/** Build a display label for a stream using its tags and stream id.
+ *
+ * The label starts with `prefix` and a one-based index, then appends any
+ * available title, language, description and codec tags. When no tags are
+ * present the stream id is used as a fallback hint.
+ *
+ * Params:
+ *     prefix = Kind prefix such as `Video` or `Audio`.
+ *     index = Zero-based stream index used for the one-based label.
+ *     stream = Stream to inspect; null yields the plain indexed label.
+ * Returns: Human-readable selector label.
+ */
 private string buildStreamDisplayLabel(string prefix, size_t index, Stream stream)
 {
     auto fallback = format("%s %s", prefix, index + 1);
@@ -1492,6 +1800,17 @@ private string buildStreamDisplayLabel(string prefix, size_t index, Stream strea
     return fallback ~ ": " ~ fragments.join(" | ");
 }
 
+/** Build a track label from already extracted metadata fragments.
+ *
+ * Empty fragments are skipped; when every fragment is empty the plain indexed
+ * label is returned.
+ *
+ * Params:
+ *     prefix = Kind prefix such as `Video`, `Audio` or `Subtitle`.
+ *     index = Zero-based track index used for the one-based label.
+ *     fragments = Label fragments in display order.
+ * Returns: Human-readable selector label.
+ */
 private string buildTrackDisplayLabel(string prefix, size_t index, string[] fragments)
 {
     auto fallback = format("%s %s", prefix, index + 1);
@@ -1512,6 +1831,13 @@ private string buildTrackDisplayLabel(string prefix, size_t index, string[] frag
     return fallback ~ ": " ~ visibleFragments.join(" | ");
 }
 
+/** Build the selector label for an indexed MediaInfo video stream.
+ *
+ * Params:
+ *     stream = Video stream metadata; null yields an empty string.
+ * Returns: Label containing language, format, resolution and frame rate where
+ *     available.
+ */
 private string buildVideoTrackLabel(const(MediaInfoVideo) stream)
 {
     if (stream is null)
@@ -1533,6 +1859,12 @@ private string buildVideoTrackLabel(const(MediaInfoVideo) stream)
     return buildTrackDisplayLabel("Video", cast(size_t) stream.index, fragments);
 }
 
+/** Build the selector label for an indexed MediaInfo audio stream.
+ *
+ * Params:
+ *     stream = Audio stream metadata; null yields an empty string.
+ * Returns: Label containing language, format and channel count where available.
+ */
 private string buildAudioTrackLabel(const(MediaInfoAudio) stream)
 {
     if (stream is null)
@@ -1550,6 +1882,13 @@ private string buildAudioTrackLabel(const(MediaInfoAudio) stream)
     return buildTrackDisplayLabel("Audio", cast(size_t) stream.index, fragments);
 }
 
+/** Build the selector label for an indexed MediaInfo text stream.
+ *
+ * Params:
+ *     stream = Text stream metadata; null yields an empty string.
+ * Returns: Subtitle label containing language, format and frame rate where
+ *     available.
+ */
 private string buildTextTrackLabel(const(MediaInfoText) stream)
 {
     if (stream is null)
@@ -1567,6 +1906,16 @@ private string buildTextTrackLabel(const(MediaInfoText) stream)
     return buildTrackDisplayLabel("Subtitle", cast(size_t) stream.index, fragments);
 }
 
+/** Derive track selector labels from MediaInfo signature data.
+ *
+ * Existing label caches and signature strings are reset before the indexed
+ * video, audio and text streams are converted to labels. A missing signature
+ * leaves all three label lists empty.
+ *
+ * Params:
+ *     document = Active document tab whose label caches are updated.
+ *     row = Content row that supplies the MediaInfo signature.
+ */
 private void updateTrackLabelsFromMediaInfo(DocumentTab document, const(BlobRow) row)
 {
     if (document is null)
@@ -1604,6 +1953,15 @@ private void updateTrackLabelsFromMediaInfo(DocumentTab document, const(BlobRow)
     document.previewSubtitleTrackSignature = document.previewSubtitleTrackLabels.join("\n");
 }
 
+/** Append selector labels from a live GStreamer stream collection.
+ *
+ * Existing label lists are extended rather than replaced. Empty lists are
+ * reset to null so later bounds checks see a missing selector.
+ *
+ * Params:
+ *     document = Active document tab whose label caches are updated.
+ *     collection = Stream collection to inspect; null is ignored.
+ */
 private void updateTrackLabelsFromStreamCollection(DocumentTab document, StreamCollection collection)
 {
     if (document is null)
@@ -1659,6 +2017,13 @@ private void updateTrackLabelsFromStreamCollection(DocumentTab document, StreamC
     }
 }
 
+/** Show a disabled selector row containing a single placeholder entry.
+ *
+ * Params:
+ *     combo = Selector to populate; the call is a no-op when null.
+ *     row = Container box to make visible; the call is a no-op when null.
+ *     text = Placeholder text, usually a "loading" or "none" message.
+ */
 private void showTrackSelectorPlaceholder(ComboBoxText combo, Box row, string text)
 {
     if (combo is null || row is null)
@@ -1673,6 +2038,24 @@ private void showTrackSelectorPlaceholder(ComboBoxText combo, Box row, string te
     combo.setSensitive(false);
 }
 
+/** Rebuild one indexed track selector when its count or labels changed.
+ *
+ * The selector shows label text from `labels` when the list matches the track
+ * count, otherwise it falls back to `prefix N` labels. The cached count and
+ * signature avoid rebuilding unchanged combos. Selectors with more than one
+ * track are sensitive; the active entry is set from `currentIndex`.
+ *
+ * Params:
+ *     combo = Selector widget to update; the call is a no-op when null.
+ *     row = Container box shown for the selector; the call is a no-op when null.
+ *     prefix = Label prefix such as `Video` or `Audio`.
+ *     trackCount = Number of indexed tracks; zero shows a loading placeholder.
+ *     currentIndex = Zero-based active track, or a negative value to leave the
+ *         selection unchanged.
+ *     labels = Optional per-track labels in index order.
+ *     cachedCount = Last rendered track count, updated in place.
+ *     cachedSignature = Last rendered label signature, updated in place.
+ */
 private void syncIndexedTrackSelector(
     ComboBoxText combo,
     Box row,
@@ -1730,6 +2113,14 @@ private void syncIndexedTrackSelector(
     }
 }
 
+/** Rebuild the subtitle selector, including the leading "Off" entry.
+ *
+ * Params:
+ *     document = Active document tab whose subtitle selector is updated.
+ *     trackCount = Number of text tracks; zero shows a "no subtitles" placeholder.
+ *     currentIndex = Zero-based active text track, or negative when subtitles
+ *         are disabled.
+ */
 private void syncSubtitleTrackSelector(DocumentTab document, int trackCount, int currentIndex)
 {
     auto combo = document.detailPreviewSubtitleTrackCombo;
@@ -1934,7 +2325,11 @@ bool jumpVideoPreview(DocumentTab document, long deltaSeconds)
     return document.previewVideoPlayer.seekSimple(GstFormat.TIME, GstSeekFlags.FLUSH | GstSeekFlags.KEY_UNIT, targetPosition);
 }
 
-/** Start or restart the embedded audio/video preview for the current selection. */
+/** Start or restart the embedded audio/video preview for the current selection.
+ *
+ * Params:
+ *     document = Active document tab whose audio or video preview is updated.
+ */
 private void updatePreviewVideo(DocumentTab document)
 {
     if (document.selectedPreviewIsAudio)
@@ -2033,7 +2428,11 @@ private void updatePreviewVideo(DocumentTab document)
     cast(void) syncVideoPreviewPosition(document);
 }
 
-/** Start a video that had to wait for the preview frame to be realized and sized. */
+/** Start a video that had to wait for the preview frame to be realized and sized.
+ *
+ * Params:
+ *     document = Active document tab whose pending video preview should resume.
+ */
 void resumePendingVideoPreview(DocumentTab document)
 {
     if (document is null || !document.previewVideoPendingWindowSync
@@ -2065,6 +2464,15 @@ void resumePendingVideoPreview(DocumentTab document)
     cast(void) syncVideoPreviewPosition(document);
 }
 
+/** Render the selected image into the preview, applying the scale mode.
+ *
+ * The source pixbuf is cached per selected path. Missing paths clear the
+ * image; decode or scaling failures clear it silently after showing an
+ * "unavailable" summary.
+ *
+ * Params:
+ *     document = Active document tab whose image preview is updated.
+ */
 private void updatePreviewImage(DocumentTab document)
 {
     if (document.detailPreviewImage is null)

@@ -1,4 +1,9 @@
-/** Recovery helpers for expanded directory nodes with loading placeholders. */
+/** Recovery helpers for expanded directory nodes with loading placeholders.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.directoryloading;
 
 import gtk.TreeIter;
@@ -9,6 +14,17 @@ import gtk.TreeView;
 import gtk.TreeViewColumn;
 import gtk.c.types : GType;
 
+/** Recursively request children for expanded directories that still show a placeholder.
+ *
+ * Params:
+ *     model = Tree model being inspected.
+ *     treeView = View used to test whether a row is expanded.
+ *     parent = Parent row whose children are scanned; ignored when `hasParent`
+ *         is false.
+ *     hasParent = Whether `parent` identifies a row instead of the top level.
+ *     loadChildren = Callback invoked with the directory path, its identifier,
+ *         and the placeholder path.
+ */
 private void scanExpandedDirectories(TreeModelIF model, TreeView treeView,
     TreeIter parent, bool hasParent,
     void delegate(TreePath, string, TreePath) loadChildren)
@@ -42,7 +58,13 @@ private void scanExpandedDirectories(TreeModelIF model, TreeView treeView,
     while (model.iterNext(iter));
 }
 
-/** Request data for expanded directories whose only child is still a placeholder. */
+/** Request data for expanded directories whose only child is still a placeholder.
+ *
+ * Params:
+ *     treeView = View whose expanded rows are inspected.
+ *     loadChildren = Callback invoked with a directory path, its identifier,
+ *         and the placeholder path.
+ */
 void loadExpandedDirectoryPlaceholders(TreeView treeView,
     void delegate(TreePath, string, TreePath) loadChildren)
 {

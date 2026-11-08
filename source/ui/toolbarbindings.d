@@ -1,4 +1,9 @@
-/** UI helpers for toolbar and filter signal wiring. */
+/** UI helpers for toolbar and filter signal wiring.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.toolbarbindings;
 
 import gtk.Button;
@@ -10,13 +15,30 @@ import ui.documenttab : DocumentTab;
 /** Callbacks required by the toolbar controls. */
 struct ToolbarBindingsCallbacks
 {
+    /// Reloads the currently selected document.
     void delegate() reloadCurrentDocument;
+    /// Recomputes the layout of the currently selected document.
     void delegate() relayoutCurrentDocument;
+    /// Cancels a pending document load.
     void delegate() cancelPendingLoad;
+    /// Applies the filter values currently entered in the filter bar.
     void delegate() applyFilterFromEntry;
+    /// Clears the active filter.
     void delegate() clearCurrentFilter;
 }
 
+/** Connect the full toolbar button set to its action callbacks.
+ *
+ * Params:
+ *     btnReload = Button that triggers a reload of the current document.
+ *     btnRelayout = Button that triggers a relayout of the current document.
+ *     btnCancelLoad = Button that cancels a pending load.
+ *     btnApplyFilter = Button that applies the filter from the entry.
+ *     btnClearFilter = Button that clears the current filter.
+ *     callbacks = Action callbacks invoked by the buttons.
+ * Returns: Nothing.
+ * Throws: GTK runtime errors may propagate while connecting signals.
+ */
 void bindToolbarButtons(Button btnReload, Button btnRelayout, Button btnCancelLoad,
     Button btnApplyFilter, Button btnClearFilter, ToolbarBindingsCallbacks callbacks)
 {
@@ -27,6 +49,16 @@ void bindToolbarButtons(Button btnReload, Button btnRelayout, Button btnCancelLo
     btnClearFilter.addOnClicked((Button _) { callbacks.clearCurrentFilter(); });
 }
 
+/** Connect the reload, relayout, and cancel-load buttons to their action callbacks.
+ *
+ * Params:
+ *     btnReload = Button that triggers a reload of the current document.
+ *     btnRelayout = Button that triggers a relayout of the current document.
+ *     btnCancelLoad = Button that cancels a pending load.
+ *     callbacks = Action callbacks invoked by the buttons.
+ * Returns: Nothing.
+ * Throws: GTK runtime errors may propagate while connecting signals.
+ */
 void bindToolbarButtons(Button btnReload, Button btnRelayout, Button btnCancelLoad,
     ToolbarBindingsCallbacks callbacks)
 {
@@ -35,6 +67,26 @@ void bindToolbarButtons(Button btnReload, Button btnRelayout, Button btnCancelLo
     btnCancelLoad.addOnClicked((Button _) { callbacks.cancelPendingLoad(); });
 }
 
+/** Connect the filter controls so any change re-applies the filter.
+ *
+ * The entry applies the filter when the user activates it, while every toggle
+ * applies it on each state change.
+ *
+ * Params:
+ *     filterEntry = Text entry used for free-form filtering.
+ *     filterVideo = Video filter toggle.
+ *     filterAudio = Audio filter toggle.
+ *     filterImage = Image filter toggle.
+ *     filterText = Text filter toggle.
+ *     filterMediaNot = Negated media filter toggle.
+ *     filterFileType = File-type filter toggle.
+ *     filterArchive = Archive filter toggle.
+ *     filterTorrent = Torrent filter toggle.
+ *     filterCaseSensitive = Case-sensitive text matching toggle.
+ *     applyFilter = Callback that reads and applies the current filter state.
+ * Returns: Nothing.
+ * Throws: GTK runtime errors may propagate while connecting signals.
+ */
 void bindFilterSignals(Entry filterEntry, ToggleButton filterVideo, ToggleButton filterAudio,
     ToggleButton filterImage, ToggleButton filterText, ToggleButton filterMediaNot,
     ToggleButton filterFileType, ToggleButton filterArchive, ToggleButton filterTorrent,
@@ -52,7 +104,14 @@ void bindFilterSignals(Entry filterEntry, ToggleButton filterVideo, ToggleButton
     filterTorrent.addOnToggled((ToggleButton _) { applyFilter(); });
 }
 
-/** Copy the active tab's filter widgets into the query state used by data sources. */
+/** Copy the active tab's filter widgets into the query state used by data sources.
+ *
+ * Params:
+ *     document = Document tab whose filter widgets are read and whose filter
+ *         query fields are overwritten.
+ * Returns: Nothing.
+ * Throws: None.
+ */
 void captureDocumentFilterState(DocumentTab document)
 {
     auto text = document.filterEntry.getText();

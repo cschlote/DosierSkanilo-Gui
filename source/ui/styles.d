@@ -1,4 +1,9 @@
-/** Application-wide CSS helpers for GTK widgets used by the GUI. */
+/** Application-wide CSS helpers for GTK widgets used by the GUI.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.styles;
 
 import gdk.Screen;
@@ -6,6 +11,7 @@ import gtk.CssProvider;
 import gtk.StyleContext;
 import gtk.c.types : GTK_STYLE_PROVIDER_PRIORITY_APPLICATION;
 
+/// Process-wide CSS provider installed by `installApplicationCss`, or null before installation.
 private __gshared CssProvider applicationCssProvider;
 
 /** Install the shared CSS classes used by the application.

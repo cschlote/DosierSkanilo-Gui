@@ -1,4 +1,9 @@
-/** UI helpers for startup restoration and self-test shutdown scheduling. */
+/** UI helpers for startup restoration and self-test shutdown scheduling.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.startupworkflow;
 
 import cli.logging;

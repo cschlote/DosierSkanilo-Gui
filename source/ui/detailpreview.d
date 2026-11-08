@@ -1,4 +1,9 @@
-/** UI loader and signal wiring for the detail preview layout. */
+/** UI loader and signal wiring for the detail preview layout.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.detailpreview;
 
 import gtk.AspectFrame;
@@ -33,16 +38,22 @@ import ui.detailswidgets : jumpVideoPreview, pauseVideoPreview, playVideoPreview
 /** Widgets from the detail preview layout. */
 struct DetailPreviewUi
 {
+    /// Container box that holds the preview pane widgets.
     Box previewPane;
 }
 
 /** Callbacks needed to wire detail preview UI signals. */
 struct DetailPreviewCallbacks
 {
+    /// Returns true while the toolbar is being updated programmatically.
     bool delegate() isSyncingToolbarState;
+    /// Applies a new image scale mode to the preview.
     void delegate(PreviewScaleMode) setPreviewScaleMode;
+    /// Rebuilds the preview toolbar state from the current document.
     void delegate() syncPreviewToolbarFromCurrentDocument;
+    /// Enables or disables automatic playback of video previews.
     void delegate(bool) setPreviewVideoAutostart;
+    /// Sets the preview audio volume as a normalized value.
     void delegate(double) setPreviewVideoVolume;
 }
 

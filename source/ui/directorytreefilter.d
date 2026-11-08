@@ -1,4 +1,9 @@
-/** GTK filtered-model helpers for retaining directory TreeStore nodes. */
+/** GTK filtered-model helpers for retaining directory TreeStore nodes.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.directorytreefilter;
 
 import gobject.Value;
@@ -12,10 +17,17 @@ import std.string : toLower;
 import dosierarkivo.archive : archivePathMatchesText;
 import model.treeprojection : FileFilter;
 
+/// TreeStore column holding the stable node identifier used for filtering.
 enum int treeNodeIdColumn = 16;
+/// TreeStore boolean column read by the filtered model to decide row visibility.
 enum int treeVisibleColumn = 17;
 
-/** Wrap a canonical directory store without copying or replacing its rows. */
+/** Wrap a canonical directory store without copying or replacing its rows.
+ *
+ * Params:
+ *     store = Canonical directory TreeStore to wrap.
+ * Returns: A filtered model that reads the visibility column from `store`.
+ */
 TreeModelFilter createDirectoryTreeFilter(TreeStore store)
 {
     auto filtered = new TreeModelFilter(store, null);
@@ -23,7 +35,13 @@ TreeModelFilter createDirectoryTreeFilter(TreeStore store)
     return filtered;
 }
 
-/** Set one canonical row's visibility flag for the filtered view. */
+/** Set one canonical row's visibility flag for the filtered view.
+ *
+ * Params:
+ *     store = Canonical directory store containing the row.
+ *     iter = Row whose visibility flag is updated.
+ *     visible = Whether the row should be visible in the filtered view.
+ */
 void setDirectoryTreeNodeVisible(TreeStore store, TreeIter iter, bool visible)
 {
     auto value = new Value();
@@ -32,7 +50,16 @@ void setDirectoryTreeNodeVisible(TreeStore store, TreeIter iter, bool visible)
     store.setValue(iter, treeVisibleColumn, value);
 }
 
-/** Decide visibility from precomputed IDs; this is safe for a GTK filter callback. */
+/** Decide visibility from precomputed IDs; this is safe for a GTK filter callback.
+ *
+ * Params:
+ *     kind = Row kind such as `Directory`, `File`, or a placeholder kind.
+ *     nodeId = Stable identifier of the row.
+ *     parentId = Stable identifier of the row's parent.
+ *     filtering = Whether a filter is active; when false every row is visible.
+ *     visibleIds = Identifiers of rows retained by the active filter.
+ * Returns: `true` when the row should remain visible.
+ */
 bool directoryTreeNodeVisible(string kind, string nodeId, string parentId,
     bool filtering, const(bool[string]) visibleIds)
 {
@@ -53,7 +80,18 @@ bool directoryTreeNodeVisible(string kind, string nodeId, string parentId,
     }
 }
 
-/** Visibility for JSON rows indexed by their canonical projection position. */
+/** Visibility for JSON rows indexed by their canonical projection position.
+ *
+ * Params:
+ *     kind = Row kind such as `Directory`, `File`, or a placeholder kind.
+ *     sourceIndex = Canonical projection index of the row.
+ *     filtering = Whether a filter is active; when false every row is visible.
+ *     visibleFileIndexes = Visibility flags indexed by file projection index.
+ *     visibleDirectoryIndexes = Visibility flags indexed by directory
+ *         projection index.
+ *     hasMatches = Whether any filter match exists at all.
+ * Returns: `true` when the row should remain visible.
+ */
 bool directoryTreeNodeVisibleByIndex(string kind, size_t sourceIndex,
     bool filtering, const(bool)[] visibleFileIndexes,
     const(bool)[] visibleDirectoryIndexes, bool hasMatches)
@@ -77,7 +115,21 @@ bool directoryTreeNodeVisibleByIndex(string kind, size_t sourceIndex,
     }
 }
 
-/** Match a materialized file row using the shared directory-filter semantics. */
+/** Match a materialized file row using the shared directory-filter semantics.
+ *
+ * Params:
+ *     name = Display filename matched against the text filter.
+ *     path = Archive-style path also matched against the text filter.
+ *     video = Whether the file has a video stream.
+ *     audio = Whether the file has an audio stream.
+ *     image = Whether the file has an image stream.
+ *     textStream = Whether the file has a text stream.
+ *     fileType = Whether a file type is known.
+ *     archive = Whether the file is an archive.
+ *     torrent = Whether the file is a torrent.
+ *     filter = Active filter criteria.
+ * Returns: `true` when the row satisfies every active criterion.
+ */
 bool treeFileMatchesFilter(string name, string path, bool video, bool audio,
     bool image, bool textStream, bool fileType, bool archive, bool torrent,
     FileFilter filter)

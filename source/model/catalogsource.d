@@ -1,6 +1,7 @@
 /** Storage-neutral directory source over the catalog backend contract.
  *
  * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
  * License: GPL-3.0-only
  */
 module model.catalogsource;
@@ -17,23 +18,42 @@ import dosierskanilo.sqlitecatalogbackend : DefaultCatalogBackendFactory;
 import model.treeprojection : DirectoryNode, DirectorySource, FileCursor,
     FileFilter, FileNode, FilePage, FileSortOrder, isArchivePathCandidate;
 
+/// Backend page size used when paging through directory and file results.
 private enum pageSize = 250;
 
-/** Open the storage-neutral backend for one repository root. */
+/** Open the storage-neutral backend for one repository root.
+ *
+ * Params:
+ *     repositoryPath = Filesystem path of the repository root to open.
+ * Returns: An open repository-backed catalog backend.
+ * Throws: Backend construction errors when the repository cannot be opened.
+ */
 CatalogBackend openCatalogBackend(string repositoryPath)
 {
     return new DefaultCatalogBackendFactory().open(
         OperationTarget.repositoryTarget(repositoryPath));
 }
 
-/** Open the storage-neutral backend for one JSON catalog file. */
+/** Open the storage-neutral backend for one JSON catalog file.
+ *
+ * Params:
+ *     catalogPath = Filesystem path of the JSON catalog to open.
+ * Returns: An open JSON-backed catalog backend.
+ * Throws: Backend construction errors when the catalog cannot be opened.
+ */
 CatalogBackend openJsonCatalogBackend(string catalogPath)
 {
     return new DefaultCatalogBackendFactory().open(
         OperationTarget.jsonTarget(catalogPath));
 }
 
-/** Wrap an already opened backend for tree queries without owning it. */
+/** Wrap an already opened backend for tree queries without owning it.
+ *
+ * Params:
+ *     backend = Open catalog backend to expose through the directory source.
+ *     ownBackend = Whether the returned source closes `backend` on `close()`.
+ * Returns: A directory source backed by `backend`.
+ */
 DirectorySource openCatalogDirectorySource(CatalogBackend backend,
     bool ownBackend = false)
 {
@@ -50,10 +70,21 @@ DirectorySource openCatalogDirectorySource(CatalogBackend backend,
  */
 final class CatalogDirectorySource : DirectorySource
 {
+    /// Backend queried for directory, file, and detail data.
     private CatalogBackend backend;
+    /// Whether `close()` also closes `backend`; false for borrowed backends.
     private bool ownBackend;
+    /// Precomputed root node exposed by `root()`.
     private DirectoryNode rootNode;
 
+    /** Wrap an open backend and compute its root node summary.
+     *
+     * Params:
+     *     backend = Open catalog backend to query; must not be null.
+     *     ownBackend = Whether this source owns and closes the backend.
+     * Throws: `CatalogBackendException` when the backend cannot report source
+     *     information or root aggregates.
+     */
     this(CatalogBackend backend, bool ownBackend = true)
     {
         this.backend = backend;
@@ -66,17 +97,38 @@ final class CatalogDirectorySource : DirectorySource
             summary.aggregateSize);
     }
 
-    /** The backend used for detail loads by callers that reuse this source. */
+    /** The backend used for detail loads by callers that reuse this source.
+     *
+     * Returns: The wrapped backend; `null` after `close()` has been called.
+     */
     @property ref CatalogBackend catalog() return
     {
         return backend;
     }
 
+    /** Return the precomputed root directory node for this source.
+     *
+     * Returns: Root node whose `id` is `"root"` and whose name is the backend
+     *     display name, falling back to the repository basename.
+     */
     override DirectoryNode root()
     {
         return rootNode;
     }
 
+    /** List all immediate child directories of one parent.
+     *
+     * Backend pages are fetched until no more results remain.
+     *
+     * Params:
+     *     parentId = Directory ID (relative path) or `"root"`/empty for the
+     *         source root.
+     *     filter = Optional file filter used to include only directories with
+     *         matching files.
+     * Returns: Matching child directory nodes, or `null` when `parentId`
+     *     cannot be resolved.
+     * Throws: `CatalogBackendException` when a backend query fails.
+     */
     override DirectoryNode[] listDirectories(string parentId,
         FileFilter filter = FileFilter())
     {
@@ -106,6 +158,19 @@ final class CatalogDirectorySource : DirectorySource
         return result;
     }
 
+    /** Report whether a directory contains at least one matching file.
+     *
+     * Only the first backend result is requested, so this is a cheap
+     * existence check.
+     *
+     * Params:
+     *     directoryId = Directory ID (relative path) or `"root"`/empty for the
+     *         source root.
+     *     filter = Optional file filter the candidate file must satisfy.
+     * Returns: `true` when at least one matching file exists; `false` for an
+     *     unresolved directory or no match.
+     * Throws: `CatalogBackendException` when the backend query fails.
+     */
     override bool hasMatchingFileInDirectory(string directoryId,
         FileFilter filter = FileFilter())
     {
@@ -118,6 +183,21 @@ final class CatalogDirectorySource : DirectorySource
         return backend.listFiles(query, request).files.length > 0;
     }
 
+    /** List files below one directory using offset/limit slicing.
+     *
+     * Backend pages are fetched as needed and the requested window is cut
+     * from the combined result. `filter` only constrains the path text.
+     *
+     * Params:
+     *     directoryId = Directory ID (relative path) or `"root"`/empty for the
+     *         source root.
+     *     offset = Number of matching files to skip.
+     *     limit = Maximum number of files to return.
+     *     filter = Case-insensitive substring filter over file paths.
+     * Returns: The requested file nodes, or `null` when `directoryId` cannot
+     *     be resolved.
+     * Throws: `CatalogBackendException` when a backend query fails.
+     */
     override FileNode[] listFiles(string directoryId, size_t offset = 0,
         size_t limit = 250, string filter = "")
     {
@@ -148,6 +228,20 @@ final class CatalogDirectorySource : DirectorySource
         return result;
     }
 
+    /** List one path-ordered file page using a text-only filter.
+     *
+     * Params:
+     *     directoryId = Directory ID (relative path) or `"root"`/empty for the
+     *         source root.
+     *     cursor = Position returned by a previous page, or
+     *         `FileCursor.init` for the first page.
+     *     limit = Maximum number of files to return; must be greater than zero.
+     *     filter = Case-insensitive substring filter over file paths.
+     * Returns: The requested page, or `FilePage.init` when `directoryId`
+     *     cannot be resolved.
+     * Throws: `Exception` when `limit` is zero and `CatalogBackendException`
+     *     when the backend query fails.
+     */
     override FilePage listFilesPage(string directoryId,
         FileCursor cursor = FileCursor(), size_t limit = 250, string filter = "")
     {
@@ -157,6 +251,24 @@ final class CatalogDirectorySource : DirectorySource
             FileSortOrder.pathAscending);
     }
 
+    /** List one page of filtered files in the requested sort order.
+     *
+     * The cursor's relative path is used as a stateless anchor, so a stale
+     * cursor simply yields an empty page.
+     *
+     * Params:
+     *     directoryId = Directory ID (relative path) or `"root"`/empty for the
+     *         source root.
+     *     cursor = Anchor returned by a previous page, or `FileCursor.init`
+     *         for the first page.
+     *     limit = Maximum number of files to return; must be greater than zero.
+     *     filter = Structured filter applied by the backend.
+     *     sortOrder = Requested stable file order.
+     * Returns: The page following the anchor, or `FilePage.init` when
+     *     `directoryId` cannot be resolved.
+     * Throws: `Exception` when `limit` is zero and `CatalogBackendException`
+     *     when the backend query fails.
+     */
     override FilePage listFilteredFilesPage(string directoryId,
         FileCursor cursor = FileCursor(), size_t limit = 250,
         FileFilter filter = FileFilter(),
@@ -172,6 +284,23 @@ final class CatalogDirectorySource : DirectorySource
             limit), directoryId, limit);
     }
 
+    /** List one page of filtered files preceding an anchor in display order.
+     *
+     * The returned rows are ordered by the requested sort and end strictly
+     * before the anchor path.
+     *
+     * Params:
+     *     directoryId = Directory ID (relative path) or `"root"`/empty for the
+     *         source root.
+     *     cursor = Anchor returned by a previous page; must identify a file.
+     *     limit = Maximum number of files to return; must be greater than zero.
+     *     filter = Structured filter applied by the backend.
+     *     sortOrder = Requested stable file order.
+     * Returns: The page preceding the anchor, or `FilePage.init` when
+     *     `directoryId` cannot be resolved.
+     * Throws: `Exception` when `limit` is zero and `CatalogBackendException`
+     *     when the backend query fails.
+     */
     override FilePage listPreviousFilteredFilesPage(string directoryId,
         FileCursor cursor, size_t limit = 250, FileFilter filter = FileFilter(),
         FileSortOrder sortOrder = FileSortOrder.pathAscending)
@@ -186,6 +315,11 @@ final class CatalogDirectorySource : DirectorySource
             limit), directoryId, limit);
     }
 
+    /** Release the backend if this source owns it.
+     *
+     * Borrowed backends are left open. The field is cleared afterwards, so
+     * repeated calls are safe.
+     */
     override void close()
     {
         if (ownBackend && backend !is null)
@@ -193,6 +327,17 @@ final class CatalogDirectorySource : DirectorySource
         backend = null;
     }
 
+    /** Resolve a directory ID or relative path to a backend identity.
+     *
+     * Params:
+     *     directoryId = Directory ID, relative path, or `"root"`/empty for the
+     *         source root.
+     *     resolved = Receives the resolved identity; invalid for the source
+     *         root.
+     * Returns: `true` when the directory exists or denotes the root; `false`
+     *     for an unknown path.
+     * Throws: `CatalogBackendException` when the backend lookup fails.
+     */
     private bool resolveDirectoryId(string directoryId, out DirectoryId resolved)
     {
         if (directoryId == "root" || directoryId.length == 0)
@@ -204,11 +349,23 @@ final class CatalogDirectorySource : DirectorySource
         return resolved.isValid;
     }
 
+    /** Map an empty root-relative path to the display ID `"root"`.
+     *
+     * Params:
+     *     relativePath = Source-relative directory path.
+     * Returns: `relativePath` unchanged, or `"root"` when it is empty.
+     */
     private static string directoryPath(string relativePath)
     {
         return relativePath.length > 0 ? relativePath : "root";
     }
 
+    /** Translate the GUI file filter into the backend filter model.
+     *
+     * Params:
+     *     filter = GUI file filter to translate.
+     * Returns: Backend filter with matching path, media, and type selectors.
+     */
     private static CatalogFilter catalogFilter(FileFilter filter)
     {
         CatalogFilter result;
@@ -225,6 +382,12 @@ final class CatalogDirectorySource : DirectorySource
         return result;
     }
 
+    /** Translate a GUI sort order into the equivalent backend sort order.
+     *
+     * Params:
+     *     sortOrder = GUI file sort order to translate.
+     * Returns: The matching backend sort order.
+     */
     private static CatalogSortOrder catalogSortOrder(FileSortOrder sortOrder)
     {
         final switch (sortOrder)
@@ -240,6 +403,15 @@ final class CatalogDirectorySource : DirectorySource
         }
     }
 
+    /** Convert a backend file page into the GUI file page projection.
+     *
+     * Params:
+     *     page = Backend page to convert.
+     *     directoryId = Directory ID stored on every returned file node.
+     *     limit = Requested page size; currently only used for the contract.
+     * Returns: GUI page with converted nodes and a cursor pointing at the last
+     *     returned file when more rows remain.
+     */
     private FilePage filePage(CatalogFilePage page, string directoryId,
         size_t limit)
     {
@@ -257,6 +429,14 @@ final class CatalogDirectorySource : DirectorySource
         return result;
     }
 
+    /** Convert a backend file row into the GUI file node projection.
+     *
+     * Params:
+     *     file = Backend file row to convert.
+     *     directoryId = Directory ID stored on the returned node.
+     * Returns: GUI node using the source-relative path as both ID and cursor
+     *     ID; archive detection also considers the filename.
+     */
     private static FileNode fileNode(CatalogFile file, string directoryId)
     {
         FileNode node;

@@ -1,4 +1,9 @@
-/** Pure source-aware construction of shared backend operation requests. */
+/** Pure source-aware construction of shared backend operation requests.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.operationrequests;
 
 import dosierskanilo.operations : AnalysisOperationRequest,
@@ -7,7 +12,20 @@ import dosierskanilo.operations : AnalysisOperationRequest,
 import dosierskanilo.repository.types : MetadataScanOptions,
     RepositoryAnalysisOptions, RepositoryScanOptions;
 
-/** Build the request used by the GUI Scan action. */
+/** Build the request used by the GUI Scan action.
+ *
+ * Params:
+ *     operationId = Stable numeric identifier assigned to the operation.
+ *     documentPath = Repository root when `repositorySource` is true, otherwise
+ *         the JSON catalog path.
+ *     repositorySource = Selects a repository target over a JSON catalog target.
+ *     filesystemRoot = Filesystem root paired with the JSON catalog; ignored
+ *         for repository targets.
+ *     scanOptions = Scan options forwarded to the backend unchanged.
+ *     metadataOptions = Metadata options forwarded to the backend unchanged.
+ * Returns: A request whose target mode matches `repositorySource`, with both
+ *     option sets copied into the request.
+ */
 ScanOperationRequest buildScanOperationRequest(ulong operationId,
     string documentPath, bool repositorySource, string filesystemRoot,
     RepositoryScanOptions scanOptions, MetadataScanOptions metadataOptions)
@@ -22,7 +40,14 @@ ScanOperationRequest buildScanOperationRequest(ulong operationId,
     return request;
 }
 
-/** Build the repository-only standalone metadata request. */
+/** Build the repository-only standalone metadata request.
+ *
+ * Params:
+ *     operationId = Stable numeric identifier assigned to the operation.
+ *     repositoryRoot = Repository root that is always used as the target.
+ *     metadataOptions = Metadata options forwarded to the backend unchanged.
+ * Returns: A request targeting the repository with the given metadata options.
+ */
 MetadataOperationRequest buildMetadataOperationRequest(ulong operationId,
     string repositoryRoot, MetadataScanOptions metadataOptions)
 {
@@ -33,7 +58,20 @@ MetadataOperationRequest buildMetadataOperationRequest(ulong operationId,
     return request;
 }
 
-/** Build an analysis request without crossing or inferring storage modes. */
+/** Build an analysis request without crossing or inferring storage modes.
+ *
+ * Params:
+ *     operationId = Stable numeric identifier assigned to the operation.
+ *     documentPath = Repository root when `repositorySource` is true, otherwise
+ *         the JSON catalog path.
+ *     repositorySource = Selects a repository target over a JSON catalog target.
+ *     analysisOptions = Analysis options forwarded to the backend unchanged.
+ *     metadataOptions = Metadata options forwarded to the backend unchanged.
+ *     filesystemRoot = Filesystem root paired with the JSON catalog; ignored
+ *         for repository targets.
+ * Returns: A request whose target mode matches `repositorySource`, with both
+ *     option sets copied into the request.
+ */
 AnalysisOperationRequest buildAnalysisOperationRequest(ulong operationId,
     string documentPath, bool repositorySource,
     RepositoryAnalysisOptions analysisOptions, MetadataScanOptions metadataOptions,

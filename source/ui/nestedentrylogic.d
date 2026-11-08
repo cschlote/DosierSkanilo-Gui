@@ -1,4 +1,9 @@
-/** GTK-independent paging and activation rules for nested detail entries. */
+/** GTK-independent paging and activation rules for nested detail entries.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.nestedentrylogic;
 
 import model.treeprojection : NestedFileNode;
@@ -8,12 +13,24 @@ import std.format : format;
 /** One visible nested-entry page and the continuation position after it. */
 struct NestedEntryPage
 {
+    /// Visible entries for this page, excluding any look-ahead entry.
     NestedFileNode[] entries;
+    /// Offset to pass as the continuation position for the next page.
     size_t nextOffset;
+    /// Whether the fetched data contained an extra entry beyond this page.
     bool hasMore;
 }
 
-/** Trim the look-ahead entry used to determine whether another page exists. */
+/** Trim the look-ahead entry used to determine whether another page exists.
+ *
+ * Params:
+ *     fetched = Entries returned for the request, including an optional
+ *         look-ahead entry beyond the page.
+ *     offset = Offset of the first fetched entry.
+ *     pageSize = Maximum number of visible entries; must be greater than zero.
+ * Returns: The visible page and the offset at which the next page starts.
+ * Throws: `Exception` when `pageSize` is zero.
+ */
 NestedEntryPage prepareNestedEntryPage(const(NestedFileNode)[] fetched,
     size_t offset, size_t pageSize = 250)
 {
@@ -30,7 +47,14 @@ NestedEntryPage prepareNestedEntryPage(const(NestedFileNode)[] fetched,
     return page;
 }
 
-/** Return the full nested path only for an activatable file row. */
+/** Return the full nested path only for an activatable file row.
+ *
+ * Params:
+ *     rowKind = Row kind; only `File` rows are activatable.
+ *     rowPath = Nested path stored on the row.
+ *     fullPath = Set to `rowPath` on success and to an empty string otherwise.
+ * Returns: `true` when the row is a file with a non-empty path.
+ */
 bool nestedEntryCopyPath(string rowKind, string rowPath, out string fullPath)
 {
     fullPath = "";

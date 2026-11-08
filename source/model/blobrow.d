@@ -5,6 +5,7 @@
  * normalized projection used between catalog/backend and view layers.
  *
  * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
  * License: GPL-3.0-only
  */
 module model.blobrow;
@@ -38,13 +39,21 @@ struct BlobRow
     size_t sourceOrdinal = size_t.max; /// Stable source-array ordinal for JSON rows.
     bool detailsLoaded = true; /// False while repository details are lazy.
     bool hasSummaryFlags; /// True when metadata presence came from SQLite.
+    /// True when the catalog summary reports any media metadata.
     bool summaryHasMedia;
+    /// True when the catalog summary reports a video stream.
     bool summaryHasVideo;
+    /// True when the catalog summary reports an audio stream.
     bool summaryHasAudio;
+    /// True when the catalog summary reports an image stream.
     bool summaryHasImage;
+    /// True when the catalog summary reports a text/subtitle stream.
     bool summaryHasText;
+    /// True when the catalog summary reports file type metadata.
     bool summaryHasFileType;
+    /// True when the catalog summary reports archive metadata.
     bool summaryHasArchive;
+    /// True when the catalog summary reports torrent metadata.
     bool summaryHasTorrent;
     /// Legacy blob data when the row came from the in-memory projection;
     /// catalog-backed rows leave this null and use the `catalog*` fields.
@@ -59,14 +68,54 @@ struct BlobRow
     size_t fileCount; /// Number of known file references for this blob.
 
     /* metadata presence flags and details for fold-out sections in the UI. */
-    @property bool hasMedia() const { return hasSummaryFlags ? summaryHasMedia : sourceBlob.mediaInfoSig !is null && !sourceBlob.mediaInfoSig.empty; } /// True when media metadata is present.
-    @property bool hasVideo() const { return hasSummaryFlags ? summaryHasVideo : hasMedia && sourceBlob.mediaInfoSig.hasVideo; } /// True when media metadata marks a video stream.
-    @property bool hasAudio() const { return hasSummaryFlags ? summaryHasAudio : hasMedia && sourceBlob.mediaInfoSig.hasAudio; } /// True when media metadata marks an audio stream.
-    @property bool hasImage() const { return hasSummaryFlags ? summaryHasImage : hasMedia && sourceBlob.mediaInfoSig.hasImage; } /// True when media metadata marks an image stream.
-    @property bool hasText() const { return hasSummaryFlags ? summaryHasText : hasMedia && sourceBlob.mediaInfoSig.hasText; } /// True when media metadata marks a text/subtitle stream.
-    @property bool hasFileType() const { return hasSummaryFlags ? summaryHasFileType : sourceBlob.fileType !is null && !sourceBlob.fileType.empty; } /// True when file type signature metadata is present.
-    @property bool hasArchive() const { return hasSummaryFlags ? summaryHasArchive : sourceBlob.archiveSpecs.length > 0; } /// True when archive metadata is present.
-    @property bool hasTorrent() const { return hasSummaryFlags ? summaryHasTorrent : sourceBlob.torrentInfo !is null && !sourceBlob.torrentInfo.empty; } /// True when torrent metadata is present.
+    /** Whether any media metadata is present.
+     *
+     * Returns: `true` when the catalog summary marks media or the attached
+     *     blob has a non-empty media signature.
+     */
+    @property bool hasMedia() const { return hasSummaryFlags ? summaryHasMedia : sourceBlob.mediaInfoSig !is null && !sourceBlob.mediaInfoSig.empty; }
+    /** Whether media metadata marks a video stream.
+     *
+     * Returns: `true` when the catalog summary marks video or the attached
+     *     blob has a media signature with a video stream.
+     */
+    @property bool hasVideo() const { return hasSummaryFlags ? summaryHasVideo : hasMedia && sourceBlob.mediaInfoSig.hasVideo; }
+    /** Whether media metadata marks an audio stream.
+     *
+     * Returns: `true` when the catalog summary marks audio or the attached
+     *     blob has a media signature with an audio stream.
+     */
+    @property bool hasAudio() const { return hasSummaryFlags ? summaryHasAudio : hasMedia && sourceBlob.mediaInfoSig.hasAudio; }
+    /** Whether media metadata marks an image stream.
+     *
+     * Returns: `true` when the catalog summary marks images or the attached
+     *     blob has a media signature with an image stream.
+     */
+    @property bool hasImage() const { return hasSummaryFlags ? summaryHasImage : hasMedia && sourceBlob.mediaInfoSig.hasImage; }
+    /** Whether media metadata marks a text or subtitle stream.
+     *
+     * Returns: `true` when the catalog summary marks text or the attached blob
+     *     has a media signature with a text/subtitle stream.
+     */
+    @property bool hasText() const { return hasSummaryFlags ? summaryHasText : hasMedia && sourceBlob.mediaInfoSig.hasText; }
+    /** Whether file type signature metadata is present.
+     *
+     * Returns: `true` when the catalog summary marks file type metadata or the
+     *     attached blob has a non-empty file type.
+     */
+    @property bool hasFileType() const { return hasSummaryFlags ? summaryHasFileType : sourceBlob.fileType !is null && !sourceBlob.fileType.empty; }
+    /** Whether archive metadata is present.
+     *
+     * Returns: `true` when the catalog summary marks archives or the attached
+     *     blob has at least one archive specification.
+     */
+    @property bool hasArchive() const { return hasSummaryFlags ? summaryHasArchive : sourceBlob.archiveSpecs.length > 0; }
+    /** Whether torrent metadata is present.
+     *
+     * Returns: `true` when the catalog summary marks torrents or the attached
+     *     blob has non-empty torrent information.
+     */
+    @property bool hasTorrent() const { return hasSummaryFlags ? summaryHasTorrent : sourceBlob.torrentInfo !is null && !sourceBlob.torrentInfo.empty; }
 
     /* Catalog-backed detail text used when no NamedBinaryBlob is attached. */
     string catalogFileType; /// File signature supplied by a catalog snapshot.
@@ -77,19 +126,52 @@ struct BlobRow
     string catalogFileNames; /// Rendered reference paths.
 
     /* Fold-out details text for metadata sections, rendered from the source blob. */
-    @property string mediaInfoDetails() const { return hasMedia && sourceBlob !is null && sourceBlob.mediaInfoSig !is null ? sourceBlob.mediaInfoSig.toString() : catalogMediaDetails; } /// Pretty-printed media metadata for fold-out inspection.
-    @property string fileTypeDetails() const { return hasFileType ? (sourceBlob !is null ? sourceBlob.fileType : catalogFileType) : ""; } /// Pretty-printed file type metadata for fold-out inspection.
-    @property string archiveDetails() const { return hasArchive ? (sourceBlob !is null ? detailLines(sourceBlob.archiveSpecs) : catalogArchiveDetails) : ""; } /// Pretty-printed archive metadata for fold-out inspection.
-    @property string torrentDetails() const { return hasTorrent ? (sourceBlob !is null && sourceBlob.torrentInfo !is null ? sourceBlob.torrentInfo.toString() : catalogTorrentDetails) : ""; } /// Pretty-printed torrent metadata for fold-out inspection.
-    @property string fileType() const { return hasFileType ? (sourceBlob !is null ? sourceBlob.fileType : catalogFileType) : ""; } /// Optional file type signature from scanner metadata.
+    /** Pretty-printed media metadata for fold-out inspection.
+     *
+     * Returns: The attached blob's media details, or `catalogMediaDetails` when
+     *     no blob or media signature is available.
+     */
+    @property string mediaInfoDetails() const { return hasMedia && sourceBlob !is null && sourceBlob.mediaInfoSig !is null ? sourceBlob.mediaInfoSig.toString() : catalogMediaDetails; }
+    /** Pretty-printed file type metadata for fold-out inspection.
+     *
+     * Returns: The blob or catalog file type when metadata is present, or an
+     *     empty string otherwise.
+     */
+    @property string fileTypeDetails() const { return hasFileType ? (sourceBlob !is null ? sourceBlob.fileType : catalogFileType) : ""; }
+    /** Pretty-printed archive metadata for fold-out inspection.
+     *
+     * Returns: Rendered blob archive details or `catalogArchiveDetails` when
+     *     archive metadata is present, or an empty string otherwise.
+     */
+    @property string archiveDetails() const { return hasArchive ? (sourceBlob !is null ? detailLines(sourceBlob.archiveSpecs) : catalogArchiveDetails) : ""; }
+    /** Pretty-printed torrent metadata for fold-out inspection.
+     *
+     * Returns: The blob torrent details or `catalogTorrentDetails` when torrent
+     *     metadata is present, or an empty string otherwise.
+     */
+    @property string torrentDetails() const { return hasTorrent ? (sourceBlob !is null && sourceBlob.torrentInfo !is null ? sourceBlob.torrentInfo.toString() : catalogTorrentDetails) : ""; }
+    /** Optional file type signature from scanner metadata.
+     *
+     * Returns: The blob or catalog file type when metadata is present, or an
+     *     empty string otherwise.
+     */
+    @property string fileType() const { return hasFileType ? (sourceBlob !is null ? sourceBlob.fileType : catalogFileType) : ""; }
 
-    /** Render the full source object details directly from the backing blob. */
+    /** Render the full source object details directly from the backing blob.
+     *
+     * Returns: Multiline blob details, or `catalogSourceDetails` when no blob
+     *     is attached.
+     */
     @property string sourceBlobDetails()
     {
         return sourceBlob is null ? catalogSourceDetails : blobDetails(sourceBlob);
     }
 
-    /** Render the known file references as a multiline block directly from the backing blob. */
+    /** Render the known file references as a multiline block directly from the backing blob.
+     *
+     * Returns: One line per file reference, or `catalogFileNames` when no blob
+     *     is attached.
+     */
     @property string knownFileNamesText()
     {
         return sourceBlob is null ? catalogFileNames : fileSpecDetails(sourceBlob.fileSpecs);
@@ -239,8 +321,10 @@ private BlobRow rowFromNamedBinaryBlob(NamedBinaryBlob blob)
 
 /** Convert a library blob array into GUI rows.
  *
- * Param: blobs = array of library blobs to convert
- * Returns: array of GUI rows corresponding to the input blobs
+ * Params:
+ *     blobs = Array of library blobs to convert.
+ * Returns: GUI rows in input order; the source ordinal records each blob's
+ *     array position.
  */
 BlobRow[] extractRowsFromBlobs(NamedBinaryBlob[] blobs)
 {

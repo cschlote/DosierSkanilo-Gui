@@ -1,4 +1,9 @@
-/** Compact fallback details for files without specialized metadata views. */
+/** Compact fallback details for files without specialized metadata views.
+ *
+ * Authors: DosierSkanilo contributors
+ * Copyright: Carsten Schlote, licensed under GPL-3.0-only
+ * License: GPL-3.0-only
+ */
 module ui.fallbackrenderer;
 
 import std.conv : to;
@@ -8,11 +13,19 @@ import model.blobrow : BlobRow;
 /** One property/value pair shown by the fallback detail renderer. */
 struct FallbackDetailRow
 {
+    /// Display label for the property, such as `File` or `SHA1 (base64)`.
     string property;
+    /// Display value associated with the property.
     string value;
 }
 
-/** Build a useful identity/checksum summary when no specialized metadata exists. */
+/** Build a useful identity/checksum summary when no specialized metadata exists.
+ *
+ * Params:
+ *     row = Blob row to summarize.
+ * Returns: Property/value rows for fallback display, or an empty array when the
+ *     row already carries specialized metadata.
+ */
 FallbackDetailRow[] fallbackDetailRows(const(BlobRow) row)
 {
     auto hasSpecializedMetadata = row.hasSummaryFlags
