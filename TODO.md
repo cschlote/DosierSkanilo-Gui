@@ -6,9 +6,9 @@ in the backend's
 completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
 [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md).
 
-## Current status (2026-11-08)
+## Current status (2026-11-10)
 
-- Version `0.13.0`; JSON and repository tabs both use `CatalogBackend`.
+- Version `0.13.1`; JSON and repository tabs both use `CatalogBackend`.
 - JSON tabs have explicit document sessions with modified markers,
   Save/Revert, and save/discard/cancel prompts; SQLite tabs remain
   transactional.
@@ -23,8 +23,7 @@ completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
 
 ## P0 — Prepare the next GUI release
 
-Target: next version after `0.13.0`; choose patch or minor at release time based
-on the user-facing changes since the last tag.
+Target: `0.13.1` (paired with backend `26.16.0`).
 
 - [x] Release `0.13.0` is complete: changelog, paired backend release,
       Arch/Fedora/Debian/Flatpak metadata, and the Flatpak source hash are
