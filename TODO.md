@@ -28,10 +28,12 @@ Target: `0.13.1` (paired with backend `26.16.0`).
 - [x] Release `0.13.0` is complete: changelog, paired backend release,
       Arch/Fedora/Debian/Flatpak metadata, and the Flatpak source hash are
       committed.
+- [x] Release `0.13.1` is complete: paired with backend `26.16.0`,
+      changelog and packaging updated, Flatpak source hash refreshed.
 - [ ] Run the
       [`backend release checklist`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/RELEASE-CHECKLIST.md)
       end to end for the next paired release.
-- [ ] Re-run the Xvfb display suite and the 95,001-row JSON/SQLite smoke loads
+- [x] Re-run the Xvfb display suite and the 95,001-row JSON/SQLite smoke loads
       as release evidence.
 - [ ] Verify installation from the packaged artifacts after the next release.
 
