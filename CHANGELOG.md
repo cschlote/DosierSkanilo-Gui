@@ -2,11 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## Release 0.13.1 - 2026-11-10
 
-- SQLite repositories on sshfs, FUSE, SMB/CIFS, NFS, 9p, and similar network
-  filesystems are now rejected before opening with a clear error. These mounts
-  cannot provide SQLite's required locking and durability guarantees.
+- Pairs with DosierSkanilo 26.16.0. SQLite repositories on sshfs, FUSE,
+  SMB/CIFS, NFS, 9p, and similar network filesystems are rejected before
+  opening with a clear error. These mounts cannot provide SQLite's required
+  locking and durability guarantees.
+
+- Documentation and the Major 27 planning notes were refreshed for the paired
+  backend release.
 
 ## Release 0.13.0 - 2026-11-08
 

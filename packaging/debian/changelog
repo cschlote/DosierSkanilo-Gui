@@ -1,3 +1,10 @@
+dosierskanilo-gui (0.13.1-1) unstable; urgency=medium
+
+  * Release GUI 0.13.1 as the pair for DosierSkanilo 26.16.0, with unsafe
+    SQLite filesystem rejection and refreshed documentation.
+
+ -- Carsten Schlote <schlote@vahanus.net>  Tue, 10 Nov 2026 00:00:00 +0000
+
 dosierskanilo-gui (0.13.0-1) unstable; urgency=medium
 
   * Release GUI 0.13.0 with keyboard tree navigation, paged-table
