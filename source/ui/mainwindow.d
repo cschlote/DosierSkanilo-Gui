@@ -102,6 +102,7 @@ import model.datasource : SourceQuery, isRepositorySource,
     loadCatalogRowPage, loadCatalogRowOffsetPage, loadCatalogFileDetails,
     loadCatalogArchiveEntries, loadCatalogTorrentEntries,
     loadCatalogArchiveMemberTreePage, acquireCatalogArchiveMemberPreview,
+    prefetchArchiveSiblings,
     scanDocumentArchive, scanDocumentArchives, setDocumentArchivePassword;
 import model.treeprojection : DirectoryNode, DirectorySource, DirectoryTree, FileCursor,
     FileFilter, FileNode, FilePage, FileSortOrder, NestedFileNode,
@@ -2156,6 +2157,10 @@ string digestBase64ToHex(string digest)
 
 /// Threads extracting archive members for the preview; joined before cache release.
 private Thread[] archivePreviewWorkers;
+/// Threads prefetching sibling archive members; joined before cache release.
+private Thread[] archivePrefetchWorkers;
+/// Number of siblings prefetched per archive-member preview.
+private enum archiveSiblingPrefetchLimit = 4;
 
 /** Wait for in-flight archive preview extractions before releasing the cache. */
 private void joinArchivePreviewWorkers()
@@ -2164,6 +2169,81 @@ private void joinArchivePreviewWorkers()
         if (worker.isRunning)
             worker.join();
     archivePreviewWorkers.length = 0;
+    joinArchivePrefetchWorkers();
+}
+
+/** Wait for in-flight archive sibling prefetch workers. */
+private void joinArchivePrefetchWorkers()
+{
+    foreach (worker; archivePrefetchWorkers)
+        if (worker.isRunning)
+            worker.join();
+    archivePrefetchWorkers.length = 0;
+}
+
+/** Prefetch same-directory sibling archive members behind the selected one.
+ *
+ * Runs on a background thread, bounded by `limit` siblings, and stops when the
+ * tab's prefetch cancellation flag is set. The caller enables or disables the
+ * behavior with `enabled`, which mirrors the sibling-prefetch preference.
+ *
+ * Params:
+ *     document = Document tab whose archive member was previewed.
+ *     isRepository = True when members are acquired through repository
+ *         references instead of JSON virtual paths.
+ *     memberIdentity = Reference or virtual identity of the previewed member.
+ *     virtualPath = Virtual archive path of the previewed member; empty for
+ *         repository previews.
+ *     containerPath = Physical container path used when the preview had no
+ *         virtual path; empty otherwise.
+ *     memberPath = Member path used when the preview had no virtual path.
+ *     password = Archive password for the container.
+ *     enabled = True when the sibling prefetch preference is active.
+ */
+private void startArchiveSiblingPrefetch(DocumentTab document, bool isRepository,
+    string memberIdentity, string virtualPath, string containerPath,
+    string memberPath, string password, bool enabled)
+{
+    /* Stop and drain a previous prefetch for this tab before starting. */
+    atomicStore(document.archivePrefetchCancelled, true);
+    joinArchivePrefetchWorkers();
+    if (!enabled)
+        return;
+
+    auto identity = virtualPath;
+    if (identity.length == 0 && isRepository)
+        identity = memberIdentity;
+    else if (identity.length == 0 && containerPath.length > 0
+        && memberPath.length > 0)
+    {
+        size_t occurrence;
+        try
+            occurrence = to!size_t(memberIdentity);
+        catch (Exception)
+            return;
+        identity = appendArchiveVirtualPath(
+            escapeArchiveVirtualPath(containerPath), memberPath, occurrence);
+    }
+    if (identity.length == 0)
+        return;
+
+    atomicStore(document.archivePrefetchCancelled, false);
+    auto sourcePath = document.filePath;
+    auto worker = new Thread({
+        try
+        {
+            auto count = prefetchArchiveSiblings(document.catalogBackend,
+                sourcePath, isRepository, identity, archiveSiblingPrefetchLimit,
+                password, &document.archivePrefetchCancelled);
+            if (count > 0)
+                logLineVerbose("[archive-prefetch] warmed siblings=",
+                    count, " member=", memberPath);
+        }
+        catch (Exception error)
+            logLineVerbose("[archive-prefetch] failed: ", error.msg);
+    });
+    archivePrefetchWorkers ~= worker;
+    worker.start();
 }
 
 /** Extract one selected archive member off the GTK thread and preview its lease.
@@ -2174,9 +2254,12 @@ private void joinArchivePreviewWorkers()
  *     memberIdentity = Reference identity used to look up the member.
  *     isRepository = True when the source is a repository catalog.
  *     virtualPath = Optional virtual archive path used for display and lookup.
+ *     prefetchSiblings = True when same-directory siblings should be warmed
+ *         into the shared cache in the background.
  */
 private void previewArchiveTreeMember(DocumentTab document, string memberPath,
-    string memberIdentity, bool isRepository, string virtualPath = "")
+    string memberIdentity, bool isRepository, string virtualPath = "",
+    bool prefetchSiblings = false)
 {
     if (memberPath.length == 0)
         return;
@@ -2271,6 +2354,10 @@ private void previewArchiveTreeMember(DocumentTab document, string memberPath,
     });
     archivePreviewWorkers ~= previewWorker;
     previewWorker.start();
+    if (prefetchSiblings)
+        startArchiveSiblingPrefetch(document, isRepository, memberIdentity,
+            virtualPath, containerPath, memberPath, archivePassword,
+            prefetchSiblings);
 }
 
 /** Find the archive password for the container of a virtual member path.
@@ -2394,6 +2481,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     bool prefCaseSensitiveFilter = loadedState.prefCaseSensitiveFilter;
     bool prefDetailsBelow = loadedState.prefDetailsBelow;
     bool prefRestoreOpenFiles = loadedState.prefRestoreOpenFiles;
+    bool prefArchiveSiblingPrefetch = loadedState.archiveSiblingPrefetch;
     string[] recentFilePaths = loadedState.recentFilePaths.dup;
     string externalOpenProgram = loadedState.externalOpenProgram.length > 0 ? loadedState.externalOpenProgram : "xdg-open";
     bool previewVideoAutostart = loadedState.previewVideoAutostart;
@@ -4005,7 +4093,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 auto virtualPath = model.getValueString(treeIter, 5);
                 previewArchiveTreeMember(document, memberPath, memberIdentity,
                     document.directorySourceRemote,
-                    document.directorySourceRemote ? "" : virtualPath);
+                    document.directorySourceRemote ? "" : virtualPath,
+                    prefArchiveSiblingPrefetch);
                 return;
             }
             if (kind != "File")
@@ -4526,7 +4615,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             (DocumentTab doc) { updateSelectedRowDetails(doc); },
             (DocumentTab doc, string memberPath, string memberIdentity) {
                 previewArchiveTreeMember(doc, memberPath, memberIdentity,
-                    doc.directorySourceRemote);
+                    doc.directorySourceRemote, "", prefArchiveSiblingPrefetch);
             }
         ));
 
@@ -4626,6 +4715,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         state.prefCaseSensitiveFilter = prefCaseSensitiveFilter;
         state.prefDetailsBelow = prefDetailsBelow;
         state.prefRestoreOpenFiles = prefRestoreOpenFiles;
+        state.archiveSiblingPrefetch = prefArchiveSiblingPrefetch;
         state.externalOpenProgram = externalOpenProgram;
         state.previewScaleMode = cast(int) previewScaleMode;
         state.previewVideoAutostart = previewVideoAutostart;
@@ -5588,6 +5678,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         if (!confirmDocumentClose(document))
             return;
         ++document.archiveMemberPreviewRequestId;
+        atomicStore(document.archivePrefetchCancelled, true);
         stopVideoPreview(document);
         if (document.selectedArchiveMemberLease !is null)
         {
@@ -7466,6 +7557,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             prefCaseSensitiveFilter,
             prefDetailsBelow,
             prefRestoreOpenFiles,
+            prefArchiveSiblingPrefetch,
             recentFileLimit,
             externalOpenProgram,
             archiveCacheDirectory,
@@ -7584,6 +7676,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 foreach (document; documents)
                 {
                     ++document.archiveMemberPreviewRequestId;
+                    atomicStore(document.archivePrefetchCancelled, true);
                     stopVideoPreview(document);
                     if (document.selectedArchiveMemberLease !is null)
                     {

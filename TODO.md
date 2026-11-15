@@ -6,7 +6,7 @@ in the backend's
 completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
 [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md).
 
-## Current status (2026-11-10)
+## Current status (2026-11-15)
 
 - Version `0.13.1`; JSON and repository tabs both use `CatalogBackend`.
 - JSON tabs have explicit document sessions with modified markers,
@@ -14,10 +14,12 @@ completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
   transactional.
 - The main tree expands archive files lazily, synthesizes inner archive
   directories, expands on the first selection click, and previews/extracts
-  members through the shared cache.
+  members through the shared cache. Optional same-directory sibling prefetch
+  warms neighboring members behind a preview into the cache (disabled by
+  default).
 - The GUI Xvfb display job and the shared CLI/GTK operation matrix are green on
   `main`; `testing` mirrors the same commit without deployments. GUI
-  verification: 76 tests, coverage 36.43 %, build clean.
+  verification: 78 tests, coverage 37.01 %, build clean.
 - Documentation and Ddoc headers are complete: every documentable public,
   package, and private declaration has Ddoc (verified 2026-11-08).
 
@@ -95,10 +97,10 @@ verbose diagnostics make future allocation/sink failures understandable.
 
 ## P2 — Optional and delivery work
 
-- [ ] Implement optional same-directory sibling prefetch with cancellable
+- [x] Implement optional same-directory sibling prefetch with cancellable
       bounded requests and the same cache leases as foreground
-      preview/extraction. Keep it disabled by default and add the
-      sibling-prefetch cancellation test.
+      preview/extraction. It stays disabled by default and is covered by the
+      sibling-prefetch cancellation tests in `model.datasource`.
 - [ ] Manually verify the `gtksink` → `ximagesink` preference on a Wayland
       session.
 - [ ] Extend the release workflow with distribution artifacts and installation

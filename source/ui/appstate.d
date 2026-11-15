@@ -104,6 +104,8 @@ struct AppState
     string archiveCacheDirectory;
     /// Archive member cache size limit in mebibytes.
     int archiveCacheSizeMiB = 1024;
+    /// Whether same-directory archive members are prefetched after a preview.
+    bool archiveSiblingPrefetch;
 
     /// Most-recently-used document paths, newest first.
     string[] recentFilePaths;
@@ -631,6 +633,11 @@ private AppState loadAppStateFromPath(string path)
             state.archiveCacheSizeMiB = jsonToInt(*value,
                 state.archiveCacheSizeMiB);
         }
+        if (auto value = "archiveSiblingPrefetch" in root)
+        {
+            state.archiveSiblingPrefetch = jsonToBool(*value,
+                state.archiveSiblingPrefetch);
+        }
         if (auto value = "previewVideoAutostart" in root)
         {
             state.previewVideoAutostart = jsonToBool(*value, state.previewVideoAutostart);
@@ -766,6 +773,7 @@ private void saveAppStateToPath(const(AppState) state, string path)
             "  \"previewVideoVolume\": %s,\n" ~
             "  \"archiveCacheDirectory\": \"%s\",\n" ~
             "  \"archiveCacheSizeMiB\": %s,\n" ~
+            "  \"archiveSiblingPrefetch\": %s,\n" ~
             "  \"recentFilePaths\": %s,\n" ~
             "  \"maxRecentFileCount\": %s,\n" ~
             "  \"hasWindowGeometry\": %s,\n" ~
@@ -799,6 +807,7 @@ private void saveAppStateToPath(const(AppState) state, string path)
         state.previewVideoVolume,
         jsonEscapeString(state.archiveCacheDirectory),
         state.archiveCacheSizeMiB,
+        state.archiveSiblingPrefetch ? "true" : "false",
         recentFileJson,
         state.maxRecentFileCount,
         state.hasWindowGeometry ? "true" : "false",
@@ -884,6 +893,7 @@ unittest
     expected.previewVideoVolume = 0.75;
     expected.archiveCacheDirectory = "/tmp/archive cache";
     expected.archiveCacheSizeMiB = 512;
+    expected.archiveSiblingPrefetch = true;
     expected.recentFilePaths = ["/tmp/one.json", "/tmp/two path.json"];
     expected.maxRecentFileCount = 12;
     expected.hasWindowGeometry = true;
@@ -922,6 +932,7 @@ unittest
     assert(loaded.previewVideoVolume == expected.previewVideoVolume);
     assert(loaded.archiveCacheDirectory == expected.archiveCacheDirectory);
     assert(loaded.archiveCacheSizeMiB == expected.archiveCacheSizeMiB);
+    assert(loaded.archiveSiblingPrefetch == expected.archiveSiblingPrefetch);
     assert(loaded.recentFilePaths == expected.recentFilePaths);
     assert(loaded.maxRecentFileCount == expected.maxRecentFileCount);
     assert(loaded.hasWindowGeometry == expected.hasWindowGeometry);

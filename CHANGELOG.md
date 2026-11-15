@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+- New optional preference "Prefetch neighbouring archive members after a
+  preview" (disabled by default). When enabled, previewing an archive member
+  warms up to four same-directory siblings into the shared member cache on a
+  background thread using the same cache leases, with cooperative cancellation
+  on selection change, tab close, and application quit.
+
 ## Release 0.13.1 - 2026-11-10
 
 - Pairs with DosierSkanilo 26.16.0. SQLite repositories on sshfs, FUSE,

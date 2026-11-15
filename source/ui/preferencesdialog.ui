@@ -31,6 +31,13 @@
       </object>
     </child>
     <child>
+      <object class="GtkCheckButton" id="optArchiveSiblingPrefetch">
+        <property name="label">Prefetch neighbouring archive members after a preview</property>
+        <property name="can-focus">False</property>
+        <property name="active">False</property>
+      </object>
+    </child>
+    <child>
       <object class="GtkBox" id="recentFilesRow">
         <property name="can-focus">False</property>
         <property name="orientation">horizontal</property>

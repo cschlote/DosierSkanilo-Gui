@@ -31,8 +31,8 @@ import dosierskanilo.catalogbackend : ArchiveEntryId, CatalogArchiveEntry,
     CatalogFile, CatalogFileQuery, CatalogFilter, CatalogMediaKind, CatalogMediaStream,
     CatalogPageCursor, CatalogPageRequest, CatalogReferenceAvailability,
     CatalogTorrentManifestEntry, ContentId, ContentLocator, DirectoryId, ReferenceId;
-import dosierskanilo.membercontentcache : MemberContentLease,
-    sharedMemberContentCache;
+import dosierskanilo.membercontentcache : MemberContentCancelledException,
+    MemberContentLease, sharedMemberContentCache;
 import dosierskanilo.model.namedbinaryblob : NamedBinaryBlob,
     DATA_CLASS_VERSION3, NamedBinaryBlobCatalog, deserializeDataClassJsonFile,
     updateArchives;
@@ -736,12 +736,15 @@ AcquiredArchiveMemberPreview acquireJsonArchiveMemberPreview(string documentPath
  *     documentPath = Path of the JSON catalog that owns the archive.
  *     virtualPath = Complete virtual member path.
  *     password = Optional archive password.
+ *     cancellation = Optional cooperative cancellation flag passed to the
+ *         member cache.
  * Returns: The extracted member preview; its `virtualPath` is the path that
  *     was requested, not the resolved physical form.
  * Throws: `Exception` when parsing or extraction fails.
  */
 AcquiredArchiveMemberPreview acquireJsonVirtualArchiveMemberPreview(
-    string documentPath, string virtualPath, string password = "")
+    string documentPath, string virtualPath, string password = "",
+    shared(bool)* cancellation = null)
 {
     auto logicalVirtualPath = virtualPath;
     auto parsed = parseArchiveVirtualPath(virtualPath);
@@ -756,7 +759,7 @@ AcquiredArchiveMemberPreview acquireJsonVirtualArchiveMemberPreview(
     }
     AcquiredArchiveMemberPreview preview;
     preview.lease = acquireVirtualArchiveMember("", virtualPath,
-        "json:" ~ absolutePath(documentPath), 0, password);
+        "json:" ~ absolutePath(documentPath), 0, password, cancellation);
     preview.virtualPath = logicalVirtualPath;
     import std.file : getSize;
     preview.size = getSize(preview.lease.path);
@@ -775,6 +778,8 @@ AcquiredArchiveMemberPreview acquireJsonVirtualArchiveMemberPreview(
  *     sourceIdentity = Source identity used in cache keys.
  *     expectedSize = Size used when the final descriptor has no recorded size.
  *     password = Optional archive password.
+ *     cancellation = Optional cooperative cancellation flag passed to the
+ *         member cache.
  * Returns: The lease for the extracted member, or `null` when the path has no
  *     layers.
  * Throws: `Exception` when the path is not virtual, a container format is
@@ -782,7 +787,7 @@ AcquiredArchiveMemberPreview acquireJsonVirtualArchiveMemberPreview(
  */
 private MemberContentLease acquireVirtualArchiveMember(string sourceRoot,
     string virtualPath, string sourceIdentity, ulong expectedSize,
-    string password)
+    string password, shared(bool)* cancellation = null)
 {
     auto parsed = parseArchiveVirtualPath(virtualPath);
     enforce(parsed.isVirtual, "Archive preview requires a virtual member path.");
@@ -832,7 +837,7 @@ private MemberContentLease acquireVirtualArchiveMember(string sourceRoot,
                 (string destinationDirectory) {
                     return archive.extractEntry(selected, destinationDirectory,
                         password);
-                });
+                }, cancellation);
 
             if (previousLease !is null)
                 previousLease.release();
@@ -1273,6 +1278,104 @@ AcquiredArchiveMemberPreview acquireCatalogArchiveMemberPreview(
     preview.virtualPath = member.relativePath;
     preview.size = member.size;
     return preview;
+}
+
+/** Prefetch same-directory sibling archive members into the shared cache.
+ *
+ * The member identity must use the virtual archive grammar; only single-layer
+ * (non-nested) containers are prefetched. Each sibling is acquired from the
+ * shared member-content cache and its lease is released immediately, so the
+ * extracted content stays cached until eviction while no lease remains held.
+ * Per-member failures are skipped, and the prefetch stops when cancellation is
+ * requested.
+ *
+ * Params:
+ *     backend = Open catalog backend; it remains owned by the caller.
+ *     sourcePath = Document path used to resolve relative JSON containers.
+ *     isRepository = True when members are acquired through repository
+ *         references instead of JSON virtual paths.
+ *     memberIdentity = Virtual archive identity of the previewed member.
+ *     limit = Maximum number of siblings to prefetch.
+ *     password = Optional archive password for JSON containers.
+ *     cancellation = Optional cooperative cancellation flag.
+ * Returns: The number of successfully prefetched siblings.
+ * Throws: Any exception raised while listing the container's entries is
+ *     propagated.
+ */
+size_t prefetchArchiveSiblings(CatalogBackend backend, string sourcePath,
+    bool isRepository, string memberIdentity, size_t limit = 4,
+    string password = "", shared(bool)* cancellation = null)
+{
+    if (limit == 0)
+        return 0;
+    const parsed = parseArchiveVirtualPath(memberIdentity);
+    if (!parsed.isVirtual || parsed.entries.length != 1)
+        return 0;
+    const auto containerPath = parsed.physicalPath;
+    const auto memberLayer = parsed.entries[0];
+    const auto memberOccurrence = memberLayer.hasOccurrence
+        ? memberLayer.occurrence : size_t.max;
+    const auto memberParent = dirName(memberLayer.relativePath);
+
+    const entries = loadCatalogArchiveEntries(backend, containerPath);
+    size_t selectedIndex = entries.length;
+    foreach (index, node; entries)
+    {
+        if (node.id.length == 0)
+            continue;
+        const candidate = parseArchiveVirtualPath(node.id);
+        if (!candidate.isVirtual || candidate.entries.length != 1)
+            continue;
+        const layer = candidate.entries[0];
+        if (layer.relativePath == memberLayer.relativePath
+            && (layer.hasOccurrence ? layer.occurrence : size_t.max)
+                == memberOccurrence)
+        {
+            selectedIndex = index;
+            break;
+        }
+    }
+    if (selectedIndex >= entries.length)
+        return 0;
+
+    size_t prefetched;
+    foreach (index, node; entries)
+    {
+        if (index <= selectedIndex || prefetched >= limit)
+            continue;
+        if (node.id.length == 0)
+            continue;
+        if (cancellation !is null && atomicLoad(*cancellation))
+            break;
+        const candidate = parseArchiveVirtualPath(node.id);
+        if (!candidate.isVirtual || candidate.entries.length != 1)
+            continue;
+        if (dirName(candidate.entries[0].relativePath) != memberParent)
+            continue;
+        try
+        {
+            if (isRepository)
+            {
+                auto preview = acquireCatalogArchiveMemberPreview(backend,
+                    node.id);
+                if (preview.lease !is null)
+                    preview.lease.release();
+            }
+            else
+            {
+                auto preview = acquireJsonVirtualArchiveMemberPreview(
+                    sourcePath, node.id, password, cancellation);
+                if (preview.lease !is null)
+                    preview.lease.release();
+            }
+            ++prefetched;
+        }
+        catch (MemberContentCancelledException)
+            break;
+        catch (Exception)
+            continue;
+    }
+    return prefetched;
 }
 
 /** Load one JSON catalog document.
@@ -2346,4 +2449,149 @@ unittest
     assert(sub.entries.length == 1);
     assert(!sub.entries[0].isDirectory);
     assert(sub.entries[0].relativePath == "b.txt");
+}
+
+@("archive sibling prefetch warms the shared cache and honors cancellation")
+unittest
+{
+    import std.algorithm.searching : endsWith;
+    import std.file : mkdirRecurse, readText, rmdirRecurse, tempDir, write;
+    import std.path : buildPath;
+    import std.process : execute;
+    import std.uuid : randomUUID;
+
+    auto root = buildPath(tempDir(), "gui-prefetch-repository-"
+        ~ randomUUID().toString());
+    mkdirRecurse(root);
+    scope (exit)
+        if (exists(root))
+            rmdirRecurse(root);
+
+    write(buildPath(root, "alpha.txt"), "alpha content\n");
+    write(buildPath(root, "beta.txt"), "beta content\n");
+    write(buildPath(root, "gamma.txt"), "gamma content\n");
+    const archivePath = buildPath(root, "bundle.tar");
+    assert(execute(["tar", "-cf", archivePath, "-C", root,
+        "alpha.txt", "beta.txt", "gamma.txt"]).status == 0);
+
+    auto repository = Repository.initialize(root);
+    repository.scan();
+    MetadataScanOptions metadataOptions;
+    metadataOptions.scanArchives = true;
+    metadataOptions.deepArchiveScan = true;
+    repository.updateMetadata(metadataOptions);
+    repository.close();
+
+    auto backend = openCatalogBackend(root);
+    scope (exit)
+        backend.close();
+
+    const entries = loadCatalogArchiveEntries(backend, "bundle.tar");
+    string alphaId;
+    string betaId;
+    string gammaId;
+    foreach (entry; entries)
+    {
+        if (entry.id.endsWith("!/alpha.txt"))
+            alphaId = entry.id;
+        else if (entry.id.endsWith("!/beta.txt"))
+            betaId = entry.id;
+        else if (entry.id.endsWith("!/gamma.txt"))
+            gammaId = entry.id;
+    }
+    assert(alphaId.length > 0 && betaId.length > 0 && gammaId.length > 0);
+
+    assert(prefetchArchiveSiblings(backend, root, true, alphaId, 4) == 2);
+    /* Prefetched members must now serve from the shared cache unchanged. */
+    auto betaPreview = acquireCatalogArchiveMemberPreview(backend, betaId);
+    scope (exit)
+        betaPreview.lease.release();
+    auto gammaPreview = acquireCatalogArchiveMemberPreview(backend, gammaId);
+    scope (exit)
+        gammaPreview.lease.release();
+    assert(readText(betaPreview.lease.path) == "beta content\n");
+    assert(readText(gammaPreview.lease.path) == "gamma content\n");
+
+    assert(prefetchArchiveSiblings(backend, root, true, alphaId, 1) == 1);
+    assert(prefetchArchiveSiblings(backend, root, true, alphaId ~
+        "!/nested.zip!/x.txt", 4) == 0);
+
+    shared bool cancelled = true;
+    assert(prefetchArchiveSiblings(backend, root, true, alphaId, 4, "",
+        &cancelled) == 0);
+}
+
+@("JSON archive sibling prefetch warms the shared cache and honors cancellation")
+unittest
+{
+    import dosierskanilo.model.archivespec : ArchiveSpec;
+    import dosierskanilo.model.checksums : CheckSums;
+    import dosierskanilo.model.namedbinaryblob : NamedBinaryBlobCatalog,
+        serializeDataClassWrapperFile;
+    import std.algorithm.searching : endsWith;
+    import std.datetime.systime : SysTime;
+    import std.file : getSize, mkdirRecurse, readText, rmdirRecurse, tempDir,
+        write;
+    import std.path : buildPath;
+    import std.process : execute;
+    import std.uuid : randomUUID;
+
+    auto root = buildPath(tempDir(), "gui-prefetch-json-"
+        ~ randomUUID().toString());
+    mkdirRecurse(buildPath(root, "archives"));
+    scope (exit)
+        if (exists(root))
+            rmdirRecurse(root);
+
+    mkdirRecurse(buildPath(root, "payload"));
+    write(buildPath(root, "payload", "alpha.txt"), "alpha json\n");
+    write(buildPath(root, "payload", "beta.txt"), "beta json\n");
+    write(buildPath(root, "payload", "gamma.txt"), "gamma json\n");
+    const archivePath = buildPath(root, "archives", "bundle.tar");
+    assert(execute(["tar", "-cf", archivePath, "-C", buildPath(root, "payload"),
+        "alpha.txt", "beta.txt", "gamma.txt"]).status == 0);
+
+    auto container = new NamedBinaryBlob("archives/bundle.tar",
+        archivePath.getSize, SysTime(0));
+    container.archiveSpecs = [
+        new ArchiveSpec("alpha.txt", "alpha json\n".length, "",
+            CheckSums("md5", "sha1", "xxh64")),
+        new ArchiveSpec("beta.txt", "beta json\n".length, "",
+            CheckSums("md5", "sha1", "xxh64")),
+        new ArchiveSpec("gamma.txt", "gamma json\n".length, "",
+            CheckSums("md5", "sha1", "xxh64"))
+    ];
+    NamedBinaryBlobCatalog catalog = NamedBinaryBlobCatalog(
+        DATA_CLASS_VERSION5, [container]);
+    const catalogPath = buildPath(root, "catalog.json");
+    serializeDataClassWrapperFile(catalogPath, catalog);
+
+    auto backend = openJsonCatalogBackend(catalogPath);
+    scope (exit)
+        backend.close();
+    backend.document().bindFilesystemRoot(root);
+
+    const entries = loadCatalogArchiveEntries(backend, "archives/bundle.tar");
+    string alphaId;
+    string betaId;
+    foreach (entry; entries)
+    {
+        if (entry.id.endsWith("!/alpha.txt"))
+            alphaId = entry.id;
+        else if (entry.id.endsWith("!/beta.txt"))
+            betaId = entry.id;
+    }
+    assert(alphaId.length > 0 && betaId.length > 0);
+
+    assert(prefetchArchiveSiblings(backend, catalogPath, false, alphaId, 4)
+        == 2);
+    auto betaPreview = acquireJsonVirtualArchiveMemberPreview(catalogPath,
+        betaId);
+    scope (exit)
+        betaPreview.lease.release();
+    assert(readText(betaPreview.lease.path) == "beta json\n");
+
+    shared bool cancelled = true;
+    assert(prefetchArchiveSiblings(backend, catalogPath, false, alphaId, 4, "",
+        &cancelled) == 0);
 }
