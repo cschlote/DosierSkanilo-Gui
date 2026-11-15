@@ -20,10 +20,11 @@ All notable changes to this project are documented in this file.
   old video kept playing during the extraction and kept playing forever when
   the new member could not be extracted.
 
-- Video previews now keep exactly one audio stream. Repeated preview refreshes
-  for the already displayed file reuse the loaded GStreamer pipeline instead of
-  restarting it; every restart opened another audio sink stream whose stale
-  remains kept earlier videos audible while switching between video files.
+- Video previews keep exactly one audio stream. Every preview restart now waits
+  for the previous pipeline to reach the NULL state before starting the next
+  stream, so the old audio sink closes first; the video sink window handle is
+  only attached in READY/PAUSED state, because attaching it while playing
+  produced black frames and crashed the overlay.
 
 ## Release 0.13.1 - 2026-11-10
 
