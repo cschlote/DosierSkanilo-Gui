@@ -1817,7 +1817,9 @@ unittest
     repository.close();
 
     auto summary = scanDocumentArchives(root, null);
-    assert(summary.blobsVisited == 2, "visited=" ~ summary.blobsVisited.to!string);
+    assert(summary.blobsVisited == 1,
+        "archive-only runs visit archive blobs only; visited="
+        ~ summary.blobsVisited.to!string);
     assert(summary.archivesUpdated == 1,
         "updated=" ~ summary.archivesUpdated.to!string
         ~ " failed=" ~ summary.failed.to!string);
