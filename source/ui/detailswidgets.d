@@ -1270,6 +1270,7 @@ void stopVideoPreview(DocumentTab document)
     if (document.previewVideoPlayer !is null)
     {
         document.previewVideoPlayer.setState(GstState.NULL);
+        waitForPreviewStop(document);
     }
 
     document.previewVideoPlayer = null;
@@ -1416,7 +1417,18 @@ bool syncVideoPreviewWindow(DocumentTab document, int renderWidth = -1, int rend
         return false;
     }
 
-    document.previewVideoOverlay.setWindowHandle(getXid(window));
+    /* GStreamer accepts a window handle only in READY or PAUSED state. Attaching
+     * it while PLAYING breaks the sink output (black frames) and can crash the
+     * overlay; the handle was attached before playback started, so a playing
+     * pipeline only needs its render rectangle updated. */
+    GstState state;
+    GstState pending;
+    const auto stateResult = document.previewVideoPlayer !is null
+        ? document.previewVideoPlayer.getState(state, pending, 0)
+        : GstStateChangeReturn.FAILURE;
+    if (stateResult == GstStateChangeReturn.FAILURE || state != GstState.PLAYING)
+        document.previewVideoOverlay.setWindowHandle(getXid(window));
+
     if (renderWidth <= 1)
     {
         renderWidth = 640;
@@ -1429,6 +1441,26 @@ bool syncVideoPreviewWindow(DocumentTab document, int renderWidth = -1, int rend
     document.previewVideoOverlay.setRenderRectangle(0, 0, renderWidth, renderHeight);
     document.previewVideoOverlay.expose();
     return true;
+}
+
+/** Wait briefly for a running pipeline to reach the NULL state.
+ *
+ * GStreamer state changes are asynchronous. Starting the next preview before
+ * the NULL transition completes leaves the previous audio sink open, so the
+ * audio of earlier videos stays audible during rapid selection changes. The
+ * wait is bounded and returns immediately once the transition finished.
+ *
+ * Params:
+ *     document = Active document tab whose player was just set to NULL.
+ */
+private void waitForPreviewStop(DocumentTab document)
+{
+    if (document.previewVideoPlayer is null)
+        return;
+    GstState state;
+    GstState pending;
+    cast(void) document.previewVideoPlayer.getState(state, pending,
+        100_000_000);
 }
 
 /** Create the playbin-backed preview player on demand.
@@ -2358,6 +2390,7 @@ private void updatePreviewVideo(DocumentTab document)
         }
 
         document.previewVideoPlayer.setState(GstState.NULL);
+        waitForPreviewStop(document);
         setVideoPreviewVolume(document, document.previewVideoVolume);
         document.previewVideoPlayer.setProperty("uri", new Value(uri));
         document.previewVideoCurrentUri = uri;
@@ -2405,23 +2438,8 @@ private void updatePreviewVideo(DocumentTab document)
     document.detailPreviewVideoArea.queueResize();
     document.previewVideoPendingPlayback = false;
     document.previewVideoPendingPlaybackOverride = false;
-    /* Skip the restart when this media is already loaded: refresh callbacks
-     * for the current selection must not open additional audio sink streams
-     * that would keep earlier audio audible. */
-    if (document.previewVideoCurrentUri == uri)
-    {
-        if (document.previewVideoPendingWindowSync)
-            resumePendingVideoPreview(document);
-        else
-        {
-            syncVideoTrackSelectors(document);
-            cast(void) syncVideoPreviewWindow(document,
-                document.detailPreviewVideoFrame.getAllocatedWidth(),
-                document.detailPreviewVideoFrame.getAllocatedHeight());
-        }
-        return;
-    }
     document.previewVideoPlayer.setState(GstState.NULL);
+    waitForPreviewStop(document);
     setVideoPreviewVolume(document, document.previewVideoVolume);
     document.previewVideoPlayer.setProperty("uri", new Value(uri));
     document.previewVideoCurrentUri = uri;
