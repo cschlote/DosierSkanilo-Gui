@@ -1267,11 +1267,7 @@ private bool ensureImagePreviewSource(DocumentTab document)
  */
 void stopVideoPreview(DocumentTab document)
 {
-    if (document.previewVideoPlayer !is null)
-    {
-        document.previewVideoPlayer.setState(GstState.NULL);
-        waitForPreviewStop(document);
-    }
+    haltVideoPreview(document);
 
     document.previewVideoPlayer = null;
     document.previewVideoSink = null;
@@ -1282,6 +1278,27 @@ void stopVideoPreview(DocumentTab document)
     document.previewVideoPendingWindowSync = false;
     document.previewVideoPendingPlayback = false;
     document.previewVideoPendingPlaybackOverride = false;
+}
+
+/** Stop preview output but keep the player for the next selected media.
+ *
+ * Selection changes use this instead of `stopVideoPreview`: one playbin per
+ * document tab is reused for every audio or video preview. Creating and
+ * dropping a pipeline per selection left many GStreamer elements and audio
+ * sinks alive until the garbage collector ran, which exhausted the shared
+ * audio resources of other GStreamer applications as well.
+ *
+ * Params:
+ *     document = Active document tab whose preview output should stop.
+ * Returns: Nothing.
+ * Throws: None.
+ */
+void haltVideoPreview(DocumentTab document)
+{
+    if (document.previewVideoPlayer is null)
+        return;
+    document.previewVideoPlayer.setState(GstState.NULL);
+    waitForPreviewStop(document);
 }
 
 /** Resolve the GtkWidget exposed by gtksink.
@@ -2413,7 +2430,7 @@ private void updatePreviewVideo(DocumentTab document)
 
     if (document.selectedPreviewPath.length == 0 || !document.selectedPreviewIsVideo)
     {
-        stopVideoPreview(document);
+        haltVideoPreview(document);
         document.detailPreviewVideoFrame.setVisible(false);
         return;
     }
@@ -2428,7 +2445,7 @@ private void updatePreviewVideo(DocumentTab document)
     auto uri = toFileUri(document.selectedPreviewPath);
     if (uri.length == 0)
     {
-        stopVideoPreview(document);
+        haltVideoPreview(document);
         document.detailPreviewVideoFrame.setVisible(false);
         return;
     }
@@ -2663,7 +2680,7 @@ void refreshMediaPreview(DocumentTab document)
 
     if (document.selectedPreviewIsArchive || document.selectedPreviewIsTorrent)
     {
-        stopVideoPreview(document);
+        haltVideoPreview(document);
         syncVideoTrackSelectors(document);
         if (document.detailPreviewImageControls !is null)
             document.detailPreviewImageControls.setVisible(false);
@@ -2685,7 +2702,7 @@ void refreshMediaPreview(DocumentTab document)
 
     if (document.selectedPreviewIsText)
     {
-        stopVideoPreview(document);
+        haltVideoPreview(document);
         if (document.detailPreviewImageControls !is null)
             document.detailPreviewImageControls.setVisible(false);
         if (document.detailPreviewScroll !is null)
@@ -2730,7 +2747,7 @@ void refreshMediaPreview(DocumentTab document)
         return;
     }
 
-    stopVideoPreview(document);
+    haltVideoPreview(document);
     if (document.detailPreviewVideoFrame !is null)
     {
         document.detailPreviewVideoFrame.setVisible(false);
@@ -2794,7 +2811,7 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row,
     if (document.selectedArchiveMemberLease !is null
         && document.selectedArchiveMemberLease !is memberLease)
     {
-        stopVideoPreview(document);
+        haltVideoPreview(document);
         document.selectedArchiveMemberLease.release();
     }
     document.selectedArchiveMemberLease = memberLease;
@@ -2896,7 +2913,7 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row,
     }
 
     document.previewPathCheckPending = true;
-    stopVideoPreview(document);
+    haltVideoPreview(document);
     document.detailPreviewImage.clear();
     if (document.detailPreviewImageControls !is null)
         document.detailPreviewImageControls.setVisible(false);
@@ -2986,7 +3003,7 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row,
             document.previewPathCheckPending = false;
             if (error.length > 0 || !fileExists)
             {
-                stopVideoPreview(document);
+                haltVideoPreview(document);
                 document.selectedPreviewIsVideo = false;
                 document.selectedPreviewIsAudio = false;
                 document.selectedPreviewIsImage = false;

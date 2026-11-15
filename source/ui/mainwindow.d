@@ -128,7 +128,8 @@ import ui.detailswidgets : setDetailEntry,
     torrentMetadataSummary, setFileTypeDetails, setKnownFilesTable,
     setMediaPreview, setMediaInfoStreamDetails, setFallbackDetails,
     refreshMediaPreview, syncVideoPreviewWindow, setVideoPreviewVolume, playVideoPreview,
-    pauseVideoPreview, jumpVideoPreview, stopVideoPreview, syncVideoPreviewPosition,
+    pauseVideoPreview, jumpVideoPreview, stopVideoPreview, haltVideoPreview,
+    syncVideoPreviewPosition,
     seekVideoPreview, syncVideoPlaybackButton, syncVideoTrackSelectors;
 import ui.documentactions : DocumentActionCallbacks, closeCurrentDocument, reloadCurrentDocument;
 import ui.documentfilterstate : documentFilterHasCriteria,
@@ -2269,7 +2270,7 @@ private void previewArchiveTreeMember(DocumentTab document, string memberPath,
     /* Only the currently displayed object may produce output. Stop the
      * previous preview the moment another member is requested, so a slow or
      * failing extraction can never leave the old video playing. */
-    stopVideoPreview(document);
+    haltVideoPreview(document);
     const auto sourcePath = document.filePath;
     const auto containerPath = document.archivePreviewContainerPath;
     const auto catalogRows = document.loadedRows;
@@ -7702,7 +7703,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     if (document is activeDocument)
                         continue;
                     atomicStore(document.archivePrefetchCancelled, true);
-                    stopVideoPreview(document);
+                    haltVideoPreview(document);
                 }
             }
         )
