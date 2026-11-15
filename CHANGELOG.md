@@ -15,6 +15,11 @@ All notable changes to this project are documented in this file.
   newly visible tab, so two previews could run at the same time. The prefetch
   itself never starts playback; it only warms the member cache.
 
+- Selecting another archive member now stops the previous preview's playback
+  immediately, while the new member is still being extracted. Previously the
+  old video kept playing during the extraction and kept playing forever when
+  the new member could not be extracted.
+
 ## Release 0.13.1 - 2026-11-10
 
 - Pairs with DosierSkanilo 26.16.0. SQLite repositories on sshfs, FUSE,
