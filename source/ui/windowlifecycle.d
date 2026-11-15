@@ -33,6 +33,9 @@ struct WindowLifecycleCallbacks
     void delegate(UiMainSource) setWindowSizePersistTimer;
     /// Stops all UI event sources before the application quits.
     void delegate() stopAllUiSources;
+    /// Stops video playback and background prefetching in every hidden document
+    /// tab after a notebook page switch, so only the visible tab can play.
+    void delegate() stopBackgroundPlayback;
 }
 
 /** Bind notebook and window lifecycle handlers.
@@ -51,6 +54,10 @@ void bindWindowLifecycleSignals(
 )
 {
     notebook.addOnSwitchPage((Widget pageWidget, uint pageNum, Notebook tabNotebook) {
+        /* The outgoing tab must not keep playing behind the newly visible one;
+         * stopping playback there is what prevents two simultaneous videos. */
+        if (callbacks.stopBackgroundPlayback !is null)
+            callbacks.stopBackgroundPlayback();
         callbacks.persistCurrentState(callbacks.clearSavedWindowGeometryOnExit());
     });
 

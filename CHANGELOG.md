@@ -10,6 +10,11 @@ All notable changes to this project are documented in this file.
   background thread using the same cache leases, with cooperative cancellation
   on selection change, tab close, and application quit.
 
+- Switching document tabs now stops video playback and background sibling
+  prefetching in the hidden tabs. Previously a video kept playing behind the
+  newly visible tab, so two previews could run at the same time. The prefetch
+  itself never starts playback; it only warms the member cache.
+
 ## Release 0.13.1 - 2026-11-10
 
 - Pairs with DosierSkanilo 26.16.0. SQLite repositories on sshfs, FUSE,
