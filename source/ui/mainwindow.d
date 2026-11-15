@@ -2266,6 +2266,10 @@ private void previewArchiveTreeMember(DocumentTab document, string memberPath,
     const auto requestId = ++document.archiveMemberPreviewRequestId;
     ++document.previewPathRequestId;
     document.previewPathCheckPending = false;
+    /* Only the currently displayed object may produce output. Stop the
+     * previous preview the moment another member is requested, so a slow or
+     * failing extraction can never leave the old video playing. */
+    stopVideoPreview(document);
     const auto sourcePath = document.filePath;
     const auto containerPath = document.archivePreviewContainerPath;
     const auto catalogRows = document.loadedRows;
