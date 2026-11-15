@@ -47,6 +47,8 @@ struct PreferencesDialogUi
     CheckButton optDetailsBelow;
     /// Checkbox restoring previously open files on startup.
     CheckButton optRestoreOpenFiles;
+    /// Checkbox enabling same-directory archive sibling prefetch.
+    CheckButton optArchiveSiblingPrefetch;
     /// Spin button for the recently used file count limit.
     SpinButton spinRecentFileCount;
     /// Button that clears the recently used file list.
@@ -79,6 +81,8 @@ PreferencesDialogUi loadPreferencesDialogUi()
     ui.optCaseSensitive = builderObject!CheckButton(prefsBuilder, "prefs", "optCaseSensitive");
     ui.optDetailsBelow = builderObject!CheckButton(prefsBuilder, "prefs", "optDetailsBelow");
     ui.optRestoreOpenFiles = builderObject!CheckButton(prefsBuilder, "prefs", "optRestoreOpenFiles");
+    ui.optArchiveSiblingPrefetch = builderObject!CheckButton(prefsBuilder,
+        "prefs", "optArchiveSiblingPrefetch");
     auto recentFilesSpinSlot = builderObject!Box(prefsBuilder, "prefs", "recentFilesSpinSlot");
     ui.spinRecentFileCount = new SpinButton(0, 100, 1);
     ui.spinRecentFileCount.setNumeric(true);
@@ -107,6 +111,8 @@ PreferencesDialogUi loadPreferencesDialogUi()
  *     prefCaseSensitiveFilter = In/out flag for case-sensitive filtering.
  *     prefDetailsBelow = In/out flag that controls the details pane placement.
  *     prefRestoreOpenFiles = In/out flag for restoring previously open files.
+ *     archiveSiblingPrefetch = In/out flag that enables same-directory archive
+ *         sibling prefetch.
  *     recentFileCountLimit = In/out maximum count for the recently used file list.
  *     externalOpenProgram = In/out external program used for opening files.
  *     archiveCacheDirectory = In/out archive member cache root; empty uses the
@@ -124,6 +130,7 @@ void showPreferencesDialog(
     ref bool prefCaseSensitiveFilter,
     ref bool prefDetailsBelow,
     ref bool prefRestoreOpenFiles,
+    ref bool archiveSiblingPrefetch,
     ref int recentFileCountLimit,
     ref string externalOpenProgram,
     ref string archiveCacheDirectory,
@@ -147,6 +154,7 @@ void showPreferencesDialog(
     auto optCaseSensitive = prefsUi.optCaseSensitive;
     auto optDetailsBelow = prefsUi.optDetailsBelow;
     auto optRestoreOpenFiles = prefsUi.optRestoreOpenFiles;
+    auto optArchiveSiblingPrefetch = prefsUi.optArchiveSiblingPrefetch;
     auto spinRecentFileCount = prefsUi.spinRecentFileCount;
     auto btnClearRecentFiles = prefsUi.btnClearRecentFiles;
     auto entryExternalOpenProgram = prefsUi.entryExternalOpenProgram;
@@ -159,6 +167,7 @@ void showPreferencesDialog(
     optCaseSensitive.setActive(prefCaseSensitiveFilter);
     optDetailsBelow.setActive(prefDetailsBelow);
     optRestoreOpenFiles.setActive(prefRestoreOpenFiles);
+    optArchiveSiblingPrefetch.setActive(archiveSiblingPrefetch);
     spinRecentFileCount.setValue(recentFileCountLimit);
     entryExternalOpenProgram.setText(externalOpenProgram);
     entryArchiveCacheDirectory.setText(archiveCacheDirectory);
@@ -178,6 +187,7 @@ void showPreferencesDialog(
         prefAutoApplyFilter = optAutoApply.getActive();
         prefCaseSensitiveFilter = optCaseSensitive.getActive();
         prefRestoreOpenFiles = optRestoreOpenFiles.getActive();
+        archiveSiblingPrefetch = optArchiveSiblingPrefetch.getActive();
         recentFileCountLimit = spinRecentFileCount.getValueAsInt();
         auto oldDetailsBelow = prefDetailsBelow;
         prefDetailsBelow = optDetailsBelow.getActive();
