@@ -20,6 +20,11 @@ All notable changes to this project are documented in this file.
   old video kept playing during the extraction and kept playing forever when
   the new member could not be extracted.
 
+- Video previews now keep exactly one audio stream. Repeated preview refreshes
+  for the already displayed file reuse the loaded GStreamer pipeline instead of
+  restarting it; every restart opened another audio sink stream whose stale
+  remains kept earlier videos audible while switching between video files.
+
 ## Release 0.13.1 - 2026-11-10
 
 - Pairs with DosierSkanilo 26.16.0. SQLite repositories on sshfs, FUSE,

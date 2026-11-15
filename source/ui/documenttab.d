@@ -473,6 +473,8 @@ class DocumentTab
     PreviewScaleMode previewScaleMode = PreviewScaleMode.contain;
     /// Whether audio/video previews start automatically.
     bool previewVideoAutostart;
+    /// File URI currently loaded into the preview player; empty when unloaded.
+    string previewVideoCurrentUri;
     /// Preview volume in the range 0.0 to 1.0.
     double previewVideoVolume = 0.5;
     /// Guard that suppresses seek handlers while the position control is updated programmatically.

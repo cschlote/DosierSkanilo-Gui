@@ -1277,6 +1277,7 @@ void stopVideoPreview(DocumentTab document)
     document.previewVideoOverlay = null;
     document.detailPreviewVideoSinkWidget = null;
     document.previewVideoPlayerAudioOnly = false;
+    document.previewVideoCurrentUri = "";
     document.previewVideoPendingWindowSync = false;
     document.previewVideoPendingPlayback = false;
     document.previewVideoPendingPlaybackOverride = false;
@@ -2347,9 +2348,19 @@ private void updatePreviewVideo(DocumentTab document)
             return;
         }
 
+        /* Repeated refresh callbacks for the same selection must not restart
+         * the pipeline: every restart opens another audio sink stream, and
+         * stale streams keep the previous audio audible. */
+        if (document.previewVideoCurrentUri == uri)
+        {
+            setVideoPreviewVolume(document, document.previewVideoVolume);
+            return;
+        }
+
         document.previewVideoPlayer.setState(GstState.NULL);
         setVideoPreviewVolume(document, document.previewVideoVolume);
         document.previewVideoPlayer.setProperty("uri", new Value(uri));
+        document.previewVideoCurrentUri = uri;
         document.previewVideoPlayer.setState(GstState.PAUSED);
         syncVideoPlaybackButton(document, false);
         syncVideoTrackSelectors(document);
@@ -2394,9 +2405,26 @@ private void updatePreviewVideo(DocumentTab document)
     document.detailPreviewVideoArea.queueResize();
     document.previewVideoPendingPlayback = false;
     document.previewVideoPendingPlaybackOverride = false;
+    /* Skip the restart when this media is already loaded: refresh callbacks
+     * for the current selection must not open additional audio sink streams
+     * that would keep earlier audio audible. */
+    if (document.previewVideoCurrentUri == uri)
+    {
+        if (document.previewVideoPendingWindowSync)
+            resumePendingVideoPreview(document);
+        else
+        {
+            syncVideoTrackSelectors(document);
+            cast(void) syncVideoPreviewWindow(document,
+                document.detailPreviewVideoFrame.getAllocatedWidth(),
+                document.detailPreviewVideoFrame.getAllocatedHeight());
+        }
+        return;
+    }
     document.previewVideoPlayer.setState(GstState.NULL);
     setVideoPreviewVolume(document, document.previewVideoVolume);
     document.previewVideoPlayer.setProperty("uri", new Value(uri));
+    document.previewVideoCurrentUri = uri;
     auto frameWidth = document.detailPreviewVideoFrame.getAllocatedWidth();
     auto frameHeight = document.detailPreviewVideoFrame.getAllocatedHeight();
     if (frameWidth <= 1 || frameHeight <= 1
@@ -2758,6 +2786,10 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row,
     setPreviewSummaryMonospace(document.detailPreviewSummary, false);
     auto requestId = ++document.previewPathRequestId;
     document.previewPathCheckPending = false;
+    /* A new selection re-applies its media even when the file is the same as
+     * the previously displayed one; repeated refresh callbacks for this same
+     * selection reuse the loaded pipeline instead. */
+    document.previewVideoCurrentUri = "";
     if (document.detailPreviewTextView !is null)
         document.detailPreviewTextView.getBuffer().setText("");
 
