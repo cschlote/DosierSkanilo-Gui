@@ -7685,6 +7685,21 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     }
                 }
                 stopAllUiSources();
+            },
+            () {
+                /* Only the visible tab may hold a playing video. Stop hidden
+                 * tabs' playback and ask their prefetch workers to finish at
+                 * the next member boundary; never join from the GTK thread.
+                 * Member leases stay pinned so switching back can replay the
+                 * preview instantly. */
+                auto activeDocument = currentDocument();
+                foreach (document; documents)
+                {
+                    if (document is activeDocument)
+                        continue;
+                    atomicStore(document.archivePrefetchCancelled, true);
+                    stopVideoPreview(document);
+                }
             }
         )
     );
