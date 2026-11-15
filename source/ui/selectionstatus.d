@@ -11,9 +11,8 @@ import std.conv : to;
 
 import cli.logging : logLineVerbose;
 import model.blobrow : BlobRow;
-import ui.detailswidgets : clearFallbackDetails, clearMediaInfoStreamDetails, setDetailEntry,
-    setFileTypeDetails, setKnownFilesTable, setMetadataDetails, setMetadataStatusLabel,
-    stopVideoPreview;
+import ui.detailswidgets : haltVideoPreview, clearFallbackDetails, clearMediaInfoStreamDetails, setDetailEntry,
+    setFileTypeDetails, setKnownFilesTable, setMetadataDetails, setMetadataStatusLabel;
 import ui.documenttab : DocumentTab;
 
 /** Render a compact status icon for boolean table cells.
@@ -257,7 +256,7 @@ void clearSelectionDetails(DocumentTab document)
     {
         document.detailPreviewImage.clear();
     }
-    stopVideoPreview(document);
+    haltVideoPreview(document);
     if (document.selectedArchiveMemberLease !is null)
     {
         document.selectedArchiveMemberLease.release();
