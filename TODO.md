@@ -48,8 +48,13 @@ Target: `0.13.1` (paired with backend `26.16.0`).
 - [ ] Confirm the final WP-09.5 CLI/GUI result, progress, cancellation, error,
       refresh, and explicit storage-mode parity evidence stays complete when
       either HMI changes; keep the backend parity table in sync.
-- [ ] Investigate preview failures for filenames with heavy UTF-8 use and for
-      RAR archives; capture the failing external-tool command and stderr.
+- [x] Preview failures for filenames with heavy UTF-8 use and for RAR
+      archives are fixed in the backend (2026-11-15, released with the next
+      backend patch): `unrar` listing runs under `LC_ALL=C` replaced every
+      non-ASCII byte of member names with `?` (now a UTF-8-capable C locale),
+      and the deep archive scan skipped every RAR archive because the
+      encrypted-header check used `find` instead of `canFind`. No GUI code
+      change was needed.
 - [ ] Re-run the shared display self-tests after any tree/preview change:
       archive expansion, member preview, JSON save/reload, and repository
       operation refresh.
