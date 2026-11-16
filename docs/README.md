@@ -15,6 +15,8 @@ This directory contains project documentation for the GTK frontend.
 - `../TODO.md`: planned next steps and completed work-package evidence
 - `UI_REFACTOR.md`: current UI issues and the Glade-based refactor direction
 - `DATAFILE_EXTRACTION.md`: extracted data-format notes from scanner project
+- `reviews/REVIEW-2026-10-04.md`: archived review notes from 2026-10-04 with a
+  status section that maps every finding to the current code
 - `TEST_FIXTURES.md`: test fixture descriptions and generation reference
 - [Backend storage benchmarks](https://github.com/cschlote/DosierSkanilo/blob/main/docs/BENCHMARKS.md):
   JSON/SQLite baseline measurements
