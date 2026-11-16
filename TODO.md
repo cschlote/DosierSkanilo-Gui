@@ -85,9 +85,11 @@ Target: `0.13.1` (paired with backend `26.16.0`).
 
 ### Video preview realization and window growth
 
-- [ ] Reproduce first-selection video playback where audio starts but the video
-      frame stays blank; capture widget realization, sink attachment, and
-      allocation order in verbose logs.
+- [x] First-selection video playback starts with visible video and audio;
+      verified on 2026-11-16 against real AVI files. The fix came from the
+      preview stability work: one reused GStreamer pipeline per tab, a bounded
+      NULL wait before starting the next stream, and attaching the video sink
+      window handle only in READY/PAUSED state.
 - [ ] Reproduce horizontal window growth when switching between video rows and
       determine whether the sink, aspect frame, or preferred video size requests
       the extra width.
@@ -95,6 +97,10 @@ Target: `0.13.1` (paired with backend `26.16.0`).
       preview controls or changing the parent window's requested width.
 - [ ] Verify first and subsequent video selections on the supported GTK display
       backends, and retain audio/image preview behavior.
+
+Known observation (2026-11-16): one GUI freeze occurred with individual files,
+but it was not reproducible and did not recur across many other files. Left
+unpursued until a repeatable trigger exists.
 
 **Acceptance for both stability packages:** reproduction steps are documented,
 the fix is verified through the GTK self-test or a repeatable manual test, and
