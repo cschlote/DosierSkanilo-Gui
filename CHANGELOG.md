@@ -2,7 +2,9 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## Release 0.14.0 - 2026-11-16
+
+Pairs with DosierSkanilo 26.17.1.
 
 - New optional preference "Prefetch neighbouring archive members after a
   preview" (disabled by default). When enabled, previewing an archive member

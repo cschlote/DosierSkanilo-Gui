@@ -1,3 +1,11 @@
+dosierskanilo-gui (0.14.0-1) unstable; urgency=medium
+
+  * Release GUI 0.14.0 as the pair for DosierSkanilo 26.17.1, with the
+    optional sibling archive prefetch and video preview stability fixes
+    (one reused GStreamer pipeline per tab, bounded stop, safe sink attach).
+
+ -- Carsten Schlote <schlote@vahanus.net>  Mon, 16 Nov 2026 00:00:00 +0000
+
 dosierskanilo-gui (0.13.1-1) unstable; urgency=medium
 
   * Release GUI 0.13.1 as the pair for DosierSkanilo 26.16.0, with unsafe
