@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+- The Debian package build passes explicit compiler flags instead of relying on
+  the release build type. Debian's `dpkg-buildflags` exports `DFLAGS=-frelease`
+  (a GDC flag), which made `dub --build=release --compiler=ldc2` fail.
+
 ## Release 0.14.0 - 2026-11-16
 
 Pairs with DosierSkanilo 26.17.1.
