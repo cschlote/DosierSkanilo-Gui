@@ -10,7 +10,7 @@ Homepage: https://gitlab.vahanus.net/dlang/dosierskanilo-gui
 Package: dosierskanilo-gui
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, libgtk-3-0, libgstreamer1.0-0,
- gstreamer1.0-plugins-base
+ gstreamer1.0-plugins-base, libgstreamer-plugins-bad1.0-0
 Recommends: libmediainfo0v5, gstreamer1.0-plugins-good, file, unzip, tar,
  unrar, p7zip-full | 7zip
 Suggests: gstreamer1.0-libav, gstreamer1.0-plugins-bad,

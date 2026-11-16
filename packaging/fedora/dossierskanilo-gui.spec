@@ -15,6 +15,7 @@ BuildRequires:  sqlite-devel
 Requires:       gtk3
 Requires:       gstreamer1
 Requires:       gstreamer1-plugins-base
+Requires:       gstreamer1-plugins-bad-free-libs
 Requires:       sqlite-libs
 Recommends:     mediainfo
 Recommends:     gstreamer1-plugins-good
