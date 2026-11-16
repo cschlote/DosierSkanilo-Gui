@@ -6,9 +6,9 @@ in the backend's
 completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
 [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md).
 
-## Current status (2026-11-15)
+## Current status (2026-11-16)
 
-- Version `0.13.1`; JSON and repository tabs both use `CatalogBackend`.
+- Version `0.14.0`; JSON and repository tabs both use `CatalogBackend`.
 - JSON tabs have explicit document sessions with modified markers,
   Save/Revert, and save/discard/cancel prompts; SQLite tabs remain
   transactional.
@@ -19,13 +19,13 @@ completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
   default).
 - The GUI Xvfb display job and the shared CLI/GTK operation matrix are green on
   `main`; `testing` mirrors the same commit without deployments. GUI
-  verification: 78 tests, coverage 37.01 %, build clean.
+  verification: 78 tests, coverage 36.90 %, build clean.
 - Documentation and Ddoc headers are complete: every documentable public,
   package, and private declaration has Ddoc (verified 2026-11-08).
 
 ## P0 — Prepare the next GUI release
 
-Target: `0.13.1` (paired with backend `26.16.0`).
+Target: `0.14.0` (paired with backend `26.17.1`).
 
 - [x] Release `0.13.0` is complete: changelog, paired backend release,
       Arch/Fedora/Debian/Flatpak metadata, and the Flatpak source hash are
@@ -38,6 +38,17 @@ Target: `0.13.1` (paired with backend `26.16.0`).
 - [x] Re-run the Xvfb display suite and the 95,001-row JSON/SQLite smoke loads
       as release evidence.
 - [ ] Verify installation from the packaged artifacts after the next release.
+
+## Release 0.14.0 — sibling prefetch and preview stability
+
+- [x] GUI full gate: 78 tests, coverage 36.90 %, build clean; Xvfb display
+      suite passed with the JSON and SQLite 95,001-record smoke loads.
+- [x] Filter benchmark (`1000 10000 100000`) reviewed: 35.2 ms filter and
+      74.0 ms tree projection at 100,000 rows, 22.9 MiB peak.
+- [x] `docs/skeleton.html`, `helpdialogs.d`, and the Arch/Fedora/Debian/Flatpak
+      metadata use `0.14.0` and the paired backend `26.17.1`.
+- [ ] Verify installation from the packaged artifacts after the Flatpak hash
+      follow-up commit.
 
 ## P1 — Finish verification and performance work
 
