@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Package recipes depend on the GStreamer bad-plugin libraries, which provide
+  `libgstmpegts-1.0.so.0`; the binding loader needs that library at startup.
+  The previous recipes only suggested the plugin package, so the installed GUI
+  could fail to start on a minimal system.
+
 - The Debian package build passes explicit compiler flags instead of relying on
   the release build type. Debian's `dpkg-buildflags` exports `DFLAGS=-frelease`
   (a GDC flag), which made `dub --build=release --compiler=ldc2` fail.
