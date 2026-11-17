@@ -1,3 +1,12 @@
+dosierskanilo-gui (0.14.1-1) unstable; urgency=medium
+
+  * Release GUI 0.14.1 as a packaging patch for DosierSkanilo 26.17.1. The
+    Debian build uses explicit LDC flags instead of the release build type,
+    and the package set depends on the GStreamer bad-plugin libraries that the
+    binding loader requires at startup.
+
+ -- Carsten Schlote <schlote@vahanus.net>  Tue, 17 Nov 2026 00:00:00 +0000
+
 dosierskanilo-gui (0.14.0-1) unstable; urgency=medium
 
   * Release GUI 0.14.0 as the pair for DosierSkanilo 26.17.1, with the
