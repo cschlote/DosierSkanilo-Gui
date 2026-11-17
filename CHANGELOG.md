@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- The Flatpak manifest builds the GUI and the sibling backend from their source
+  archives instead of installing a prebuilt binary, so the package can be
+  built from tagged sources.
+
 - The Arch recipes list a checksum entry for every source, so they build again.
   The Fedora recipe ships the sibling backend source, uses the current
   `libmediainfo-devel` package name, and disables debug subpackage generation.
