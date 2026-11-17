@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+- The Arch recipes list a checksum entry for every source, so they build again.
+  The Fedora recipe ships the sibling backend source, uses the current
+  `libmediainfo-devel` package name, and disables debug subpackage generation.
+
 ## Release 0.14.1 - 2026-11-17
 
 Pairs with DosierSkanilo 26.17.1. Packaging-only patch release.

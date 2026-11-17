@@ -11,7 +11,7 @@ optdepends=('libmediainfo: media metadata' 'gst-plugins-good: gtksink and common
 makedepends=('ldc' 'dub' 'git')
 source=("$pkgname-$pkgver.tar.gz::https://gitlab.vahanus.net/dlang/dosierskanilo-gui/-/archive/v$pkgver/dosierskanilo-gui-v$pkgver.tar.gz"
         "dosierskanilo-$backendver.tar.gz::https://github.com/cschlote/DosierSkanilo/archive/refs/tags/v$backendver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('SKIP' 'SKIP')
 
 prepare() {
   ln -s "$srcdir/DosierSkanilo-$backendver" "$srcdir/DosierSkanilo"

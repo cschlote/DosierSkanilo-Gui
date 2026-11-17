@@ -34,10 +34,14 @@ Target: `0.14.1` (packaging patch, paired with backend `26.17.1`).
       changelog and packaging updated, Flatpak source hash refreshed.
 - [ ] Run the
       [`backend release checklist`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/RELEASE-CHECKLIST.md)
-      end to end for the next paired release.
+      end to end for the next paired release. Automated gates, tags, Flatpak
+      hash pins, and Debian/Arch/Fedora package verification are complete; the
+      GUI Flatpak draft and the manual UI acceptance remain.
 - [x] Re-run the Xvfb display suite and the 95,001-row JSON/SQLite smoke loads
       as release evidence.
-- [ ] Verify installation from the packaged artifacts after the next release.
+- [x] Verify installation from the packaged artifacts after the next release:
+      Debian, Arch, and Fedora packages build, install, start, and remove
+      cleanly. The GUI Flatpak manifest remains a documented draft.
 
 ## Release 0.14.0 — sibling prefetch and preview stability
 
@@ -47,8 +51,18 @@ Target: `0.14.1` (packaging patch, paired with backend `26.17.1`).
       74.0 ms tree projection at 100,000 rows, 22.9 MiB peak.
 - [x] `docs/skeleton.html`, `helpdialogs.d`, and the Arch/Fedora/Debian/Flatpak
       metadata use `0.14.0` and the paired backend `26.17.1`.
-- [ ] Verify installation from the packaged artifacts after the Flatpak hash
-      follow-up commit.
+- [x] Verify installation from the packaged artifacts after the Flatpak hash
+      follow-up commit; the `0.14.1` patch release carries the corrected
+      recipes.
+
+## Release 0.14.1 — packaging patch
+
+- [x] GUI full gate: 78 tests, coverage 36.90 %, build clean; Xvfb display
+      suite passed.
+- [x] Debian `0.14.1-1`, Arch, and Fedora packages build, install, start, and
+      remove cleanly in their native containers.
+- [x] Release commit, tag `v0.14.1`, Flatpak hash pin, and GitHub release are
+      published.
 
 ## P1 — Finish verification and performance work
 
