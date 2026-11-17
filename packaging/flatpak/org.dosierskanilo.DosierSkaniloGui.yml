@@ -2,21 +2,38 @@ app-id: org.dosierskanilo.DosierSkaniloGui
 runtime: org.gnome.Platform
 runtime-version: '46'
 sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.ldc
+  - org.freedesktop.Sdk.Extension.llvm16
 command: dosierskanilo-gui
 finish-args:
   - --filesystem=home
   - --socket=fallback-x11
   - --socket=wayland
   - --share=ipc
-# GTK3/GStreamer come from the GNOME runtime. Optional MediaInfo, codec packs,
-# file, and archive tools are not bundled by this draft.
+# GTK3 and GStreamer come from the GNOME runtime. The GUI compiles the sibling
+# backend modules through a path dependency, so both source archives are
+# unpacked next to each other. Optional codecs, file, and archive tools are not
+# bundled; the runtime provides the mandatory GStreamer libraries.
 modules:
   - name: dosierskanilo-gui
     buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/ldc/bin
+      prepend-path: /usr/lib/sdk/llvm16/bin
+      prepend-ld-library-path: /usr/lib/sdk/llvm16/lib
+      build-args:
+        - --share=network
     build-commands:
-      - install -Dm755 build/bin/dosierskanilo-gui /app/bin/dosierskanilo-gui
-      - install -Dm644 LICENSE.md /app/share/licenses/org.dosierskanilo.DosierSkaniloGui/LICENSE.md
+      - cd DosierSkanilo-Gui && DC=ldc2 DFLAGS="-O3 -release -boundscheck=off" dub build --compiler=ldc2 -c=application --build=plain
+      - install -Dm755 DosierSkanilo-Gui/build/bin/dosierskanilo-gui /app/bin/dosierskanilo-gui
+      - install -Dm644 DosierSkanilo-Gui/LICENSE.md /app/share/licenses/org.dosierskanilo.DosierSkaniloGui/LICENSE.md
     sources:
       - type: archive
+        dest: DosierSkanilo-Gui
         url: https://gitlab.vahanus.net/dlang/dosierskanilo-gui/-/archive/v0.14.1/dosierskanilo-gui-v0.14.1.tar.gz
         sha256: 269c378f2d0d73f12acd3c9fa446817de9197126aae8621b87eac3b60ec96880
+      - type: archive
+        dest: DosierSkanilo
+        url: https://github.com/cschlote/DosierSkanilo/archive/refs/tags/v26.17.1.tar.gz
+        sha256: 62f192a61d14e3f0c31bb0bfe03b53b00261bb1aaf1ac7b67aed39201d443d95

@@ -36,12 +36,13 @@ Target: `0.14.1` (packaging patch, paired with backend `26.17.1`).
       [`backend release checklist`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/RELEASE-CHECKLIST.md)
       end to end for the next paired release. Automated gates, tags, Flatpak
       hash pins, and Debian/Arch/Fedora package verification are complete; the
-      GUI Flatpak draft and the manual UI acceptance remain.
+      manual UI acceptance remains.
 - [x] Re-run the Xvfb display suite and the 95,001-row JSON/SQLite smoke loads
       as release evidence.
 - [x] Verify installation from the packaged artifacts after the next release:
       Debian, Arch, and Fedora packages build, install, start, and remove
-      cleanly. The GUI Flatpak manifest remains a documented draft.
+      cleanly. The GUI Flatpak manifest builds the GUI and backend from source
+      and the built app runs.
 
 ## Release 0.14.0 — sibling prefetch and preview stability
 

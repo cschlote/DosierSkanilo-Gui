@@ -81,14 +81,24 @@ degrades gracefully.
 - **Fedora:** `Requires: gtk3, gstreamer1, gstreamer1-plugins-base,
   sqlite-libs`; `Recommends` MediaInfo, `gstreamer1-plugins-good`, and the
   archive tools; `Suggests` extra codecs and Python.
-- **Flatpak:** the GNOME runtime supplies GTK and GStreamer. The current draft
-  only installs a prebuilt binary and license, so it does not yet bundle the
-  optional codecs or archive tools and has no source build.
+- **Flatpak:** the GNOME runtime supplies GTK and GStreamer. The manifest
+  builds the GUI and the sibling backend from their source archives with the
+  LDC SDK extension and fetches the DUB dependencies during the networked build
+  step. It does not bundle the optional codecs or archive tools.
 
-The current Flatpak draft installs a prebuilt `build/bin/dosierskanilo-gui` and
-the license file; it does not yet build the GUI or the sibling backend from
-source. A complete manifest must add both sources, the backend dependency, and
-an offline/vendorable DUB dependency strategy before Flathub submission.
+The Flatpak manifest unpacks the GUI archive and the binary-compatible backend
+archive next to each other, because the GUI compiles the backend modules
+through a path dependency. Build it with:
+
+```bash
+flatpak-builder --user --install-deps-from=flathub build-dir \
+    packaging/flatpak/org.dosierskanilo.DosierSkaniloGui.yml
+flatpak-builder --run build-dir \
+    packaging/flatpak/org.dosierskanilo.DosierSkaniloGui.yml dosierskanilo-gui
+```
+
+The build needs network access for the DUB dependencies, so the module keeps
+`--share=network` in its build arguments.
 
 ## Release tags and Flatpak hashes
 
