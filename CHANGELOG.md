@@ -2,7 +2,9 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## Release 0.14.1 - 2026-11-17
+
+Pairs with DosierSkanilo 26.17.1. Packaging-only patch release.
 
 - Package recipes depend on the GStreamer bad-plugin libraries, which provide
   `libgstmpegts-1.0.so.0`; the binding loader needs that library at startup.
