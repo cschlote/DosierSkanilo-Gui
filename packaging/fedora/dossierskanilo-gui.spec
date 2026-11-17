@@ -1,3 +1,5 @@
+%global debug_package %{nil}
+
 Name:           dosierskanilo-gui
 Version:        0.14.1
 Release:        1%{?dist}
@@ -5,6 +7,9 @@ Summary:        GTK desktop frontend for DosierSkanilo
 License:        GPL-3.0-only
 URL:            https://gitlab.vahanus.net/dlang/dosierskanilo-gui
 Source0:        https://gitlab.vahanus.net/dlang/dosierskanilo-gui/-/archive/v%{version}/dosierskanilo-gui-v%{version}.tar.gz
+# The GUI compiles the sibling backend modules through a path dependency.
+%global backendver 26.17.1
+Source1:        https://github.com/cschlote/DosierSkanilo/archive/refs/tags/v%{backendver}.tar.gz
 BuildRequires:  ldc
 BuildRequires:  dub
 BuildRequires:  gcc
@@ -12,6 +17,7 @@ BuildRequires:  gtk3-devel
 BuildRequires:  gstreamer1-devel
 BuildRequires:  gstreamer1-plugins-base-devel
 BuildRequires:  sqlite-devel
+BuildRequires:  libmediainfo-devel
 Requires:       gtk3
 Requires:       gstreamer1
 Requires:       gstreamer1-plugins-base
@@ -34,6 +40,8 @@ GTK desktop frontend for browsing and filtering DosierSkanilo JSON indexes.
 
 %prep
 %autosetup -n dosierskanilo-gui-v%{version}
+tar -xzf %{SOURCE1} -C %{_builddir}
+ln -s DosierSkanilo-%{backendver} %{_builddir}/DosierSkanilo
 
 %build
 DC=ldc2 dub build --build=release --compiler=ldc2

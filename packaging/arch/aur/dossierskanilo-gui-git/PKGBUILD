@@ -12,7 +12,7 @@ provides=('dosierskanilo-gui')
 conflicts=('dosierskanilo-gui')
 source=('git+https://gitlab.vahanus.net/dlang/dosierskanilo-gui.git'
         'git+https://github.com/cschlote/DosierSkanilo.git')
-sha256sums=('SKIP')
+sha256sums=('SKIP' 'SKIP')
 
 pkgver() {
   cd "$srcdir/dosierskanilo-gui"
