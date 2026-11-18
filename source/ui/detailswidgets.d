@@ -46,6 +46,7 @@ import pango.c.types : PangoEllipsizeMode;
 import dosierskanilo.repository.repository : Repository;
 import dosierskanilo.membercontentcache : MemberContentLease;
 import dosierarkivo.archive : parseArchiveVirtualPath;
+import cli.logging : logLineVerbose;
 import va_toolbox.hexdumps : toPrettyHexDump;
 import std.algorithm.searching : canFind;
 import std.conv : to;
@@ -55,7 +56,7 @@ import std.string : join, replace, split, startsWith, strip, toLower;
 import std.exception : enforce;
 import std.uri : encode;
 import std.utf : validate;
-import ui.mainsources : scheduleUiIdle;
+import ui.mainsources : scheduleUiIdle, scheduleUiTimeout;
 
 /// Maximum bytes shown in an unknown-file hex preview.
 enum size_t PREVIEW_HEX_DUMP_BYTES = 512;
@@ -1370,6 +1371,7 @@ private bool attachGtkVideoSinkWidget(DocumentTab document, Element sink)
         document.detailPreviewVideoFrame.add(widget);
     }
 
+    widget.setSizeRequest(1, 1);
     widget.setHexpand(true);
     widget.setVexpand(true);
     widget.showAll();
@@ -2489,6 +2491,58 @@ private void updatePreviewVideo(DocumentTab document)
 
     syncVideoTrackSelectors(document);
     cast(void) syncVideoPreviewPosition(document);
+    watchVideoPlaybackStart(document);
+}
+
+/** Whether the current pipeline reached a usable playback state.
+ *
+ * Returns: `true` when no player exists or the player is PLAYING or PAUSED.
+ */
+private bool videoPreviewReachedPlayback(DocumentTab document)
+{
+    if (document.previewVideoPlayer is null)
+        return true;
+    GstState state;
+    GstState pending;
+    const auto result = document.previewVideoPlayer.getState(state, pending, 0);
+    if (result == GstStateChangeReturn.FAILURE)
+        return false;
+    return state == GstState.PLAYING || state == GstState.PAUSED;
+}
+
+/** Recover from a video pipeline that never reaches playback.
+ *
+ * A damaged or unsupported file can leave the pipeline without a usable state.
+ * The bounded check stops it and reports the failure instead of keeping a
+ * wedged player and its audio sink alive; the remaining preview controls stay
+ * usable.
+ *
+ * Params:
+ *     document = Active document tab whose preview just started.
+ */
+private void watchVideoPlaybackStart(DocumentTab document)
+{
+    if (document.previewVideoPlayer is null || document.previewVideoPendingWindowSync)
+        return;
+    const auto requestId = document.previewPathRequestId;
+    scheduleUiTimeout(4000, {
+        if (requestId != document.previewPathRequestId
+            || document.previewVideoPlayer is null
+            || document.previewVideoPendingWindowSync
+            || !document.selectedPreviewIsVideo)
+            return false;
+        if (videoPreviewReachedPlayback(document))
+            return false;
+        GstState stuckState;
+        GstState stuckPending;
+        document.previewVideoPlayer.getState(stuckState, stuckPending, 0);
+        logLineVerbose("[preview] video pipeline did not start; stopping (state=",
+            stuckState, " pending=", stuckPending, ")");
+        haltVideoPreview(document);
+        document.detailPreviewSummary.setText("Video preview could not start.");
+        syncVideoTrackSelectors(document);
+        return false;
+    });
 }
 
 /** Start a video that had to wait for the preview frame to be realized and sized.
@@ -2525,6 +2579,7 @@ void resumePendingVideoPreview(DocumentTab document)
     }
     syncVideoTrackSelectors(document);
     cast(void) syncVideoPreviewPosition(document);
+    watchVideoPlaybackStart(document);
 }
 
 /** Render the selected image into the preview, applying the scale mode.
@@ -2856,6 +2911,8 @@ void setMediaPreview(DocumentTab document, const(BlobRow) row,
         && !document.selectedPreviewIsAudio
         && previewPath.length > 0 && previewKind == PreviewContentKind.image;
     document.selectedPreviewPath = previewPath;
+    logLineVerbose("[preview] selection path=", previewPath,
+        " video=", document.selectedPreviewIsVideo);
 
     if (document.selectedPreviewIsVideo)
     {
