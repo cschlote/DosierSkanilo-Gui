@@ -2,7 +2,9 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## Release 0.14.2 - 2026-11-18
+
+Pairs with DosierSkanilo 26.17.2. Packaging-only patch release.
 
 - The Flatpak manifest builds the GUI and the sibling backend from their source
   archives instead of installing a prebuilt binary, so the package can be
