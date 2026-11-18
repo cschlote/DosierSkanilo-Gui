@@ -32,7 +32,7 @@ modules:
       - type: archive
         dest: DosierSkanilo-Gui
         url: https://gitlab.vahanus.net/dlang/dosierskanilo-gui/-/archive/v0.14.2/dosierskanilo-gui-v0.14.2.tar.gz
-        sha256: SKIP
+        sha256: c77ed6eb0a75d01bb3c4b2df5a0c4472102b1f80c1dcc29a464af84828592afe
       - type: archive
         dest: DosierSkanilo
         url: https://github.com/cschlote/DosierSkanilo/archive/refs/tags/v26.17.2.tar.gz
