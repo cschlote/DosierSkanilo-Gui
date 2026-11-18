@@ -124,13 +124,17 @@ Target: `0.14.2` (packaging patch, paired with backend `26.17.2`).
       preview stability work: one reused GStreamer pipeline per tab, a bounded
       NULL wait before starting the next stream, and attaching the video sink
       window handle only in READY/PAUSED state.
-- [ ] Reproduce horizontal window growth when switching between video rows and
-      determine whether the sink, aspect frame, or preferred video size requests
-      the extra width.
-- [ ] Ensure a failed or delayed video sink falls back without blocking other
-      preview controls or changing the parent window's requested width.
-- [ ] Verify first and subsequent video selections on the supported GTK display
-      backends, and retain audio/image preview behavior.
+- [x] Window growth traced to the embedded sink widget: `gtksink` exposes the
+      video's natural size, which propagates to the window and widens it when
+      switching to a larger video. The sink widget now requests 1x1 and cannot
+      influence the window's minimum size. With `ximagesink` only a one-time
+      height growth from the preview pane minimum remains.
+- [x] A failed or stalled video sink stops after a bounded watchdog check and
+      reports "Video preview could not start." while the remaining preview
+      controls stay usable.
+- [x] First and subsequent video selections verified with `ximagesink`; audio
+      and image preview behavior is retained. The `gtksink`/Wayland preference
+      remains a separate manual check.
 
 Known observation (2026-11-16): one GUI freeze occurred with individual files,
 but it was not reproducible and did not recur across many other files. Left

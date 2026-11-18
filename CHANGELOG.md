@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+- Video preview hardening: the embedded sink widget no longer requests the
+  video's natural size, so switching between videos of different dimensions
+  cannot widen the window. A pipeline that never reaches playback after a
+  damaged file is stopped after a bounded check and reports "Video preview
+  could not start." without blocking the other preview controls.
+
 ## Release 0.14.2 - 2026-11-18
 
 Pairs with DosierSkanilo 26.17.2. Packaging-only patch release.
