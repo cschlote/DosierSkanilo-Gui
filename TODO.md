@@ -6,9 +6,9 @@ in the backend's
 completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
 [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md).
 
-## Current status (2026-11-17)
+## Current status (2026-11-18)
 
-- Version `0.14.1`; JSON and repository tabs both use `CatalogBackend`.
+- Version `0.14.2`; JSON and repository tabs both use `CatalogBackend`.
 - JSON tabs have explicit document sessions with modified markers,
   Save/Revert, and save/discard/cancel prompts; SQLite tabs remain
   transactional.
@@ -25,7 +25,7 @@ completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
 
 ## P0 — Prepare the next GUI release
 
-Target: `0.14.1` (packaging patch, paired with backend `26.17.1`).
+Target: `0.14.2` (packaging patch, paired with backend `26.17.2`).
 
 - [x] Release `0.13.0` is complete: changelog, paired backend release,
       Arch/Fedora/Debian/Flatpak metadata, and the Flatpak source hash are
@@ -63,6 +63,14 @@ Target: `0.14.1` (packaging patch, paired with backend `26.17.1`).
 - [x] Debian `0.14.1-1`, Arch, and Fedora packages build, install, start, and
       remove cleanly in their native containers.
 - [x] Release commit, tag `v0.14.1`, Flatpak hash pin, and GitHub release are
+      published.
+
+## Release 0.14.2 — packaging patch
+
+- [x] GUI full gate: 78 tests, coverage 36.90 %, build clean; Xvfb display
+      suite passed.
+- [x] Arch, Fedora, and Flatpak recipes fixed and verified from source.
+- [x] Release commit, tag `v0.14.2`, Flatpak hash pin, and GitHub release are
       published.
 
 ## P1 — Finish verification and performance work

@@ -31,9 +31,9 @@ modules:
     sources:
       - type: archive
         dest: DosierSkanilo-Gui
-        url: https://gitlab.vahanus.net/dlang/dosierskanilo-gui/-/archive/v0.14.1/dosierskanilo-gui-v0.14.1.tar.gz
-        sha256: 269c378f2d0d73f12acd3c9fa446817de9197126aae8621b87eac3b60ec96880
+        url: https://gitlab.vahanus.net/dlang/dosierskanilo-gui/-/archive/v0.14.2/dosierskanilo-gui-v0.14.2.tar.gz
+        sha256: SKIP
       - type: archive
         dest: DosierSkanilo
-        url: https://github.com/cschlote/DosierSkanilo/archive/refs/tags/v26.17.1.tar.gz
-        sha256: 62f192a61d14e3f0c31bb0bfe03b53b00261bb1aaf1ac7b67aed39201d443d95
+        url: https://github.com/cschlote/DosierSkanilo/archive/refs/tags/v26.17.2.tar.gz
+        sha256: 11758b9cb8125031e741d55a4794b2780c873f14ddc9193ab976e722ca6683a2

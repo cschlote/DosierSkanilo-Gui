@@ -1,3 +1,11 @@
+dosierskanilo-gui (0.14.2-1) unstable; urgency=medium
+
+  * Release GUI 0.14.2 as a packaging patch for DosierSkanilo 26.17.2. The
+    Arch and Fedora recipes are corrected, and the Flatpak manifest builds the
+    GUI and backend from their source archives.
+
+ -- Carsten Schlote <schlote@vahanus.net>  Wed, 18 Nov 2026 00:00:00 +0000
+
 dosierskanilo-gui (0.14.1-1) unstable; urgency=medium
 
   * Release GUI 0.14.1 as a packaging patch for DosierSkanilo 26.17.1. The

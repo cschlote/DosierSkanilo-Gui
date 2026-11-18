@@ -1,14 +1,14 @@
 %global debug_package %{nil}
 
 Name:           dosierskanilo-gui
-Version:        0.14.1
+Version:        0.14.2
 Release:        1%{?dist}
 Summary:        GTK desktop frontend for DosierSkanilo
 License:        GPL-3.0-only
 URL:            https://gitlab.vahanus.net/dlang/dosierskanilo-gui
 Source0:        https://gitlab.vahanus.net/dlang/dosierskanilo-gui/-/archive/v%{version}/dosierskanilo-gui-v%{version}.tar.gz
 # The GUI compiles the sibling backend modules through a path dependency.
-%global backendver 26.17.1
+%global backendver 26.17.2
 Source1:        https://github.com/cschlote/DosierSkanilo/archive/refs/tags/v%{backendver}.tar.gz
 BuildRequires:  ldc
 BuildRequires:  dub

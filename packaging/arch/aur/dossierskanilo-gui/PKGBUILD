@@ -1,6 +1,6 @@
 pkgname=dosierskanilo-gui
-pkgver=0.14.1
-backendver=26.17.1
+pkgver=0.14.2
+backendver=26.17.2
 pkgrel=1
 pkgdesc='GTK desktop frontend for DosierSkanilo JSON data'
 arch=('x86_64')
