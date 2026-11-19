@@ -4306,16 +4306,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.status.setText("Loading tree selection details ...");
                 logLineVerbose("[details] loading tree selection ", selectedId);
                 new Thread({
-                    if (requestId != document.detailRequestId)
-                        return;
                     BlobRow details;
                     string error;
                     auto detailStarted = MonoTime.currTime;
-                    try
-                        details = loadCachedFileDetails(document, catalogBackend,
-                            selectedId);
-                    catch (Exception ex)
-                        error = ex.msg;
+                    synchronized (document.detailLoadMutex)
+                    {
+                        if (requestId != document.detailRequestId)
+                            return;
+                        try
+                            details = loadCachedFileDetails(document, catalogBackend,
+                                selectedId);
+                        catch (Exception ex)
+                            error = ex.msg;
+                    }
                     logLineVerbose("[details] loaded tree selection ", selectedId,
                         " error=", error, " elapsedMs=",
                         cast(long) (MonoTime.currTime - detailStarted).total!"msecs");
@@ -5374,18 +5377,21 @@ int runMainWindow(string[] args, ref CliOptions cli)
             setKnownFilesTable(document, row);
             document.status.setText("Loading selected repository details ...");
             auto worker = new Thread({
-                /* A newer selection superseded this request before the thread
-                 * started; do not queue another catalog query behind it. */
-                if (requestId != document.detailRequestId)
-                    return;
                 BlobRow details;
                 string error;
                 auto detailStarted = MonoTime.currTime;
-                try
-                    details = loadCachedFileDetails(document, catalogBackend,
-                        sourceKey);
-                catch (Exception ex)
-                    error = ex.msg;
+                synchronized (document.detailLoadMutex)
+                {
+                    /* A newer selection superseded this request while it waited
+                     * for the previous query; do not run another one. */
+                    if (requestId != document.detailRequestId)
+                        return;
+                    try
+                        details = loadCachedFileDetails(document, catalogBackend,
+                            sourceKey);
+                    catch (Exception ex)
+                        error = ex.msg;
+                }
                 logLineVerbose("[details] loaded ", sourceKey, " error=", error,
                     " elapsedMs=",
                     cast(long) (MonoTime.currTime - detailStarted).total!"msecs");
