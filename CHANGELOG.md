@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- The preview starts immediately from the selected row or tree node. File
+  details load in the background and no longer delay or restart the preview.
+
 - Repository detail rows are cached per document tab (bounded to 64 entries),
   so revisiting a file reuses the loaded details instead of querying the
   catalog again.

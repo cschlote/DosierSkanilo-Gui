@@ -4279,6 +4279,27 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
             if (document.directorySourceRemote && selectedId.length > 0)
             {
+                BlobRow summary;
+                summary.sourceKey = selectedId;
+                summary.primaryFileName = selectedTreeFileName;
+                summary.fileSize = document.selectedTreeCursor.size;
+                summary.hasSummaryFlags = true;
+                summary.summaryHasFileType = hasFileType;
+                summary.summaryHasMedia = hasMedia;
+                summary.summaryHasVideo = hasVideo;
+                summary.summaryHasAudio = hasAudio;
+                summary.summaryHasImage = hasImage;
+                summary.summaryHasText = hasText;
+                summary.summaryHasArchive = hasArchive;
+                summary.summaryHasTorrent = hasTorrent;
+                document.tableView.getSelection().unselectAll();
+                document.directSelectedRow = summary;
+                document.hasDirectSelectedRow = true;
+                document.directSelectedIndex = "Tree";
+                setMediaPreview(document, summary);
+                document.selectedFileName = selectedTreeFileName;
+                document.selectedFilePath = selectedTreeRelativePath;
+
                 auto requestId = ++document.detailRequestId;
                 auto sourcePath = document.filePath;
                 auto catalogBackend = document.catalogBackend;
@@ -4319,6 +4340,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         document.directSelectedRow = row;
                         document.hasDirectSelectedRow = true;
                         document.directSelectedIndex = "Tree";
+                        document.skipNextPreviewRefresh = true;
                         updateSelectedRowDetails(document);
                         return false;
                     });
@@ -5206,6 +5228,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     /** Update one document tab's detail pane from the selected row. */
     updateSelectedRowDetails = (DocumentTab document) {
+        const bool skipPreviewRefresh = document.skipNextPreviewRefresh;
+        document.skipNextPreviewRefresh = false;
         TreeModelIF model;
         TreeIter iter;
         auto selection = document.tableView.getSelection();
@@ -5342,6 +5366,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
             auto sourcePath = document.filePath;
             auto sourceKey = row.sourceKey;
             auto catalogBackend = document.catalogBackend;
+            /* Show the summary preview immediately; the details follow on the
+             * worker thread and must not restart the preview. */
+            setMediaPreview(document, row);
             setKnownFilesTable(document, row);
             document.status.setText("Loading selected repository details ...");
             auto worker = new Thread({
@@ -5401,6 +5428,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                             }
                         }
                     }
+                    document.skipNextPreviewRefresh = true;
                     updateSelectedRowDetails(document);
                     return false;
                 });
@@ -5437,7 +5465,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             "Archive", archiveMetadataSummary(row));
         setMetadataDetails(document.detailTorrentExpander, document.detailTorrentView,
             "Torrent", torrentMetadataSummary(row));
-        setMediaPreview(document, row);
+        if (!skipPreviewRefresh)
+            setMediaPreview(document, row);
         if (document.selectedPreviewIsVideo)
         {
             scheduleUiTimeout(60, {
