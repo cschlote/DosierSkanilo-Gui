@@ -257,6 +257,8 @@ class DocumentTab
     BlobRow directSelectedRow;
     /// Skip the next preview refresh because the summary preview is current.
     bool skipNextPreviewRefresh;
+    /// Serializes detail queries for this tab; superseded workers exit early.
+    Object detailLoadMutex = new Object;
     /// Cached repository detail rows keyed by reference path.
     BlobRow[string] detailRowCache;
     /// FIFO order used to evict the oldest cached detail rows.

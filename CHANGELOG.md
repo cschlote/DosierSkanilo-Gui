@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Detail queries serialize per tab, and a query that was superseded while
+  waiting exits without running. Rapid selections can no longer build up a
+  queue of catalog queries.
+
 - Rapid selections no longer queue catalog detail queries. A superseded
   request exits before it starts a query, so earlier clicks cannot delay the
   details of the file that is currently selected.
