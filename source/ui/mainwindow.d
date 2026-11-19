@@ -3154,6 +3154,44 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
     }
 
+    /// Cached repository detail rows kept per document tab.
+    enum size_t detailRowCacheLimit = 64;
+
+    /** Load one repository detail row, reusing a bounded per-tab cache.
+     *
+     * Params:
+     *     document = Document tab that owns the cache.
+     *     backend = Open catalog backend used for a cache miss.
+     *     sourceKey = Reference path of the requested row.
+     * Returns: The cached or freshly loaded detail row.
+     */
+    BlobRow loadCachedFileDetails(DocumentTab document, CatalogBackend backend,
+        string sourceKey)
+    {
+        synchronized (document)
+        {
+            if (auto cached = sourceKey in document.detailRowCache)
+                return *cached;
+        }
+        auto details = loadCatalogFileDetails(backend, sourceKey);
+        synchronized (document)
+        {
+            if (sourceKey !in document.detailRowCache)
+            {
+                document.detailRowCache[sourceKey] = details;
+                document.detailRowCacheOrder ~= sourceKey;
+                if (document.detailRowCacheOrder.length > detailRowCacheLimit)
+                {
+                    const oldest = document.detailRowCacheOrder[0];
+                    document.detailRowCacheOrder =
+                        document.detailRowCacheOrder[1 .. $];
+                    document.detailRowCache.remove(oldest);
+                }
+            }
+        }
+        return details;
+    }
+
     void delegate(DocumentTab) updateSelectedRowDetails;
     void delegate(DocumentTab) clearFilterForDocument;
     void delegate(string, string, DocumentTab) copyTextToClipboard;
@@ -4251,7 +4289,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     string error;
                     auto detailStarted = MonoTime.currTime;
                     try
-                        details = loadCatalogFileDetails(catalogBackend, selectedId);
+                        details = loadCachedFileDetails(document, catalogBackend,
+                            selectedId);
                     catch (Exception ex)
                         error = ex.msg;
                     logLineVerbose("[details] loaded tree selection ", selectedId,
@@ -5310,7 +5349,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 string error;
                 auto detailStarted = MonoTime.currTime;
                 try
-                    details = loadCatalogFileDetails(catalogBackend, sourceKey);
+                    details = loadCachedFileDetails(document, catalogBackend,
+                        sourceKey);
                 catch (Exception ex)
                     error = ex.msg;
                 logLineVerbose("[details] loaded ", sourceKey, " error=", error,
@@ -6182,6 +6222,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
             return;
         }
 
+        document.detailRowCache = null;
+        document.detailRowCacheOrder = [];
         auto requestId = ++document.loadRequestId;
         auto repositorySource = isRepositorySource(document.filePath);
         auto preserveTreeNodes = document.preserveDirectoryTreeNodesOnNextLoad;
