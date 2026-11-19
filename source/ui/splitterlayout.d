@@ -12,6 +12,9 @@ enum int minPrimaryExtent = 240;
 /** Minimum details pane extent kept visible in pixels. */
 enum int minDetailsExtent = 180;
 
+/** Minimum preview pane extent kept visible in pixels. */
+enum int minPreviewExtent = 240;
+
 /**
  * Clamp a requested splitter position to the visible pane bounds.
  *
@@ -37,6 +40,46 @@ int clampSplitPosition(int requested, int totalExtent, int minPosition,
     return requested;
 }
 
+/** Clamp the details/preview divider so both panes stay usable.
+ *
+ * The divider position is the width of the details pane on the left; the
+ * preview pane keeps the remaining width on the right. Unallocated splitters
+ * keep the requested position so a saved value survives the first layout pass.
+ *
+ * Params:
+ *     requested = Requested details width from saved state or the user.
+ *     totalExtent = Allocated width of the details/preview splitter.
+ * Returns: A details width that keeps both panes usable, or the requested
+ *     position before the widget has been allocated.
+ */
+int clampPreviewSplitPosition(int requested, int totalExtent)
+{
+    if (totalExtent <= 0)
+        return requested;
+    if (totalExtent <= minDetailsExtent + minPreviewExtent)
+        return totalExtent / 2;
+    if (requested < minDetailsExtent)
+        return minDetailsExtent;
+    const auto maxDetails = totalExtent - minPreviewExtent;
+    if (requested > maxDetails)
+        return maxDetails;
+    return requested;
+}
+
+/** Default details width that leaves the preview maximized.
+ *
+ * Params:
+ *     totalExtent = Allocated width of the details/preview splitter.
+ * Returns: A quarter of the width, clamped to the usable details range, or 0
+ *     before the widget has been allocated.
+ */
+int defaultPreviewSplitPosition(int totalExtent)
+{
+    if (totalExtent <= 0)
+        return 0;
+    return clampPreviewSplitPosition(totalExtent / 4, totalExtent);
+}
+
 @("splitter clamp keeps both panes usable across window sizes")
 unittest
 {
@@ -57,4 +100,25 @@ unittest
 
     assert(clampSplitPosition(240, 1000, 240, 800) == 240);
     assert(clampSplitPosition(800, 1000, 240, 800) == 800);
+}
+
+@("preview split clamp keeps details and preview usable")
+unittest
+{
+    assert(clampPreviewSplitPosition(320, 0) == 320,
+        "unallocated splitters keep the saved position");
+    assert(clampPreviewSplitPosition(100, 300) == 150,
+        "narrow panes split evenly");
+    assert(clampPreviewSplitPosition(10, 1000) == minDetailsExtent,
+        "details never collapse");
+    assert(clampPreviewSplitPosition(900, 1000) == 1000 - minPreviewExtent,
+        "preview never collapses");
+    assert(clampPreviewSplitPosition(320, 1000) == 320);
+
+    assert(defaultPreviewSplitPosition(1000) == 250);
+    assert(defaultPreviewSplitPosition(0) == 0);
+    assert(defaultPreviewSplitPosition(400) == 200);
+    assert(defaultPreviewSplitPosition(1000) > 0);
+    assert(defaultPreviewSplitPosition(1000) < 1000 / 2,
+        "the default leaves the preview maximized");
 }
