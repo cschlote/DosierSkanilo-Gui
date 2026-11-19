@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Repository detail rows are cached per document tab (bounded to 64 entries),
+  so revisiting a file reuses the loaded details instead of querying the
+  catalog again.
+
 - Splitter positions persist reliably. The details/preview divider now applies
   its saved position after allocation, transient startup allocations no longer
   overwrite the stored value, and a user-set position wins over the initial

@@ -255,6 +255,10 @@ class DocumentTab
     FileCursor selectedTreeCursor;
     /// Row selected directly from the repository table when no tree selection drives details.
     BlobRow directSelectedRow;
+    /// Cached repository detail rows keyed by reference path.
+    BlobRow[string] detailRowCache;
+    /// FIFO order used to evict the oldest cached detail rows.
+    string[] detailRowCacheOrder;
     /// Whether `directSelectedRow` holds a valid selection.
     bool hasDirectSelectedRow;
     /// Row index label displayed for a direct selection; `"Tree"` for tree-driven selections.
