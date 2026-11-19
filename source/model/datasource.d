@@ -718,13 +718,15 @@ private bool isDirectArchiveChild(ParsedArchiveVirtualPath container,
  *     occurrence = Zero-based occurrence used to disambiguate duplicate member
  *         names.
  *     password = Optional archive password.
+ *     cancellation = Optional cooperative cancellation flag forwarded to the
+ *         member cache.
  * Returns: The extracted member preview and its logical virtual path.
  * Throws: `Exception` when the container or member path is empty, or when
  *     extraction fails.
  */
 AcquiredArchiveMemberPreview acquireJsonArchiveMemberPreview(string documentPath,
     string containerPath, string memberPath, size_t occurrence = 0,
-    string password = "")
+    string password = "", shared(bool)* cancellation = null)
 {
     enforce(containerPath.length > 0 && memberPath.length > 0,
         "Archive member preview requires a container and member path.");
@@ -734,7 +736,7 @@ AcquiredArchiveMemberPreview acquireJsonArchiveMemberPreview(string documentPath
     auto virtualPath = appendArchiveVirtualPath(
         escapeArchiveVirtualPath(physicalContainer), memberPath, occurrence);
     return acquireJsonVirtualArchiveMemberPreview(documentPath, virtualPath,
-        password);
+        password, cancellation);
 }
 
 /** Acquire a JSON-v5 archive member by its complete virtual path.
@@ -1255,6 +1257,8 @@ ArchiveMemberTreePage loadCatalogArchiveMemberTreePage(CatalogBackend backend,
  * Params:
  *     path = Path of the catalog or repository to open.
  *     memberRelativePath = Reference path of the archive member.
+ *     cancellation = Optional cooperative cancellation flag forwarded to the
+ *         member cache.
  * Returns: The preview; its lease must be released by the caller.
  * Throws: `Exception` when the member no longer exists, or any exception raised
  *     while opening the backend or acquiring content.
@@ -1278,14 +1282,15 @@ AcquiredArchiveMemberPreview acquireCatalogArchiveMemberPreview(string path,
  *     while acquiring content.
  */
 AcquiredArchiveMemberPreview acquireCatalogArchiveMemberPreview(
-    CatalogBackend backend, string memberRelativePath)
+    CatalogBackend backend, string memberRelativePath,
+    shared(bool)* cancellation = null)
 {
     const referenceId = backend.resolveReference(memberRelativePath);
     if (!referenceId.isValid)
         throw new Exception("The selected archive member no longer exists.");
     const member = backend.loadReference(referenceId);
     AcquiredArchiveMemberPreview preview;
-    preview.lease = backend.acquireMemberContent(referenceId);
+    preview.lease = backend.acquireMemberContent(referenceId, cancellation);
     preview.virtualPath = member.relativePath;
     preview.size = member.size;
     return preview;

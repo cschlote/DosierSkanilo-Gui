@@ -130,7 +130,7 @@ import ui.detailswidgets : setDetailEntry,
     setMediaPreview, setMediaInfoStreamDetails, setFallbackDetails,
     refreshMediaPreview, syncVideoPreviewWindow, setVideoPreviewVolume, playVideoPreview,
     pauseVideoPreview, jumpVideoPreview, stopVideoPreview, haltVideoPreview,
-    syncVideoPreviewPosition,
+    syncVideoPreviewPosition, videoPreviewReachedPlayback,
     seekVideoPreview, syncVideoPlaybackButton, syncVideoTrackSelectors;
 import ui.documentactions : DocumentActionCallbacks, closeCurrentDocument, reloadCurrentDocument;
 import ui.documentfilterstate : documentFilterHasCriteria,
@@ -1738,7 +1738,7 @@ private void refreshExpandedJsonDirectories(DocumentTab document, FileFilter fil
     auto requestId = ++document.directoryTreeRefreshRequestId;
     auto expandedIds = directoryTreeIdsToRefresh(document.directoryTreeStore,
         document.expandedDirectoryIds);
-    new Thread({
+    startDaemonWorker({
         AsyncExpandedDirectoryRows[] pages;
         string error;
         try
@@ -1783,7 +1783,7 @@ private void refreshExpandedJsonDirectories(DocumentTab document, FileFilter fil
                 document.expandedDirectoryIds);
             return false;
         });
-    }).start();
+    });
 }
 
 /** Smallest window width accepted when restoring geometry. */
@@ -2245,6 +2245,7 @@ private void startArchiveSiblingPrefetch(DocumentTab document, bool isRepository
             logLineVerbose("[archive-prefetch] failed: ", error.msg);
     });
     archivePrefetchWorkers ~= worker;
+    worker.isDaemon = true;
     worker.start();
 }
 
@@ -2283,6 +2284,7 @@ private void previewArchiveTreeMember(DocumentTab document, string memberPath,
     logLineVerbose("[archive-preview] request source=", sourcePath,
         " repository=", isRepository, " member=", memberPath,
         " reference=", memberIdentity, " virtual=", virtualPath);
+    atomicStore(document.memberPreviewCancelled, false);
     auto previewWorker = new Thread({
         AcquiredArchiveMemberPreview preview;
         string error;
@@ -2298,10 +2300,12 @@ private void previewArchiveTreeMember(DocumentTab document, string memberPath,
             }
             if (isRepository)
                 preview = acquireCatalogArchiveMemberPreview(
-                    document.catalogBackend, memberIdentity);
+                    document.catalogBackend, memberIdentity,
+                    &document.memberPreviewCancelled);
             else if (virtualPath.length > 0)
                 preview = acquireJsonVirtualArchiveMemberPreview(sourcePath,
-                    virtualPath, archivePassword);
+                    virtualPath, archivePassword,
+                    &document.memberPreviewCancelled);
             else
             {
                 size_t occurrence;
@@ -2311,7 +2315,8 @@ private void previewArchiveTreeMember(DocumentTab document, string memberPath,
                     occurrence = 0;
                 preview = acquireJsonArchiveMemberPreview(sourcePath,
                     containerPath, memberPath,
-                    occurrence, archivePassword);
+                    occurrence, archivePassword,
+                    &document.memberPreviewCancelled);
             }
         }
         catch (Exception ex)
@@ -2359,6 +2364,7 @@ private void previewArchiveTreeMember(DocumentTab document, string memberPath,
         });
     });
     archivePreviewWorkers ~= previewWorker;
+    previewWorker.isDaemon = true;
     previewWorker.start();
     if (prefetchSiblings)
         startArchiveSiblingPrefetch(document, isRepository, memberIdentity,
@@ -2401,6 +2407,19 @@ private string jsonArchivePasswordForMemberContainer(const(BlobRow)[] rows,
                 return row.sourceBlob.archivePassword;
     }
     return "";
+}
+
+/** Start a background worker that must not keep the process alive on exit.
+ *
+ * Params:
+ *     work = Worker body; explicit joins remain possible where the caller
+ *         keeps the thread handle.
+ */
+void startDaemonWorker(void delegate() work)
+{
+    auto worker = new Thread(work);
+    worker.isDaemon = true;
+    worker.start();
 }
 
 /** Program entry point.
@@ -2742,7 +2761,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto sourcePath = document.filePath;
         auto query = sourceQueryForDocument(document, prefCaseSensitiveFilter);
         document.status.setText(format("Exporting filtered rows to %s ...", outputPath));
-        new Thread({
+        startDaemonWorker({
             size_t exportedRows;
             string error;
             try
@@ -2763,7 +2782,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         : format("Exported %s rows to %s", exportedRows, outputPath));
                 return false;
             });
-        }).start();
+        });
     }
 
     /** Refresh toolbar sensitivity from the global busy state and active tab presence. */
@@ -3484,7 +3503,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
 
             auto sourcePath = target.filePath;
-            new Thread({
+            startDaemonWorker({
                 string[] path;
                 try
                 {
@@ -3503,7 +3522,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         applyReveal(path);
                     return false;
                 });
-            }).start();
+            });
         };
         void delegate(TreePath, string, FileCursor, TreePath) loadRemoteDirectory;
         void delegate() loadExpandedTreePlaceholders;
@@ -3532,7 +3551,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             auto fileFilter = treeFilterForDocument(document, prefCaseSensitiveFilter);
             auto treeSortOrder = document.treeSortOrder;
             auto fileSortOrder = sourceFileSortOrder(treeSortOrder);
-            new Thread({
+            startDaemonWorker({
                 AsyncDirectoryResult result;
                 result.filePath = filePath;
                 result.directoryId = directoryId;
@@ -3627,7 +3646,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     }
                     return false;
                 });
-            }).start();
+            });
         };
         /* The archive page loader re-expands its parent after applying rows.
          * When the page is empty, the parent now holds the ArchiveInfo retry
@@ -3680,7 +3699,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 " path=", containerVirtualPath, " offset=", offset,
                 " backend=", backendSource);
             auto catalogRows = document.loadedRows;
-            new Thread({
+            startDaemonWorker({
                 ArchiveMemberTreePage page;
                 string error;
                 auto started = MonoTime.currTime;
@@ -3890,7 +3909,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     }
                     return false;
                 });
-            }).start();
+            });
         };
         loadExpandedTreePlaceholders = () {
             if (!document.directorySourceRemote)
@@ -4305,7 +4324,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 auto catalogBackend = document.catalogBackend;
                 document.status.setText("Loading tree selection details ...");
                 logLineVerbose("[details] loading tree selection ", selectedId);
-                new Thread({
+                auto treeWorker = new Thread({
                     BlobRow details;
                     string error;
                     auto detailStarted = MonoTime.currTime;
@@ -4349,7 +4368,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         updateSelectedRowDetails(document);
                         return false;
                     });
-                }).start();
+                });
+                treeWorker.isDaemon = true;
+                treeWorker.start();
             }
         });
         document.tableView.addOnSizeAllocate((allocation, Widget _) {
@@ -4411,7 +4432,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             auto order = sourceFileSortOrder(document.treeSortOrder);
             document.treePreviousFileButton.setSensitive(false);
             document.treeNextFileButton.setSensitive(false);
-            new Thread({
+            startDaemonWorker({
                 FilePage page;
                 string error;
                 try
@@ -4488,7 +4509,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     document.treeNextFileButton.setSensitive(true);
                     return false;
                 });
-            }).start();
+            });
         }
         document.treePreviousFileButton.addOnClicked((Button _) { navigateTreeFile(false); });
         document.treeNextFileButton.addOnClicked((Button _) { navigateTreeFile(true); });
@@ -4532,7 +4553,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             auto stableParentPath = parentPath.copy();
             auto stableRemovePath = removePath.copy();
             auto sourcePath = document.filePath;
-            new Thread({
+            startDaemonWorker({
                 AsyncNestedEntryResult result;
                 result.filePath = sourcePath;
                 result.blobId = blobId;
@@ -4583,7 +4604,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                             (++document.nestedEntryRequestId).to!string);
                     return false;
                 });
-            }).start();
+            });
         };
 
         void bindNestedEntryTree(TreeView treeView, TreeStore store, bool archive)
@@ -5445,6 +5466,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     return false;
                 });
             });
+            worker.isDaemon = true;
             worker.start();
             return;
         }
@@ -5482,10 +5504,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
         if (document.selectedPreviewIsVideo)
         {
             scheduleUiTimeout(60, {
-                if (document.selectedPreviewIsVideo)
-                {
+                /* Refresh only when the pipeline has not started yet. A playing
+                 * preview must not be restarted by the detail refresh. */
+                if (document.selectedPreviewIsVideo
+                    && !videoPreviewReachedPlayback(document))
                     refreshMediaPreview(document);
-                }
                 return false;
             });
         }
@@ -5800,6 +5823,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             return;
         ++document.archiveMemberPreviewRequestId;
         atomicStore(document.archivePrefetchCancelled, true);
+        atomicStore(document.memberPreviewCancelled, true);
         stopVideoPreview(document);
         if (document.selectedArchiveMemberLease !is null)
         {
@@ -7427,7 +7451,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto passwordCallback = archivePasswordPromptCallback();
         logLineVerbose("[archive-scan] start source=", sourcePath,
             " archive=", archivePath, " single=", isSingleArchive);
-        new Thread({
+        startDaemonWorker({
             MetadataSummary summary;
             string error;
             try
@@ -7472,7 +7496,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 }
                 return false;
             });
-        }).start();
+        });
     }
 
     void scanArchivesForCurrentDocument()
@@ -7500,7 +7524,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             ArchivePasswordManagerCallbacks((string fileName, string password) {
                 auto sourcePath = document.filePath;
                 setLoadingState(document, true, "Saving archive password...");
-                new Thread({
+                startDaemonWorker({
                     string error;
                     try
                         setDocumentArchivePassword(sourcePath, fileName, password);
@@ -7518,7 +7542,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                             loadDocument(document, false);
                         return false;
                     });
-                }).start();
+                });
             }));
     }
 
@@ -7800,6 +7824,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 {
                     ++document.archiveMemberPreviewRequestId;
                     atomicStore(document.archivePrefetchCancelled, true);
+                    atomicStore(document.memberPreviewCancelled, true);
                     stopVideoPreview(document);
                     if (document.selectedArchiveMemberLease !is null)
                     {
@@ -7821,6 +7846,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     if (document is activeDocument)
                         continue;
                     atomicStore(document.archivePrefetchCancelled, true);
+                    atomicStore(document.memberPreviewCancelled, true);
                     haltVideoPreview(document);
                 }
             }
