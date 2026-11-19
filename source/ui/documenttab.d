@@ -395,6 +395,8 @@ class DocumentTab
     ListStore detailFileNamesStore;
     /// Tree view displaying alternate known file names.
     TreeView detailFileNamesView;
+    /// Whether the details/preview splitter applied its saved position.
+    bool previewSplitRestored;
     /// GStreamer `playbin` element used for audio/video previews; null until created.
     Element previewVideoPlayer;
     /// GStreamer video sink element selected for the preview player.

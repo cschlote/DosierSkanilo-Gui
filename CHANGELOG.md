@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Splitter positions persist reliably. The details/preview divider now applies
+  its saved position after allocation, transient startup allocations no longer
+  overwrite the stored value, and a user-set position wins over the initial
+  fit. In the side-by-side layout the preview keeps the maximized share.
+
 - Video preview hardening: the embedded sink widget no longer requests the
   video's natural size, so switching between videos of different dimensions
   cannot widen the window. A pipeline that never reaches playback after a

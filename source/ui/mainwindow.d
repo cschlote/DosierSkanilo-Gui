@@ -117,7 +117,8 @@ import ui.contextpaths : decodeCatalogReferencePath,
     resolveDocumentSourcePath;
 import ui.dataexport : loadFilteredExportRows, writeRowsCsv, writeRowsJson;
 import ui.nestedentrylogic : prepareNestedEntryPage;
-import ui.splitterlayout : clampSplitPosition;
+import ui.splitterlayout : clampSplitPosition, clampPreviewSplitPosition,
+    defaultPreviewSplitPosition;
 import ui.nestedentrysignals : NestedPageActivation, bindNestedPageActivation,
     nestedEntryReplyMatches;
 import ui.directoryactions : toggleDirectoryExpansion, toggleDirectorySubtree;
@@ -2992,15 +2993,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto minPosition = MIN_PRIMARY_EXTENT;
         auto maxPosition = totalExtent - MIN_DETAILS_EXTENT;
         if (orientation == Orientation.HORIZONTAL)
-        {
-            auto naturalTableWidth = naturalListWidth(document);
-            if (naturalTableWidth > 0 && naturalTableWidth < maxPosition)
-            {
-                maxPosition = naturalTableWidth;
-            }
-
             minPosition = minimumListWidth(document);
-        }
         const auto clampedPosition = clampSplitPosition(requestedPosition,
             totalExtent, minPosition, maxPosition);
         if (clampedPosition != requestedPosition)
@@ -3092,6 +3085,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.split.setPosition(clampedPosition);
         }
         int realizationAttempt;
+        int lastAllocatedExtent = -1;
         void delegate() applyRealizedPosition;
         applyRealizedPosition = {
             auto allocatedExtent = orientation == Orientation.VERTICAL
@@ -3109,6 +3103,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 return;
             }
 
+            ++realizationAttempt;
             auto realizedClamped = clampSplitPositionToVisibleBounds(document, document.split,
                 orientation, splitPosition);
             document.split.setPosition(realizedClamped);
@@ -3119,6 +3114,15 @@ int runMainWindow(string[] args, ref CliOptions cli)
             else if (currentDocument() is document)
             {
                 splitPositionHorizontal = realizedClamped;
+            }
+
+            /* Startup layouts pass through transient smaller allocations. Re-apply
+             * the restored position until the allocation settles, so a temporary
+             * clamp cannot become the persisted value. */
+            if (realizationAttempt < 6 && allocatedExtent != lastAllocatedExtent)
+            {
+                lastAllocatedExtent = allocatedExtent;
+                scheduleUiTimeout(50, { applyRealizedPosition(); return false; });
             }
         };
         scheduleUiIdle({ applyRealizedPosition(); return false; });
@@ -4628,22 +4632,39 @@ int runMainWindow(string[] args, ref CliOptions cli)
         previewSlot.packStart(previewPane, true, true, 0);
         document.detailPreviewSplit = detailsContent;
         detailsContent.addOnNotify((ParamSpec _, ObjectG __) {
+            auto extent = document.detailPreviewSplit.getAllocatedWidth();
+            if (!document.previewSplitRestored || extent <= 0)
+                return;
+
             auto currentPosition = document.detailPreviewSplit.getPosition();
-            splitPositionPreview = currentPosition;
+            auto clampedPosition = clampPreviewSplitPosition(currentPosition, extent);
+            if (clampedPosition != currentPosition)
+            {
+                logLineVerbose("[layout] preview split clamp for ", document.filePath,
+                    ": current=", currentPosition,
+                    ", clamped=", clampedPosition,
+                    ", extent=", extent);
+                document.detailPreviewSplit.setPosition(clampedPosition);
+            }
+            if (currentDocument() is document)
+                splitPositionPreview = clampedPosition;
         }, "position");
         detailsContent.addOnSizeAllocate((allocation, Widget _) {
-            if (splitPositionPreview > 0 || allocation.width <= 0)
-            {
+            if (document.previewSplitRestored || allocation.width <= 0)
                 return;
-            }
 
-            auto initialPosition = cast(int) (allocation.width * 0.25);
-            if (initialPosition < 1)
-            {
-                initialPosition = 1;
-            }
-            document.detailPreviewSplit.setPosition(initialPosition);
-            splitPositionPreview = initialPosition;
+            const auto extent = cast(int) allocation.width;
+            const auto requested = splitPositionPreview > 0
+                ? splitPositionPreview : defaultPreviewSplitPosition(extent);
+            const auto clampedPosition = clampPreviewSplitPosition(requested, extent);
+            document.detailPreviewSplit.setPosition(clampedPosition);
+            document.previewSplitRestored = true;
+            if (currentDocument() is document)
+                splitPositionPreview = clampedPosition;
+            logLineVerbose("[layout] preview split restore for ", document.filePath,
+                ": requested=", requested,
+                ", applied=", clampedPosition,
+                ", extent=", extent);
         });
 
         document.split = new Paned(Orientation.HORIZONTAL);
@@ -4750,11 +4771,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 splitPositionHorizontal = currentSplitPosition;
             }
 
-            if (document.detailPreviewSplit !is null)
+            if (document.detailPreviewSplit !is null && document.previewSplitRestored)
             {
-                splitPositionPreview = document.detailPreviewSplit.getPosition();
-                state.splitPositionPreview = splitPositionPreview;
-                state.hasSplitPositionPreview = true;
+                auto previewExtent = document.detailPreviewSplit.getAllocatedWidth();
+                if (previewExtent > 0)
+                {
+                    splitPositionPreview = clampPreviewSplitPosition(
+                        document.detailPreviewSplit.getPosition(), previewExtent);
+                    state.splitPositionPreview = splitPositionPreview;
+                    state.hasSplitPositionPreview = true;
+                }
             }
 
             previewScaleMode = document.previewScaleMode;

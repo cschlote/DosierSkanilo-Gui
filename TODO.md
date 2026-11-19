@@ -106,16 +106,22 @@ Target: `0.14.2` (packaging patch, paired with backend `26.17.2`).
 
 ### Splitter persistence and sizing
 
-- [ ] Reproduce the top-level splitter returning to an extreme position after a
-      fresh load, reload, tab switch, and application restart.
-- [ ] Reproduce preview/details splitter restoration after those lifecycle
-      transitions, including startup before the first real GTK allocation.
-- [ ] Define which saved position wins (new-window default versus per-window
-      restored value), clamp only after a usable allocation, and avoid saving
-      transient/unallocated positions.
+- [x] Top-level splitter: startup layout passes through transient smaller
+      allocations that used to clamp and persist an extreme value. The restore
+      re-applies the saved position until the allocation settles, and the
+      horizontal fit no longer caps a saved position at the natural table
+      width. A saved `500` survives a restart unchanged.
+- [x] Preview/details splitter: the saved position was accepted by the loader
+      but never applied to the paned. It is now clamped and applied after the
+      first usable allocation, and transient pre-allocation notifications are
+      ignored.
+- [x] Saved user positions win over the initial fit. The fit only grows the
+      list to its natural width; the preview default keeps the details pane at
+      its minimum width and leaves the preview maximized.
 - [x] Verify the pane clamp keeps both panes usable at narrow extents; covered
       by `ui.splitterlayout` unit tests.
-- [ ] Verify the chosen split positions survive a restart.
+- [x] Chosen split positions survive a restart, including an extreme saved
+      preview value that is clamped to the usable range.
 
 ### Video preview realization and window growth
 
