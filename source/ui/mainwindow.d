@@ -5303,10 +5303,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
             auto worker = new Thread({
                 BlobRow details;
                 string error;
+                auto detailStarted = MonoTime.currTime;
                 try
                     details = loadCatalogFileDetails(catalogBackend, sourceKey);
                 catch (Exception ex)
                     error = ex.msg;
+                logLineVerbose("[details] loaded ", sourceKey, " error=", error,
+                    " elapsedMs=",
+                    cast(long) (MonoTime.currTime - detailStarted).total!"msecs");
 
                 scheduleUiIdle({
                     if (requestId != document.detailRequestId)
