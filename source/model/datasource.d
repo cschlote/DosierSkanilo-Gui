@@ -6,6 +6,8 @@
  */
 module model.datasource;
 
+import cli.logging : logLineVerbose;
+import core.time : MonoTime;
 import core.atomic : atomicLoad, atomicOp;
 import std.algorithm.searching : canFind;
 import std.base64 : Base64;
@@ -481,17 +483,26 @@ BlobRow loadCatalogFileDetails(string path, string relativePath)
  */
 BlobRow loadCatalogFileDetails(CatalogBackend backend, string relativePath)
 {
+    auto resolveStarted = MonoTime.currTime;
     const referenceId = backend.resolveReference(relativePath);
+    logLineVerbose("[details] resolve ", relativePath, " elapsedMs=",
+        cast(long) (MonoTime.currTime - resolveStarted).total!"msecs");
     if (!referenceId.isValid)
         throw new Exception("The selected file no longer exists.");
+    auto referenceStarted = MonoTime.currTime;
     const file = backend.loadReference(referenceId);
+    logLineVerbose("[details] reference ", relativePath, " elapsedMs=",
+        cast(long) (MonoTime.currTime - referenceStarted).total!"msecs");
     CatalogDetailMask mask;
     mask.fingerprint = true;
     mask.fileType = true;
     mask.media = true;
     mask.archiveSummary = true;
     mask.torrentSummary = true;
+    auto contentStarted = MonoTime.currTime;
     const snapshot = backend.loadContent(file.contentId, mask);
+    logLineVerbose("[details] content ", relativePath, " elapsedMs=",
+        cast(long) (MonoTime.currTime - contentStarted).total!"msecs");
     BlobRow row;
     row.sourceKey = file.relativePath;
     row.primaryFileName = file.name;

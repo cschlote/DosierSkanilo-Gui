@@ -255,6 +255,8 @@ class DocumentTab
     FileCursor selectedTreeCursor;
     /// Row selected directly from the repository table when no tree selection drives details.
     BlobRow directSelectedRow;
+    /// Skip the next preview refresh because the summary preview is current.
+    bool skipNextPreviewRefresh;
     /// Cached repository detail rows keyed by reference path.
     BlobRow[string] detailRowCache;
     /// FIFO order used to evict the oldest cached detail rows.
