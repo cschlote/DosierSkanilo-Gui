@@ -4306,6 +4306,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.status.setText("Loading tree selection details ...");
                 logLineVerbose("[details] loading tree selection ", selectedId);
                 new Thread({
+                    if (requestId != document.detailRequestId)
+                        return;
                     BlobRow details;
                     string error;
                     auto detailStarted = MonoTime.currTime;
@@ -5372,6 +5374,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
             setKnownFilesTable(document, row);
             document.status.setText("Loading selected repository details ...");
             auto worker = new Thread({
+                /* A newer selection superseded this request before the thread
+                 * started; do not queue another catalog query behind it. */
+                if (requestId != document.detailRequestId)
+                    return;
                 BlobRow details;
                 string error;
                 auto detailStarted = MonoTime.currTime;
