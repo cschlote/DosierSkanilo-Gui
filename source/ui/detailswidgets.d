@@ -55,6 +55,7 @@ import std.path : absolutePath, extension;
 import std.string : join, replace, split, startsWith, strip, toLower;
 import std.exception : enforce;
 import std.uri : encode;
+import core.time : MonoTime;
 import std.utf : validate;
 import ui.mainsources : scheduleUiIdle, scheduleUiTimeout;
 
@@ -1247,8 +1248,13 @@ private bool ensureImagePreviewSource(DocumentTab document)
 
     try
     {
+        auto decodeStarted = MonoTime.currTime;
         document.selectedPreviewSourcePixbuf = new Pixbuf(document.selectedPreviewPath);
         document.selectedPreviewSourcePath = document.selectedPreviewPath;
+        logLineVerbose("[preview] image decode ", document.selectedPreviewPath,
+            " size=", document.selectedPreviewSourcePixbuf.getWidth(), "x",
+            document.selectedPreviewSourcePixbuf.getHeight(), " elapsedMs=",
+            cast(long) (MonoTime.currTime - decodeStarted).total!"msecs");
         return true;
     }
     catch (Exception)
@@ -2617,6 +2623,7 @@ private void updatePreviewImage(DocumentTab document)
         }
 
         auto source = document.selectedPreviewSourcePixbuf;
+        auto scaleStarted = MonoTime.currTime;
         Pixbuf pixbuf;
         auto previewWidth = document.detailPreviewScroll !is null
             ? document.detailPreviewScroll.getAllocatedWidth() : 0;
@@ -2714,6 +2721,8 @@ private void updatePreviewImage(DocumentTab document)
         }
 
         document.detailPreviewImage.setFromPixbuf(pixbuf);
+        logLineVerbose("[preview] image scale ", document.selectedPreviewPath,
+            " elapsedMs=", cast(long) (MonoTime.currTime - scaleStarted).total!"msecs");
     }
     catch (Exception)
     {
