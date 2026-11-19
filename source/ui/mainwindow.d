@@ -7819,7 +7819,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
             () { return windowSizePersistTimer; },
             (UiMainSource value) { windowSizePersistTimer = value; },
             () {
+                auto destroyStarted = MonoTime.currTime;
+                logLineVerbose("[shutdown] destroy handler start");
                 cancelAndJoinDocumentOperations();
+                logLineVerbose("[shutdown] destroy operations joined elapsedMs=",
+                    cast(long) (MonoTime.currTime - destroyStarted).total!"msecs");
                 foreach (document; documents)
                 {
                     ++document.archiveMemberPreviewRequestId;
@@ -7832,6 +7836,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                         document.selectedArchiveMemberLease = null;
                     }
                 }
+                logLineVerbose("[shutdown] destroy documents stopped elapsedMs=",
+                    cast(long) (MonoTime.currTime - destroyStarted).total!"msecs");
                 stopAllUiSources();
             },
             () {
@@ -7961,9 +7967,19 @@ int runMainWindow(string[] args, ref CliOptions cli)
         return false;
     });
 
+    auto shutdownStarted = MonoTime.currTime;
+    void logShutdownStage(string stage)
+    {
+        logLineVerbose("[shutdown] ", stage, " elapsedMs=",
+            cast(long) (MonoTime.currTime - shutdownStarted).total!"msecs");
+    }
+
     Main.run();
+    logShutdownStage("main loop returned");
     cancelAndJoinDocumentOperations();
+    logShutdownStage("operations joined");
     joinArchivePreviewWorkers();
+    logShutdownStage("preview workers joined");
     foreach (document; documents)
     {
         if (document.directorySource !is null)
@@ -7973,12 +7989,14 @@ int runMainWindow(string[] args, ref CliOptions cli)
         /* Backend connections are left to process exit: background load,
          * directory, and virtual-table workers may still hold statements. */
     }
+    logShutdownStage("documents closed");
     stopAllUiSources();
     if (!closeSharedMemberContentCache())
     {
         logLine("Archive member cache still has leased members; ",
             "the session is removed on process exit.");
     }
+    logShutdownStage("member cache closed");
     return selfTestOperationFailed ? 1 : 0;
 }
 
