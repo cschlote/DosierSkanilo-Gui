@@ -4245,13 +4245,18 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 auto sourcePath = document.filePath;
                 auto catalogBackend = document.catalogBackend;
                 document.status.setText("Loading tree selection details ...");
+                logLineVerbose("[details] loading tree selection ", selectedId);
                 new Thread({
                     BlobRow details;
                     string error;
+                    auto detailStarted = MonoTime.currTime;
                     try
                         details = loadCatalogFileDetails(catalogBackend, selectedId);
                     catch (Exception ex)
                         error = ex.msg;
+                    logLineVerbose("[details] loaded tree selection ", selectedId,
+                        " error=", error, " elapsedMs=",
+                        cast(long) (MonoTime.currTime - detailStarted).total!"msecs");
                     scheduleUiIdle({
                         if (requestId != document.detailRequestId)
                             return false;
