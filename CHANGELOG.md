@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- The delayed preview refresh no longer restarts a video that is already
+  playing when the file details arrive.
+- Closing the GUI no longer waits for background catalog queries: worker
+  threads are daemons, and archive member extraction is cancelled on close.
+
 - Detail queries serialize per tab, and a query that was superseded while
   waiting exits without running. Rapid selections can no longer build up a
   queue of catalog queries.

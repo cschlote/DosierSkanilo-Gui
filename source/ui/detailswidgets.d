@@ -2504,7 +2504,7 @@ private void updatePreviewVideo(DocumentTab document)
  *
  * Returns: `true` when no player exists or the player is PLAYING or PAUSED.
  */
-private bool videoPreviewReachedPlayback(DocumentTab document)
+bool videoPreviewReachedPlayback(DocumentTab document)
 {
     if (document.previewVideoPlayer is null)
         return true;

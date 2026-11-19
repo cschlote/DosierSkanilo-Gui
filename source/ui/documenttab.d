@@ -577,6 +577,7 @@ class DocumentTab
     bool loadAllRows;
     shared bool archiveScanCancelled; /// Cooperative cancel flag for archive scans.
     shared bool archivePrefetchCancelled; /// Cooperative cancel flag for sibling prefetch.
+    shared bool memberPreviewCancelled; /// Cooperative cancel flag for member extraction.
     /// Whether repository pages are being drained automatically.
     bool drainRepositoryPages;
     /// Whether the next load should continue draining repository pages.
