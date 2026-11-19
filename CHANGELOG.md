@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Rapid selections no longer queue catalog detail queries. A superseded
+  request exits before it starts a query, so earlier clicks cannot delay the
+  details of the file that is currently selected.
+
 - The preview starts immediately from the selected row or tree node. File
   details load in the background and no longer delay or restart the preview.
 

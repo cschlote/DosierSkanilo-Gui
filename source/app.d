@@ -8,6 +8,7 @@
  */
 module app;
 
+import dosierskanilo.logging : setVerboseOutputs;
 import cli.commandline;
 import cli.logging;
 import ui.mainwindow;
@@ -25,6 +26,8 @@ int main(string[] args)
     logFLine("DosierSkanilo GUI starting up...");
 
     parseCliOptions(args);
+    /* Share the verbose flag with the backend logging helpers. */
+    setVerboseOutputs(argsArray.argVerboseOutputs);
     if (argsArray.showHelp)
     {
         logLine(cliUsageText);
