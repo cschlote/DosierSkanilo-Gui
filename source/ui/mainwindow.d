@@ -4957,6 +4957,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     /** Persist the current application state and surface write failures in the active tab. */
     persistCurrentState = (bool clearWindowGeometry) {
+        auto persistStarted = MonoTime.currTime;
         try
         {
             saveAppState(currentAppState(clearWindowGeometry));
@@ -4969,6 +4970,8 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 document.status.setText(format("Failed to persist app state: %s", ex.msg));
             }
         }
+        logLineVerbose("[shutdown] persist state elapsedMs=",
+            cast(long) (MonoTime.currTime - persistStarted).total!"msecs");
     };
 
     /** Keep the in-memory recent-files list within the configured size limit. */
@@ -7967,14 +7970,13 @@ int runMainWindow(string[] args, ref CliOptions cli)
         return false;
     });
 
+    Main.run();
     auto shutdownStarted = MonoTime.currTime;
     void logShutdownStage(string stage)
     {
         logLineVerbose("[shutdown] ", stage, " elapsedMs=",
             cast(long) (MonoTime.currTime - shutdownStarted).total!"msecs");
     }
-
-    Main.run();
     logShutdownStage("main loop returned");
     cancelAndJoinDocumentOperations();
     logShutdownStage("operations joined");
