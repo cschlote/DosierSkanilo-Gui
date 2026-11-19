@@ -85,7 +85,8 @@ import std.file : exists, isDir;
 import std.format : format;
 import std.path : absolutePath, baseName, buildNormalizedPath, dirName;
 import std.process : Config, ProcessException, spawnProcess;
-import std.stdio : writeln;
+import std.stdio : stderr, stdout, writeln;
+import core.stdc.stdlib : exit;
 import std.string : join, replace, split;
 import gstreamer.GStreamer : GStreamer;
 import gstreamer.c.types : GstState, GstStateChangeReturn;
@@ -7956,7 +7957,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
         () { Main.quit(); }
     );
 
+    MonoTime closeRequestedAt;
     window.addOnDelete((Event _, Widget __) {
+        closeRequestedAt = MonoTime.currTime;
+        logLineVerbose("[shutdown] close request");
         foreach (document; documents)
         {
             if (!document.modified || document.catalogDocument is null)
@@ -7972,6 +7976,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     Main.run();
     auto shutdownStarted = MonoTime.currTime;
+    if (closeRequestedAt != MonoTime.init)
+        logLineVerbose("[shutdown] close request to loop return elapsedMs=",
+            cast(long) (MonoTime.currTime - closeRequestedAt).total!"msecs");
     void logShutdownStage(string stage)
     {
         logLineVerbose("[shutdown] ", stage, " elapsedMs=",
@@ -7999,7 +8006,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
             "the session is removed on process exit.");
     }
     logShutdownStage("member cache closed");
-    return selfTestOperationFailed ? 1 : 0;
+    /* All UI state and the member cache are closed and the logs are flushed.
+     * Exit directly instead of waiting for the runtime teardown, which joins
+     * remaining threads and can delay the window close noticeably. */
+    stdout.flush();
+    stderr.flush();
+    exit(selfTestOperationFailed ? 1 : 0);
 }
 
 @("expanded directory refresh removes stale placeholders and upserts rows by ID")
