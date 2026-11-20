@@ -6,9 +6,9 @@ in the backend's
 completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
 [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md).
 
-## Current status (2026-11-18)
+## Current status (2026-11-20)
 
-- Version `0.14.2`; JSON and repository tabs both use `CatalogBackend`.
+- Version `0.15.0`; JSON and repository tabs both use `CatalogBackend`.
 - JSON tabs have explicit document sessions with modified markers,
   Save/Revert, and save/discard/cancel prompts; SQLite tabs remain
   transactional.
@@ -29,13 +29,18 @@ completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
 
 ## P0 — Prepare the next GUI release
 
-Target: `0.14.2` (packaging patch, paired with backend `26.17.2`).
+Target: `0.15.0` (feature release, paired with backend `26.18.0`).
 
 - [x] Release `0.13.0` is complete: changelog, paired backend release,
       Arch/Fedora/Debian/Flatpak metadata, and the Flatpak source hash are
       committed.
-- [x] Release `0.13.1` is complete: paired with backend `26.16.0`,
-      changelog and packaging updated, Flatpak source hash refreshed.
+- [x] Release `0.13.1` is complete: paired with backend `26.16.0`, changelog
+      and packaging updated, Flatpak source hash refreshed.
+- [x] Release `0.14.2` is complete: changelog, paired backend release,
+      Arch/Fedora/Debian/Flatpak metadata, and the Flatpak source hash are
+      committed.
+- [x] Release `0.15.0` is complete: single-file metadata rescans from the tree
+      context menu, paired backend `26.18.0`, and refreshed packaging metadata.
 - [ ] Run the
       [`backend release checklist`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/RELEASE-CHECKLIST.md)
       end to end for the next paired release. Automated gates, tags, Flatpak
@@ -47,6 +52,19 @@ Target: `0.14.2` (packaging patch, paired with backend `26.17.2`).
       Debian, Arch, and Fedora packages build, install, start, and remove
       cleanly. The GUI Flatpak manifest builds the GUI and backend from source
       and the built app runs.
+
+## Release 0.15.0 — single-file metadata rescan
+
+- [x] GUI full gate: 79 tests, coverage 36.57 %, and release build clean.
+- [x] Xvfb display suite passed with the JSON and SQLite 95,001-record smoke
+      loads.
+- [x] Filter benchmark (`1000 10000 100000`) reviewed: 22.8 ms filter and
+      51.4 ms tree projection at 100,000 rows, 22.9 MiB peak.
+- [x] Backend `26.18.0` full gate passed.
+- [x] `CHANGELOG.md` and packaging metadata use `0.15.0` and backend
+      `26.18.0`; `scripts/validate-release.sh v0.15.0` passes.
+- [x] Release commit and tag `v0.15.0` are created; the Flatpak source hash
+      follows in an untagged commit on `main`.
 
 ## Release 0.14.0 — sibling prefetch and preview stability
 
