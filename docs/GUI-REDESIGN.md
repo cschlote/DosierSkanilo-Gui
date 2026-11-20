@@ -378,8 +378,8 @@ filter times of 21–24 ms and tree times of 47–52 ms.
   dominated by the algorithms and roughly linear allocation; memory, not GC
   pause time, is the scaling concern at that size.
 - The remaining known costs are elsewhere: the first page of very large archive
-  directories (about 86 ms and 46 MB at 100,000 members) and detail queries.
-  Those are the next profiling targets.
+  directories (about 0.22 s and 78 MB at 100,000 members after the lazy-order
+  optimization) and detail queries. Those are the next profiling targets.
 
 ### Revisit criteria
 
