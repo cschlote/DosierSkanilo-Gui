@@ -2569,6 +2569,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
     void delegate() cancelPendingLoad;
     void delegate(DocumentTab) refreshDocumentAfterOperation;
     void delegate(DocumentTab, string) scanSelectedArchiveAction;
+    void delegate(DocumentTab, string) rescanSelectedFileAction;
     DocumentTab busyDocument;
     UiMainSource progressPulseTimer;
     UiMainSource previewVideoProgressTimer;
@@ -3451,6 +3452,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
             menu.append(new MenuItem((MenuItem _) {
                 updateSelectedRowDetails(document);
             }, "Show details", false));
+            if (rescanSelectedFileAction !is null)
+            {
+                menu.append(new MenuItem((MenuItem _) {
+                    rescanSelectedFileAction(document, relativePath);
+                }, "Rescan metadata", false));
+            }
             menu.append(new MenuItem((MenuItem _) {
                 if (relativePath.length > 0)
                 {
@@ -7190,14 +7197,21 @@ int runMainWindow(string[] args, ref CliOptions cli)
             });
     }
 
-    void startMetadataForCurrentDocument()
+    /** Run selected metadata extractors for a document or one repository file.
+     *
+     * An empty `filePath` runs the metadata dialog for the whole repository.
+     * A selected path restricts the operation to that one catalog blob, so an
+     * archive or media file can be refreshed without walking the catalog.
+     */
+    void startMetadataForDocument(DocumentTab document, string filePath)
     {
-        auto document = currentDocument();
         if (document is null || !document.repositoryStorage)
             return;
         auto root = Repository.findRoot(document.filePath);
-        auto options = showOperationOptions(window, "Metadata options", root,
-            true, OperationDialogKind.metadata);
+        const auto scopeDescription = filePath.length > 0 ? filePath : root;
+        auto options = showOperationOptions(window, filePath.length > 0
+            ? "Rescan metadata" : "Metadata options", scopeDescription, true,
+            OperationDialogKind.metadata);
         if (!options.accepted)
             return;
         auto metadata = options.metadataOptions;
@@ -7208,6 +7222,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.status.setText("Select at least one metadata extractor.");
             return;
         }
+        metadata.filePath = filePath;
         if (metadata.scanArchives)
             metadata.archivePasswordCallback = archivePasswordPromptCallback();
         startDocumentOperation(document, OperationKind.metadata,
@@ -7216,6 +7231,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
                     metadata);
                 return runOperation(request, control);
             });
+    }
+
+    void startMetadataForCurrentDocument()
+    {
+        startMetadataForDocument(currentDocument(), "");
     }
 
     void startAnalysisForCurrentDocument()
@@ -7510,6 +7530,10 @@ int runMainWindow(string[] args, ref CliOptions cli)
 
     scanSelectedArchiveAction = (DocumentTab document, string archivePath) {
         scanArchiveForDocument(document, archivePath);
+    };
+
+    rescanSelectedFileAction = (DocumentTab document, string filePath) {
+        startMetadataForDocument(document, filePath);
     };
 
     /** Manage filename-to-blob passwords for the active JSON or repository source. */

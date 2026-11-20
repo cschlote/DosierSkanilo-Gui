@@ -17,9 +17,13 @@ completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
   members through the shared cache. Optional same-directory sibling prefetch
   warms neighboring members behind a preview into the cache (disabled by
   default).
-- The GUI Xvfb display job and the shared CLI/GTK operation matrix are green on
-  `main`; `testing` mirrors the same commit without deployments. GUI
-  verification: 78 tests, coverage 36.90 %, build clean.
+- The GUI Xvfb display job and the shared CLI/GTK operation matrix are green;
+  `testing` collects integration work and `main` follows on request without
+  deployments. GUI verification: 79 tests, coverage 36.57 %, display suite and
+  build clean.
+- A repository file can be rescanned from the tree context menu. The metadata
+  dialog runs with that file as scope, so one archive or media file is
+  refreshed without walking the catalog.
 - Documentation and Ddoc headers are complete: every documentable public,
   package, and private declaration has Ddoc (verified 2026-11-08).
 
