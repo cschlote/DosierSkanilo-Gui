@@ -34,8 +34,11 @@ CLI / GTK action -> typed operation request -> shared DosierSkanilo service
 
 SQLite repository and explicit JSON modes remain distinct targets. The GUI
 operation dialogs build the same typed requests as the CLI; they do not implement
-a second scanner or metadata pipeline. Standalone metadata is repository-only;
-JSON supports scan/analyze with optional metadata phases.
+a second scanner or metadata pipeline. Scan inventories the filesystem, metadata
+fills content details for already cataloged files, and analysis merges duplicate
+blobs by complete checksums and optionally drops missing references. Standalone
+metadata is repository-only; JSON supports scan/analyze with optional metadata
+phases.
 
 ## 1. High-Level Flow
 

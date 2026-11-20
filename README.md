@@ -7,11 +7,13 @@ The GUI and CLI use the same backend library for scan, metadata, and analysis
 operations. The GUI's `Tools` menu runs those operations in background workers
 and reports backend progress, cancellation, and safe pause/resume state.
 
-Repository documents support scan, metadata, and analysis. JSON documents
-support scan and analysis, including selected metadata extraction as part of
-those operations. Targets remain explicit: JSON scan asks for a filesystem root,
-while repository operations use the active repository root. See WP-09 in the
-backend plan at
+Repository documents support scan (record filesystem paths and sizes),
+metadata (fill checksums, file types, MediaInfo, and archive or torrent details
+for already cataloged files), and analysis (merge duplicate blobs and
+optionally remove missing references). JSON documents support scan and analysis,
+including selected metadata extraction as part of those operations. Targets
+remain explicit: JSON scan asks for a filesystem root, while repository
+operations use the active repository root. See WP-09 in the backend plan at
 `https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md`.
 
 The GUI currently supports:
@@ -48,6 +50,8 @@ The GUI currently supports:
   navigation in the detail pane
 - CSV and JSON export of the active tab's filtered row subset
 - shared backend scan, metadata, and analysis actions with per-operation options
+- rescan the selected repository file from the tree context menu; the metadata
+  dialog runs with that file as its scope
 - background task progress and terminal results in the owning document tab
 - cooperative cancellation and state-aware pause/resume at backend checkpoints
 - repository/catalog write serialization through backend target leases
