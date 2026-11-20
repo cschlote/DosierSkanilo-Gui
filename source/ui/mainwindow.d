@@ -5107,6 +5107,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
 
         size_t nextIndex = 0;
+        size_t renderBatchCount = 0;
+        double renderBatchTotalMs = 0.0;
+        double renderBatchMaxMs = 0.0;
         auto indexSortValue = new Value();
         indexSortValue.init(GType.UINT64);
         auto fileSizeSortValue = new Value();
@@ -5124,6 +5127,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
             {
                 endIndex = rowsCopyData.length;
             }
+            auto batchStarted = MonoTime.currTime;
 
             foreach (idx; nextIndex .. endIndex)
             {
@@ -5167,6 +5171,12 @@ int runMainWindow(string[] args, ref CliOptions cli)
             }
 
             nextIndex = endIndex;
+            const double batchMs = cast(double)
+                (MonoTime.currTime - batchStarted).total!"usecs" / 1000.0;
+            renderBatchCount++;
+            renderBatchTotalMs += batchMs;
+            if (batchMs > renderBatchMaxMs)
+                renderBatchMaxMs = batchMs;
             if (nextIndex < rowsCopyData.length)
             {
                 document.status.setText(format("Rendering rows: %s/%s ...", nextIndex, rowsCopyData
@@ -5185,7 +5195,11 @@ int runMainWindow(string[] args, ref CliOptions cli)
             updatePerfStatus(document);
             logLineVerbose("[render] finished ", document.filePath,
                 ": rows=", rowsCopyData.length,
-                ", elapsedMs=", document.lastRenderElapsedMs);
+                ", elapsedMs=", document.lastRenderElapsedMs,
+                ", batches=", renderBatchCount,
+                ", avgBatchMs=", format("%.2f", renderBatchTotalMs
+                    / (renderBatchCount > 0 ? renderBatchCount : 1)),
+                ", maxBatchMs=", format("%.2f", renderBatchMaxMs));
 
             auto visibleCount = isRepositorySource(document.filePath)
                 && document.drainRepositoryPages ? document.repositoryRowsLoaded
@@ -6308,7 +6322,16 @@ int runMainWindow(string[] args, ref CliOptions cli)
             document.reuseDirectoryTreeNodes = false;
         if (!document.drainPageRequest)
         {
-            document.drainRepositoryPages = true;
+            if (repositorySource)
+                document.drainRepositoryPages = true;
+            else
+            {
+                // JSON tabs keep the complete, sortable row set. The backend
+                // still provides the page, so request all rows and render them
+                // in GTK-friendly batches below.
+                document.drainRepositoryPages = false;
+                document.loadAllRows = true;
+            }
             document.pageOffset = 0;
             document.repositoryRowsLoaded = 0;
             document.repositoryContentCursor = CatalogPageCursor.init;
