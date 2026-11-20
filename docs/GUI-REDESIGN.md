@@ -304,7 +304,7 @@ Unit/model tests cover filter parity, stable IDs, ancestor visibility, and
 retention of underlying rows. A display-backed JSON filter smoke test passed with
 `G_DEBUG=fatal-warnings`. Large-tree latency, allocation, and peak-memory
 measurements can be reproduced with `scripts/benchmark-filters.sh`; per-batch
-Blob-table rendering at 95,001 JSON rows remains a follow-up.
+table rendering is measured in the performance assessment below.
 
 ## GC-Friendly Algorithms
 
@@ -377,9 +377,9 @@ filter times of 21–24 ms and tree times of 47–52 ms.
 - At 1,000,000 rows the timed sections triggered no collection. Cost is
   dominated by the algorithms and roughly linear allocation; memory, not GC
   pause time, is the scaling concern at that size.
-- The remaining known costs are elsewhere: per-batch GTK rendering at 95,001
-  rows, the first page of very large archive directories (about 86 ms and 46 MB
-  at 100,000 members), and detail queries. Those are the next profiling targets.
+- The remaining known costs are elsewhere: the first page of very large archive
+  directories (about 86 ms and 46 MB at 100,000 members) and detail queries.
+  Those are the next profiling targets.
 
 ### Revisit criteria
 
@@ -394,6 +394,31 @@ Reproduce with:
 ./scripts/benchmark-filters.sh 1000 10000 100000 1000000
 ./build/bin/filterbench 100000 --DRT-gcopt=disable:1
 ```
+
+### Per-batch table rendering
+
+Measured on 2026-11-20 with the release GUI on an X11 display, using the
+95,001-record synthetic JSON catalog:
+
+| Workload | Rows | Batches | Avg batch | Max batch | Total render |
+| --- | --- | --- | --- | --- | --- |
+| Unfiltered JSON table | 95,001 | 191 × 500 | 5.3–5.7 ms | 6.5–7.0 ms | 1.07–1.15 s |
+| Filtered JSON table (`track-0007`) | 100 | 1 | 1.1 ms | 1.1 ms | 6 ms |
+
+Every batch stays below a 16 ms frame budget, so rows appear progressively
+without blocking the GTK main loop. Repository tables remain virtualized and
+render only visible rows, so this batch path applies to JSON tabs.
+
+Reproduce with:
+
+```bash
+./build/bin/filterbench --write-catalog /tmp/bench-95001.json 95001
+./build/bin/dosierskanilo-gui --verbose --self-test --self-test-delay 3000 \
+  /tmp/bench-95001.json
+```
+
+Read the `[render] finished` line for batch count, average, and maximum batch
+time. The display suite asserts that the 95,001-row JSON load reaches the table.
 
 ## Detail Renderers
 
@@ -548,15 +573,15 @@ a compatibility layer around the current table UI:
 The archive-member TreeView/extraction workflow and the shared CLI/GTK operation
 matrix are implemented. Open GUI work is tracked in [`TODO.md`](../TODO.md):
 
-- release preparation after `0.13.0`
-- per-batch display profiling of the 95,001-row table
+- release preparation after `0.15.0`
 - splitter persistence/sizing and video-preview realization/window-growth fixes
 - optional sibling prefetch and Wayland sink verification
 - distribution/install smoke checks
 
 Large-catalog latency, GC allocation, and peak-memory measurements are produced
-with `scripts/benchmark-filters.sh`; per-batch display profiling remains
-follow-up verification in `TODO.md`.
+with `scripts/benchmark-filters.sh`; per-batch display profiling is recorded in
+the performance assessment above, and the display suite asserts the
+95,001-row JSON load.
 
 The shared CLI/GTK operation work is recorded as WP-09 in the backend's
 [`SQLITE-IMPLEMENTATION-PLAN.md`](https://github.com/cschlote/DosierSkanilo/blob/main/docs/SQLITE-IMPLEMENTATION-PLAN.md#wp-09-shared-long-running-operations-for-cli-and-gui).

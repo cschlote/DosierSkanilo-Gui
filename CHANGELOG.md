@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+- JSON catalogs open with their complete row set again. The backend-paged load
+  path read the first page and then discarded it, so JSON tabs showed an empty
+  table. Filtering and clearing a filter now restore the full sortable row set.
+
 ## Release 0.15.0 - 2026-11-20
 
 Pairs with DosierSkanilo 26.18.0. Feature release for single-file metadata

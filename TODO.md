@@ -19,7 +19,7 @@ completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
   default).
 - The GUI Xvfb display job and the shared CLI/GTK operation matrix are green;
   `testing` collects integration work and `main` follows on request without
-  deployments. GUI verification: 79 tests, coverage 36.57 %, display suite and
+  deployments. GUI verification: 79 tests, coverage 36.53 %, display suite and
   build clean.
 - A repository file can be rescanned from the tree context menu. The metadata
   dialog runs with that file as scope, so one archive or media file is
@@ -101,10 +101,14 @@ Target: `0.15.0` (feature release, paired with backend `26.18.0`).
       and stable, and no GC parameter tuning is planned. Method, measurements,
       and revisit criteria are in
       [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md#performance-and-gc-assessment).
-- [ ] Profile per-batch rendering of the 95,001-row table on a display and
-      record the result in `TODO.md`/the benchmark notes. Headless filter/tree
-      and allocation measurements can be reproduced with
-      `./scripts/benchmark-filters.sh`.
+- [x] Profile per-batch rendering of the 95,001-row JSON table on a display
+      (2026-11-20): 191 batches of 500 rows, 5.3–5.7 ms average and
+      6.5–7.0 ms maximum per batch, 1.07–1.15 s total. JSON tabs load the full
+      sortable row set; repository tabs stay virtualized. Recorded in
+      [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md#per-batch-table-rendering).
+- [x] Restore the complete JSON row set (2026-11-20): the backend-paged load
+      path discarded the first page, so JSON tabs rendered an empty table. The
+      display suite now asserts the 95,001-row load.
 - [ ] Confirm the final WP-09.5 CLI/GUI result, progress, cancellation, error,
       refresh, and explicit storage-mode parity evidence stays complete when
       either HMI changes; keep the backend parity table in sync.

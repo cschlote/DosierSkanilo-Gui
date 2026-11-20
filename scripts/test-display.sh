@@ -102,9 +102,17 @@ if [ -d "${backend_dir}" ]; then
 		--write-catalog "${bench_catalog}" 95001
 	start_seconds=$(date +%s)
 	printf '%s\n' "[display-test] loading 95001 records from JSON"
+	bench_json_log="${LOGIN_DIR}/bench-json.log"
 	run_with_display env HOME="${LOGIN_DIR}" XDG_CONFIG_HOME="${LOGIN_DIR}/config" \
 		./build/bin/dosierskanilo-gui \
-		--self-test --self-test-delay 1200 "${bench_catalog}"
+		--verbose --self-test --self-test-delay 3000 "${bench_catalog}" \
+		> "${bench_json_log}" 2>&1
+	if ! grep -q "rows=95001 total=95001" "${bench_json_log}"; then
+		printf '%s\n' "[display-test] JSON table did not load all rows" >&2
+		tail -n 50 "${bench_json_log}" >&2
+		exit 1
+	fi
+	grep "\[render\] finished" "${bench_json_log}" | tail -n 1 || true
 	printf '%s\n' "[display-test] JSON table smoke: $(( $(date +%s) - start_seconds ))s"
 
 	bench_repository="${LOGIN_DIR}/bench-repository"
