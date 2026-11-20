@@ -97,6 +97,10 @@ Target: `0.15.0` (feature release, paired with backend `26.18.0`).
 
 ## P1 — Finish verification and performance work
 
+- [x] Assess GC and performance tuning (2026-11-20): collection cost is small
+      and stable, and no GC parameter tuning is planned. Method, measurements,
+      and revisit criteria are in
+      [`docs/GUI-REDESIGN.md`](docs/GUI-REDESIGN.md#performance-and-gc-assessment).
 - [ ] Profile per-batch rendering of the 95,001-row table on a display and
       record the result in `TODO.md`/the benchmark notes. Headless filter/tree
       and allocation measurements can be reproduced with

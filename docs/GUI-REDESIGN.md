@@ -328,6 +328,73 @@ the node:
 - filter the current tab to the selected directory
 - start a relevant analysis operation
 
+## Performance and GC Assessment
+
+Decision record from 2026-11-20: do not tune D GC parameters and do not disable
+the collector. Keep the GC-friendly allocation rules above and optimize only
+measured hot spots. Collection cost is a small, stable part of the current
+workload, and retained memory stays flat across repeated filter and tree
+cycles.
+
+### Method
+
+- Machine: AMD Ryzen 9 5950X, 62 GiB RAM, Linux, LDC2 release build.
+- Command: `./scripts/benchmark-filters.sh <counts>`. The benchmark builds a
+  synthetic catalog, filters it by text, and projects its directory tree.
+- `gc_ms` and `gc_cycles` cover collections that happen inside the timed filter
+  and tree work (`GC.profileStats` before and after). The reported memory is the
+  retained heap after a full `GC.collect()` (`GC.stats.usedSize`), not process
+  RSS.
+- GC-disabled runs use `--DRT-gcopt=disable:1` only as an upper-bound
+  experiment; they are not a supported configuration.
+
+### Results
+
+| Rows | Filter ms | Tree ms | GC ms | GC cycles | Retained MiB | Allocated MiB |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1,000 | 0.2 | 0.5 | 0.0 | 0 | 0.3 | 0.2 |
+| 10,000 | 2.3 | 5.4 | 0.0 | 0 | 2.5 | 2.9 |
+| 100,000 (median of 5) | 23.4 | 48.5 | 2.1 | 1 | 22.9 | 19.9 |
+| 1,000,000 (median of 2) | 219.8 | 447.8 | 0.0 | 0 | 228.9 | 195.5 |
+
+100,000 rows, five runs per variant:
+
+| Variant | Filter ms (median) | Tree ms (median) | GC ms |
+| --- | --- | --- | --- |
+| Default GC | 23.4 | 48.5 | 2.1 |
+| `--DRT-gcopt=disable:1` | 20.9 | 44.3 | 0.0 |
+
+Ten consecutive 100,000-row cycles in one process kept the retained heap at
+22.9 MiB and ran exactly one collection per cycle (3.8–4.6 ms), with stable
+filter times of 21–24 ms and tree times of 47–52 ms.
+
+### Interpretation
+
+- Disabling the GC saves at most 2.5 ms filtering and 4.2 ms tree projection at
+  100,000 rows, about 9–11 % of the measured work. It does not change retained
+  memory in these short runs and would only add unbounded growth risk in long
+  sessions.
+- At 1,000,000 rows the timed sections triggered no collection. Cost is
+  dominated by the algorithms and roughly linear allocation; memory, not GC
+  pause time, is the scaling concern at that size.
+- The remaining known costs are elsewhere: per-batch GTK rendering at 95,001
+  rows, the first page of very large archive directories (about 86 ms and 46 MB
+  at 100,000 members), and detail queries. Those are the next profiling targets.
+
+### Revisit criteria
+
+Reconsider GC tuning only when a profile of the affected action shows a
+two-digit share of time in GC, visible pauses above roughly 50 ms, or retained
+memory that grows across repeated operations. Until then, keep the bounded
+allocation rules and do not disable or hand-tune the collector.
+
+Reproduce with:
+
+```bash
+./scripts/benchmark-filters.sh 1000 10000 100000 1000000
+./build/bin/filterbench 100000 --DRT-gcopt=disable:1
+```
+
 ## Detail Renderers
 
 The detail area should select a renderer based on available data and file type:
