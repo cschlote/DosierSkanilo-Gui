@@ -2,7 +2,10 @@
 
 All notable changes to this project are documented in this file.
 
-## Unreleased
+## Release 0.15.0 - 2026-11-20
+
+Pairs with DosierSkanilo 26.18.0. Feature release for single-file metadata
+rescans, preview responsiveness, and shutdown handling.
 
 - Repository files can be rescanned individually from the tree context menu.
   "Rescan metadata" opens the metadata dialog with the selected file as scope,

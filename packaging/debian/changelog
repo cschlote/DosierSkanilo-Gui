@@ -1,3 +1,11 @@
+dosierskanilo-gui (0.15.0-1) unstable; urgency=medium
+
+  * Release GUI 0.15.0 for DosierSkanilo 26.18.0 with per-file metadata
+    rescans from the tree context menu, faster preview and detail updates,
+    and immediate shutdown without waiting for background queries.
+
+ -- Carsten Schlote <schlote@vahanus.net>  Fri, 20 Nov 2026 00:00:00 +0000
+
 dosierskanilo-gui (0.14.2-1) unstable; urgency=medium
 
   * Release GUI 0.14.2 as a packaging patch for DosierSkanilo 26.17.2. The
