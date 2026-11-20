@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+- Repository files can be rescanned individually from the tree context menu.
+  "Rescan metadata" opens the metadata dialog with the selected file as scope,
+  so one archive or media file can be refreshed without walking the catalog.
+
 - The delayed preview refresh no longer restarts a video that is already
   playing when the file details arrive.
 - Closing the GUI no longer waits for background catalog queries: worker
