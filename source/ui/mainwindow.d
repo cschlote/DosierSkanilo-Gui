@@ -4326,59 +4326,7 @@ int runMainWindow(string[] args, ref CliOptions cli)
                 setMediaPreview(document, summary);
                 document.selectedFileName = selectedTreeFileName;
                 document.selectedFilePath = selectedTreeRelativePath;
-
-                auto requestId = ++document.detailRequestId;
-                auto sourcePath = document.filePath;
-                auto catalogBackend = document.catalogBackend;
-                document.status.setText("Loading tree selection details ...");
-                logLineVerbose("[details] loading tree selection ", selectedId);
-                auto treeWorker = new Thread({
-                    BlobRow details;
-                    string error;
-                    auto detailStarted = MonoTime.currTime;
-                    synchronized (document.detailLoadMutex)
-                    {
-                        if (requestId != document.detailRequestId)
-                            return;
-                        try
-                            details = loadCachedFileDetails(document, catalogBackend,
-                                selectedId);
-                        catch (Exception ex)
-                            error = ex.msg;
-                    }
-                    logLineVerbose("[details] loaded tree selection ", selectedId,
-                        " error=", error, " elapsedMs=",
-                        cast(long) (MonoTime.currTime - detailStarted).total!"msecs");
-                    scheduleUiIdle({
-                        if (requestId != document.detailRequestId)
-                            return false;
-                        if (error.length > 0)
-                        {
-                            document.status.setText("Failed to load tree selection: " ~ error);
-                            return false;
-                        }
-                        auto row = details;
-                        row.detailsLoaded = true;
-                        row.hasSummaryFlags = true;
-                        row.summaryHasFileType = hasFileType;
-                        row.summaryHasMedia = hasMedia;
-                        row.summaryHasVideo = hasVideo;
-                        row.summaryHasAudio = hasAudio;
-                        row.summaryHasImage = hasImage;
-                        row.summaryHasText = hasText;
-                        row.summaryHasArchive = hasArchive;
-                        row.summaryHasTorrent = hasTorrent;
-                        document.tableView.getSelection().unselectAll();
-                        document.directSelectedRow = row;
-                        document.hasDirectSelectedRow = true;
-                        document.directSelectedIndex = "Tree";
-                        document.skipNextPreviewRefresh = true;
-                        updateSelectedRowDetails(document);
-                        return false;
-                    });
-                });
-                treeWorker.isDaemon = true;
-                treeWorker.start();
+                updateSelectedRowDetails(document);
             }
         });
         document.tableView.addOnSizeAllocate((allocation, Widget _) {
@@ -5413,8 +5361,6 @@ int runMainWindow(string[] args, ref CliOptions cli)
         if (isRepositorySource(document.filePath) && row.sourceKey.length > 0
             && !row.detailsLoaded)
         {
-            auto requestId = ++document.detailRequestId;
-            auto sourcePath = document.filePath;
             auto sourceKey = row.sourceKey;
             auto catalogBackend = document.catalogBackend;
             /* Show the summary preview immediately; the details follow on the
@@ -5422,77 +5368,90 @@ int runMainWindow(string[] args, ref CliOptions cli)
             setMediaPreview(document, row);
             setKnownFilesTable(document, row);
             document.status.setText("Loading selected repository details ...");
-            auto worker = new Thread({
-                BlobRow details;
-                string error;
-                auto detailStarted = MonoTime.currTime;
-                synchronized (document.detailLoadMutex)
-                {
-                    /* A newer selection superseded this request while it waited
-                     * for the previous query; do not run another one. */
-                    if (requestId != document.detailRequestId)
-                        return;
-                    try
-                        details = loadCachedFileDetails(document, catalogBackend,
-                            sourceKey);
-                    catch (Exception ex)
-                        error = ex.msg;
-                }
-                logLineVerbose("[details] loaded ", sourceKey, " error=", error,
-                    " elapsedMs=",
-                    cast(long) (MonoTime.currTime - detailStarted).total!"msecs");
-
-                scheduleUiIdle({
-                    if (requestId != document.detailRequestId)
-                        return false;
-                    if (error.length > 0)
-                    {
-                        document.status.setText(format(
-                            "Failed to load selected details: %s", error));
-                        return false;
-                    }
-                    if (document.hasDirectSelectedRow
-                        && document.directSelectedRow.sourceKey == sourceKey)
-                    {
-                        auto flags = document.directSelectedRow;
-                        document.directSelectedRow = details;
-                        document.directSelectedRow.detailsLoaded = true;
-                        document.directSelectedRow.hasSummaryFlags = flags.hasSummaryFlags;
-                        document.directSelectedRow.summaryHasFileType = flags.summaryHasFileType;
-                        document.directSelectedRow.summaryHasMedia = flags.summaryHasMedia;
-                        document.directSelectedRow.summaryHasVideo = flags.summaryHasVideo;
-                        document.directSelectedRow.summaryHasAudio = flags.summaryHasAudio;
-                        document.directSelectedRow.summaryHasImage = flags.summaryHasImage;
-                        document.directSelectedRow.summaryHasText = flags.summaryHasText;
-                        document.directSelectedRow.summaryHasArchive = flags.summaryHasArchive;
-                        document.directSelectedRow.summaryHasTorrent = flags.summaryHasTorrent;
-                    }
-                    else
-                    {
-                        foreach (ref candidate; document.loadedRows)
-                        {
-                            if (candidate.sourceKey == sourceKey)
-                            {
-                                candidate = details;
-                                candidate.detailsLoaded = true;
-                            }
-                        }
-                        foreach (ref candidate; document.visibleRows)
-                        {
-                            if (candidate.sourceKey == sourceKey)
-                            {
-                                candidate = details;
-                                candidate.detailsLoaded = true;
-                            }
-                        }
-                    }
-                    document.skipNextPreviewRefresh = true;
-                    updateSelectedRowDetails(document);
+            /* Coalesce rapid selection changes: only the last selection in a
+             * burst starts a catalog query. */
+            const auto scheduleGeneration = ++document.detailScheduleGeneration;
+            scheduleUiIdle({
+                if (scheduleGeneration != document.detailScheduleGeneration)
                     return false;
+                if (document.hasDirectSelectedRow
+                    && document.directSelectedRow.sourceKey == sourceKey
+                    && document.directSelectedRow.detailsLoaded)
+                    return false;
+                auto requestId = ++document.detailRequestId;
+                auto worker = new Thread({
+                    BlobRow details;
+                    string error;
+                    auto detailStarted = MonoTime.currTime;
+                    synchronized (document.detailLoadMutex)
+                    {
+                        /* A newer selection superseded this request while it waited
+                         * for the previous query; do not run another one. */
+                        if (requestId != document.detailRequestId)
+                            return;
+                        try
+                            details = loadCachedFileDetails(document, catalogBackend,
+                                sourceKey);
+                        catch (Exception ex)
+                            error = ex.msg;
+                    }
+                    logLineVerbose("[details] loaded ", sourceKey, " error=", error,
+                        " elapsedMs=",
+                        cast(long) (MonoTime.currTime - detailStarted).total!"msecs");
+
+                    scheduleUiIdle({
+                        if (requestId != document.detailRequestId)
+                            return false;
+                        if (error.length > 0)
+                        {
+                            document.status.setText(format(
+                                "Failed to load selected details: %s", error));
+                            return false;
+                        }
+                        if (document.hasDirectSelectedRow
+                            && document.directSelectedRow.sourceKey == sourceKey)
+                        {
+                            auto flags = document.directSelectedRow;
+                            document.directSelectedRow = details;
+                            document.directSelectedRow.detailsLoaded = true;
+                            document.directSelectedRow.hasSummaryFlags = flags.hasSummaryFlags;
+                            document.directSelectedRow.summaryHasFileType = flags.summaryHasFileType;
+                            document.directSelectedRow.summaryHasMedia = flags.summaryHasMedia;
+                            document.directSelectedRow.summaryHasVideo = flags.summaryHasVideo;
+                            document.directSelectedRow.summaryHasAudio = flags.summaryHasAudio;
+                            document.directSelectedRow.summaryHasImage = flags.summaryHasImage;
+                            document.directSelectedRow.summaryHasText = flags.summaryHasText;
+                            document.directSelectedRow.summaryHasArchive = flags.summaryHasArchive;
+                            document.directSelectedRow.summaryHasTorrent = flags.summaryHasTorrent;
+                        }
+                        else
+                        {
+                            foreach (ref candidate; document.loadedRows)
+                            {
+                                if (candidate.sourceKey == sourceKey)
+                                {
+                                    candidate = details;
+                                    candidate.detailsLoaded = true;
+                                }
+                            }
+                            foreach (ref candidate; document.visibleRows)
+                            {
+                                if (candidate.sourceKey == sourceKey)
+                                {
+                                    candidate = details;
+                                    candidate.detailsLoaded = true;
+                                }
+                            }
+                        }
+                        document.skipNextPreviewRefresh = true;
+                        updateSelectedRowDetails(document);
+                        return false;
+                    });
                 });
+                worker.isDaemon = true;
+                worker.start();
+                return false;
             });
-            worker.isDaemon = true;
-            worker.start();
             return;
         }
         document.selectedSha1 = row.sha1;
@@ -5733,6 +5692,39 @@ int runMainWindow(string[] args, ref CliOptions cli)
         }
     }
 
+    /** Threshold above which direct JSON opening warns about memory use. */
+    enum ulong largeJsonWarningBytes = 32UL * 1024 * 1024;
+
+    /** Ask before opening a JSON catalog that is kept fully in memory. */
+    bool confirmLargeJsonOpen(string filePath)
+    {
+        import std.file : getSize;
+
+        if (cli.selfTestMode)
+            return true;
+        ulong size;
+        try
+            size = getSize(filePath);
+        catch (Exception)
+            return true;
+        if (size < largeJsonWarningBytes)
+            return true;
+        auto dialog = new MessageDialog(window, DialogFlags.MODAL,
+            MessageType.WARNING, ButtonsType.NONE,
+            format("'%s' is about %.0f MiB. JSON tabs keep the complete " ~
+                "catalog and its derived index in memory, so very large " ~
+                "files can exhaust memory or freeze the window.\n\n" ~
+                "For large catalogs, import the JSON file into a repository " ~
+                "and open the repository instead.", baseName(filePath),
+                size / (1024.0 * 1024.0)));
+        dialog.setTitle("Large JSON catalog");
+        dialog.addButton("_Cancel", ResponseType.CANCEL);
+        dialog.addButton("_Open Anyway", ResponseType.ACCEPT);
+        const response = dialog.run();
+        dialog.destroy();
+        return response == cast(int) ResponseType.ACCEPT;
+    }
+
     /** Offer to save, discard, or cancel closing one modified document. */
     bool confirmDocumentClose(DocumentTab document)
     {
@@ -5906,6 +5898,9 @@ int runMainWindow(string[] args, ref CliOptions cli)
         auto document = findDocumentByPath(normalizedPath);
         if (document is null)
         {
+            if (!isRepositorySource(normalizedPath)
+                && !confirmLargeJsonOpen(normalizedPath))
+                return null;
             document = createDocumentTab(normalizedPath);
             documents ~= document;
             syncCaseSensitiveFilterWidgets();

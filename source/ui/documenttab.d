@@ -595,6 +595,8 @@ class DocumentTab
     ulong renderRequestId;
     /// Generation token used to discard stale detail loads.
     ulong detailRequestId;
+    /// Generation token used to coalesce detail loads for rapid selections.
+    ulong detailScheduleGeneration;
     /// Control interface for the active backend operation; null when idle.
     OperationControl operationControl;
     /// Worker thread running the active backend operation; null when idle.
