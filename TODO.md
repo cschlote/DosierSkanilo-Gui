@@ -19,11 +19,14 @@ completed behavior is listed in [`CHANGELOG.md`](CHANGELOG.md) and summarized in
   default).
 - The GUI Xvfb display job and the shared CLI/GTK operation matrix are green;
   `testing` collects integration work and `main` follows on request without
-  deployments. GUI verification: 79 tests, coverage 36.53 %, display suite and
+  deployments. GUI verification: 80 tests, coverage 36.66 %, display suite and
   build clean.
 - A repository file can be rescanned from the tree context menu. The metadata
   dialog runs with that file as scope, so one archive or media file is
   refreshed without walking the catalog.
+- Rapid tree or table selections coalesce into one detail query, and rows
+  without attached file specs list their resolved catalog path in the known-file
+  table.
 - Documentation and Ddoc headers are complete: every documentable public,
   package, and private declaration has Ddoc (verified 2026-11-08).
 
@@ -195,9 +198,9 @@ verbose diagnostics make future allocation/sink failures understandable.
       found.
 - [x] Make module-level Ddoc headers consistent across all GUI modules
       (`Authors`/`Copyright`/`License`); verified across all tracked `.d` files.
-- [ ] Add a size guard/warning when opening very large JSON catalogs directly
+- [x] Add a size guard/warning when opening very large JSON catalogs directly
       and point users to repository import; direct JSON tabs keep the whole
-      catalog and derived index in memory.
+      catalog and derived index in memory. The prompt starts at `32 MiB`.
 
 ## Completed work (compact record)
 

@@ -183,6 +183,10 @@ The GUI projection layer does not depend on GTK, SQLite, or Jsonizer-specific
 implementation details. Pure D types and functions let useful parts live in
 `DosierSkanilo` without first untangling widget code.
 
+Direct JSON tabs keep the complete catalog and derived index in memory. The GUI
+asks for confirmation before opening a JSON file at or above `32 MiB` and points
+to repository import for large catalogs. The self-test bypasses the prompt.
+
 ## GUI Data Types
 
 The initial projection should contain read-only value types similar to:
