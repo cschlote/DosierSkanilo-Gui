@@ -4,17 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
-- The details pane lists the resolved catalog path when a repository row has no
-  attached file-spec list, so the "Known file names" count matches the visible
-  entries. Rapid tree or table selections now coalesce into one catalog detail
-  query instead of queueing one lookup per selection.
-- Opening a direct JSON catalog at or above `32 MiB` asks for confirmation and
-  suggests importing it into a repository, because JSON tabs keep the complete
-  catalog and derived index in memory.
+## Release 0.15.1 - 2026-11-22
 
-- JSON catalogs open with their complete row set again. The backend-paged load
-  path read the first page and then discarded it, so JSON tabs showed an empty
-  table. Filtering and clearing a filter now restore the full sortable row set.
+Pairs with DosierSkanilo 26.19.0. Patch release for backend API compatibility.
+
+- Compatibility with DosierSkanilo 26.19.0: the backend no longer re-exports
+  `repository` and `service.*` modules through the top-level package facade, so
+  the GUI now imports them explicitly.
 
 ## Release 0.15.0 - 2026-11-20
 
