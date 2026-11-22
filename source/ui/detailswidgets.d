@@ -509,6 +509,57 @@ unittest
     assert(fileTypeDisplayText(" \n ") == "No file type signature available.");
 }
 
+/** One known file reference shown in the details pane. */
+struct KnownFileEntry
+{
+    string fileName; /// Reference path shown in the first column.
+    string modified; /// Last-modified text, or `-` when unknown.
+}
+
+/** Collect known file references for a row, preferring the source blob.
+ *
+ * Catalog-backed detail rows carry one currently resolved path in
+ * `catalogFileNames`; the label and table must use the same list so the count
+ * always matches the visible entries.
+ *
+ * Params:
+ *     row = Row whose known file references should be rendered.
+ * Returns: Entries in display order.
+ */
+KnownFileEntry[] knownFileEntries(const BlobRow row)
+{
+    KnownFileEntry[] entries;
+    if (row.sourceBlob !is null && row.sourceBlob.fileSpecs.length > 0)
+    {
+        foreach (spec; row.sourceBlob.fileSpecs)
+        {
+            if (spec is null || spec.fileName.length == 0)
+                continue;
+            entries ~= KnownFileEntry(spec.fileName,
+                spec.timeLastModified.length > 0 ? spec.timeLastModified : "-");
+        }
+        return entries;
+    }
+    foreach (line; row.catalogFileNames.split("\n"))
+    {
+        const trimmed = line.strip();
+        if (trimmed.length > 0)
+            entries ~= KnownFileEntry(trimmed, "-");
+    }
+    return entries;
+}
+
+@("known file entries fall back to the catalog reference path")
+unittest
+{
+    BlobRow row;
+    row.catalogFileNames = "dir/file.txt";
+    auto entries = knownFileEntries(row);
+    assert(entries.length == 1);
+    assert(entries[0].fileName == "dir/file.txt");
+    assert(entries[0].modified == "-");
+}
+
 /** Populate the known-files table from the current row, preferring original file specs.
  *
  * Params:
@@ -530,26 +581,15 @@ void setKnownFilesTable(DocumentTab document, const(BlobRow) row)
     document.detailNextFileButton.setSensitive(false);
     enforce(document.detailFileNamesLabel !is null,
         "detailFileNamesLabel must be initialized before setting known files table");
-    document.detailFileNamesLabel.setText(format("Known file names (%s)", row.fileCount));
-
-    if (row.sourceBlob is null || row.sourceBlob.fileSpecs.length == 0)
+    auto entries = knownFileEntries(row);
+    document.detailFileNamesLabel.setText(
+        format("Known file names (%s)", entries.length));
+    foreach (entry; entries)
     {
-        return;
-    }
-
-    foreach (spec; row.sourceBlob.fileSpecs)
-    {
-        if (spec is null || spec.fileName.length == 0)
-        {
-            continue;
-        }
-
-        auto lastModified = spec.timeLastModified.length > 0 ? spec.timeLastModified : "-";
-
         TreeIter iter;
         document.detailFileNamesStore.append(iter);
         document.detailFileNamesStore.set(iter, [0, 1], [
-            spec.fileName, lastModified
+            entry.fileName, entry.modified
         ]);
     }
 }

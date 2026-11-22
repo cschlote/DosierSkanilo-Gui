@@ -462,7 +462,7 @@ final class CatalogDirectorySource : DirectorySource
 @("catalog directory source mirrors repository tree semantics")
 unittest
 {
-    import dosierskanilo : Repository;
+    import dosierskanilo.repository : Repository;
     import std.file : mkdirRecurse, rmdirRecurse, tempDir, write;
     import std.path : buildPath;
     import std.uuid : randomUUID;

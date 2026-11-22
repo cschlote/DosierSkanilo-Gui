@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+## Release 0.15.1 - 2026-11-22
+
+Pairs with DosierSkanilo 26.19.0. Patch release for backend API compatibility.
+
+- Compatibility with DosierSkanilo 26.19.0: the backend no longer re-exports
+  `repository` and `service.*` modules through the top-level package facade, so
+  the GUI now imports them explicitly.
+
 ## Release 0.15.0 - 2026-11-20
 
 Pairs with DosierSkanilo 26.18.0. Feature release for single-file metadata
