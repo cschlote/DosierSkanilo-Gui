@@ -27,6 +27,8 @@ import dosierarkivo.archive : ArchiveEntryDescriptor, ArchivePasswordCallback,
     parseArchiveVirtualPath;
 import dosierarkivo.factory : fileArchive;
 import dosierskanilo;
+import dosierskanilo.repository : Repository;
+import dosierskanilo.repository.types;
 import dosierskanilo.catalogbackend : ArchiveEntryId, CatalogArchiveEntry,
     CatalogContentFingerprint, CatalogContentQuery, CatalogContentRow,
     CatalogContentSnapshot, CatalogDetailMask,
